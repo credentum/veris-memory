@@ -50,11 +50,11 @@ kill_timeout = "5s"
     protocol = "http"
     timeout = "2s"
 
-# Resource allocation
+# Resource allocation - Upgraded for multi-database stability
 [[vm]]
-  memory = "2gb"
-  cpu_kind = "shared"
-  cpus = 2
+  memory = "4gb"
+  cpu_kind = "performance"
+  cpus = 4
 
 # Process groups for multi-service deployment
 [processes]
