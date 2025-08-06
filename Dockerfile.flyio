@@ -5,8 +5,8 @@ FROM ubuntu:22.04@sha256:965fbcae990b0467ed5657caceaec165018ef44a4d2d46c7cdea80a
 # Prevent interactive prompts during apt install
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
+# Install build dependencies (minimal for size)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     # Essential build tools
     wget \
     curl \
@@ -16,19 +16,23 @@ RUN apt-get update && apt-get install -y \
     python3.11 \
     python3-pip \
     python3.11-venv \
-    # Build tools for Python packages
+    # Build tools for Python packages (minimal)
     build-essential \
     python3.11-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create Python virtual environment
 RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy and install Python requirements in builder stage
-COPY requirements.txt requirements-dev.txt ./
+# Copy and install Python requirements in builder stage (production only, no dev deps)
+COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip cache purge \
+    && find /opt/venv -name "*.pyc" -delete \
+    && find /opt/venv -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 # Build args for configurable Qdrant version and checksum
 ARG QDRANT_VERSION=1.14.0
@@ -58,27 +62,26 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Install only runtime dependencies
-RUN apt-get update && apt-get install -y \
-    # Python runtime
+# Install only runtime dependencies (minimize size)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Python runtime (minimal)
     python3.11 \
     python3.11-venv \
     # Java for Neo4j (minimal JRE)
     openjdk-11-jre-headless \
-    # System utilities (minimal set)
+    # Essential utilities only
     curl \
     supervisor \
     netcat-openbsd \
-    # Monitoring utilities
-    bc \
     procps \
-    # Redis
+    # Redis server
     redis-server \
     # Required for Neo4j installation
     wget \
     gpg \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/* /usr/share/man/* /usr/share/locale/*
 
 # Copy Python virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
@@ -87,13 +90,16 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy Qdrant binary from builder
 COPY --from=builder /usr/local/bin/qdrant /usr/local/bin/qdrant
 
-# Install Neo4j with proper GPG verification
+# Install Neo4j with proper GPG verification (minimize installation size)
 RUN mkdir -p /etc/apt/keyrings \
     && wget -O - https://debian.neo4j.com/neotechnology.gpg.key | gpg --dearmor -o /etc/apt/keyrings/neo4j.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/neo4j.gpg] https://debian.neo4j.com stable latest" > /etc/apt/sources.list.d/neo4j.list \
     && apt-get update \
-    && apt-get install -y neo4j \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends neo4j \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
+    && find /var/lib/neo4j -name "*.txt" -delete \
+    && find /var/lib/neo4j -name "README*" -delete
 
 # Create application directory
 WORKDIR /app
