@@ -114,6 +114,7 @@ COPY schemas/ ./schemas/
 COPY contracts/ ./contracts/
 
 # Copy configuration files
+COPY .ctxrc.yaml /app/.ctxrc.yaml
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY start-services.sh /app/start-services.sh
 RUN chmod +x /app/start-services.sh
