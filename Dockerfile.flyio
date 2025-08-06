@@ -98,8 +98,8 @@ RUN mkdir -p /etc/apt/keyrings \
 # Create application directory
 WORKDIR /app
 
-# Create data directories
-RUN mkdir -p /app/data/qdrant /app/data/neo4j /app/data/redis /app/logs \
+# Create data directories (logs inside data volume to support single Fly.io volume limit)
+RUN mkdir -p /app/data/qdrant /app/data/neo4j /app/data/redis /app/data/logs \
     && mkdir -p /var/lib/neo4j/data /var/lib/neo4j/logs
 
 # Copy Python application
@@ -131,11 +131,11 @@ RUN mkdir -p /var/lib/neo4j/conf /etc/neo4j \
     && echo "server.bolt.listen_address=0.0.0.0:7687" >> /var/lib/neo4j/conf/neo4j.conf \
     && echo "server.http.listen_address=0.0.0.0:7474" >> /var/lib/neo4j/conf/neo4j.conf \
     && echo "server.directories.data=/app/data/neo4j" >> /var/lib/neo4j/conf/neo4j.conf \
-    && echo "server.directories.logs=/app/logs" >> /var/lib/neo4j/conf/neo4j.conf \
+    && echo "server.directories.logs=/app/data/logs" >> /var/lib/neo4j/conf/neo4j.conf \
     && cp /var/lib/neo4j/conf/neo4j.conf /etc/neo4j/neo4j.conf
 
 # Set permissions for neo4j user (user already exists from package installation)
-RUN chown -R neo4j:neo4j /var/lib/neo4j /app/data/neo4j /app/logs \
+RUN chown -R neo4j:neo4j /var/lib/neo4j /app/data/neo4j /app/data/logs \
     && chmod -R 755 /var/lib/neo4j /app/data/neo4j
 
 # Expose ports
