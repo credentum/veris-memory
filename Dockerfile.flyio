@@ -123,11 +123,13 @@ COPY monitoring/ /app/monitoring/
 COPY secrets/ /app/secrets/
 RUN chmod +x /app/monitoring/*.sh /app/secrets/*.sh
 
-# Configure Redis (memory limits will be set dynamically in start script)
-RUN echo "bind 127.0.0.1" >> /etc/redis/redis.conf \
-    && echo "port 6379" >> /etc/redis/redis.conf \
-    && echo "dir /app/data/redis" >> /etc/redis/redis.conf \
-    && echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf
+# Configure Redis (create user-writable config in /app)
+RUN mkdir -p /app/config \
+    && echo "bind 127.0.0.1" > /app/config/redis.conf \
+    && echo "port 6379" >> /app/config/redis.conf \
+    && echo "dir /app/data/redis" >> /app/config/redis.conf \
+    && echo "maxmemory-policy allkeys-lru" >> /app/config/redis.conf \
+    && echo "daemonize no" >> /app/config/redis.conf
 
 # Configure Neo4j
 ENV NEO4J_HOME=/var/lib/neo4j
@@ -157,7 +159,8 @@ ENV LOG_LEVEL=info
 
 # Create non-root user for security
 RUN adduser --uid 1001 --disabled-password app \
-    && chown -R app:app /app
+    && chown -R app:app /app \
+    && chown -R app:app /app/config
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \

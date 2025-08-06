@@ -40,9 +40,9 @@ validate_environment() {
     export NEO4J_AUTH="neo4j/$NEO4J_PASSWORD"
     echo "✓ Neo4j authentication configured"
 
-    # Configure Redis memory limits
+    # Configure Redis memory limits in user-writable config
     REDIS_MAXMEMORY=${REDIS_MAXMEMORY:-512mb}
-    echo "maxmemory $REDIS_MAXMEMORY" >> /etc/redis/redis.conf
+    echo "maxmemory $REDIS_MAXMEMORY" >> /app/config/redis.conf
     echo "✓ Redis memory limit set to $REDIS_MAXMEMORY"
 }
 
