@@ -90,9 +90,9 @@ COPY --from=builder /usr/local/bin/qdrant /usr/local/bin/qdrant
 # Install Neo4j with proper GPG verification
 RUN mkdir -p /etc/apt/keyrings \
     && wget -O - https://debian.neo4j.com/neotechnology.gpg.key | gpg --dearmor -o /etc/apt/keyrings/neo4j.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/neo4j.gpg] https://debian.neo4j.com stable 5.x" > /etc/apt/sources.list.d/neo4j.list \
+    && echo "deb [signed-by=/etc/apt/keyrings/neo4j.gpg] https://debian.neo4j.com stable latest" > /etc/apt/sources.list.d/neo4j.list \
     && apt-get update \
-    && apt-get install -y neo4j=1:5.15.0-1 \
+    && apt-get install -y neo4j \
     && rm -rf /var/lib/apt/lists/*
 
 # Create application directory
