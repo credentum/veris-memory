@@ -243,30 +243,38 @@ async def startup_event() -> None:
         raise RuntimeError(f"Configuration validation failed: {config_result}")
 
     try:
-        # Initialize Neo4j
+        # Initialize Neo4j (allow graceful degradation if unavailable)
         neo4j_password = os.getenv("NEO4J_PASSWORD")
         if not neo4j_password:
-            raise RuntimeError("NEO4J_PASSWORD environment variable is required")
-
-        neo4j_client = Neo4jClient()
-        neo4j_client.connect(username=os.getenv("NEO4J_USER", "neo4j"), password=neo4j_password)
+            print("⚠️ NEO4J_PASSWORD not set - Neo4j will be unavailable")
+            neo4j_client = None
+        else:
+            try:
+                neo4j_client = Neo4jClient()
+                neo4j_client.connect(username=os.getenv("NEO4J_USER", "neo4j"), password=neo4j_password)
+                print("✅ Neo4j connected successfully")
+            except Exception as neo4j_error:
+                print(f"⚠️ Neo4j unavailable: {neo4j_error}")
+                neo4j_client = None
 
         # Initialize Qdrant (allow graceful degradation if unavailable)
         try:
             qdrant_client = QdrantClient()
             qdrant_client.connect()
+            print("✅ Qdrant connected successfully")
         except Exception as qdrant_error:
             print(f"⚠️ Qdrant unavailable: {qdrant_error}")
             qdrant_client = None
 
-        # Initialize KV Store
+        # Initialize KV Store (Redis - required for core functionality)
         kv_store = KVStore()
         redis_password = os.getenv("REDIS_PASSWORD")
         kv_store.connect(redis_password=redis_password)
+        print("✅ Redis connected successfully")
 
-        print("✅ All storage clients initialized successfully")
+        print("✅ Storage initialization completed (services may be degraded)")
     except Exception as e:
-        print(f"❌ Failed to initialize storage clients: {e}")
+        print(f"❌ Critical failure in storage initialization: {e}")
         raise
 
 
@@ -279,6 +287,83 @@ async def shutdown_event() -> None:
         kv_store.close()
 
     print("Storage clients closed")
+
+
+@app.get("/")
+async def root() -> Dict[str, Any]:
+    """
+    Root endpoint providing agent discovery information.
+    
+    Returns comprehensive API information including available endpoints,
+    MCP protocol details, and agent integration instructions.
+    """
+    return {
+        "service": "◎ Veris Memory",
+        "tagline": "memory with covenant",
+        "version": "0.9.0",
+        "protocol": {
+            "name": "Model Context Protocol (MCP)",
+            "version": "1.0",
+            "spec": "https://spec.modelcontextprotocol.io/specification/"
+        },
+        "endpoints": {
+            "health": {
+                "path": "/health",
+                "method": "GET",
+                "description": "System health check with service status"
+            },
+            "status": {
+                "path": "/status", 
+                "method": "GET",
+                "description": "Comprehensive status with tools and dependencies"
+            },
+            "readiness": {
+                "path": "/tools/verify_readiness",
+                "method": "POST", 
+                "description": "Agent readiness verification and diagnostics"
+            }
+        },
+        "capabilities": {
+            "schema": "agent-first-schema-protocol",
+            "tools": [
+                "store_context",
+                "retrieve_context",
+                "query_graph", 
+                "update_scratchpad",
+                "get_agent_state"
+            ],
+            "storage": {
+                "vector": "Qdrant (high-dimensional semantic search)",
+                "graph": "Neo4j (relationship and knowledge graphs)", 
+                "kv": "Redis (fast key-value caching)",
+                "analytics": "DuckDB (structured data analysis)"
+            }
+        },
+        "integration": {
+            "mcp_client": {
+                "url": "https://veris-memory.fly.dev",
+                "connection": "HTTP/HTTPS",
+                "authentication": "None (public)",
+                "rate_limits": "60 requests/minute"
+            },
+            "agent_usage": {
+                "step1": "GET /status to verify system health",
+                "step2": "POST /tools/verify_readiness for diagnostics",
+                "step3": "Use MCP tools via standard protocol calls"
+            }
+        },
+        "documentation": {
+            "repository": "https://github.com/credentum/veris-memory",
+            "organization": "https://github.com/credentum",
+            "contact": "Issues and PRs welcome"
+        },
+        "deployment": {
+            "platform": "Fly.io",
+            "region": "iad (US East)",
+            "resources": "8GB memory, 4 performance CPUs",
+            "uptime_target": "99.9%"
+        }
+    }
 
 
 @app.get("/health")
