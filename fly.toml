@@ -50,9 +50,9 @@ kill_timeout = "5s"
     protocol = "http"
     timeout = "2s"
 
-# Resource allocation - Upgraded for multi-database stability
+# Resource allocation - Meeting Fly.io 8GB minimum requirement
 [[vm]]
-  memory = "4gb"
+  memory = "8gb"
   cpu_kind = "performance"
   cpus = 4
 
