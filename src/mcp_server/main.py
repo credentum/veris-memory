@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 # Configure logging for import failures
@@ -33,6 +34,10 @@ except ImportError as e:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
     # Define dummy type for type hints when not available
     SentenceTransformer = type(None)
+
+# Fail-fast on missing embeddings if strict mode enabled
+if not SENTENCE_TRANSFORMERS_AVAILABLE and os.getenv("STRICT_EMBEDDINGS", "false").lower() == "true":
+    raise RuntimeError("Embeddings unavailable: sentence-transformers not installed and STRICT_EMBEDDINGS=true")
 
 from ..core.config import Config
 from ..core.query_validator import validate_cypher_query
@@ -177,9 +182,20 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
 
 app = FastAPI(
     title="Context Store MCP Server",
-    description="Model Context Protocol server for context management",
+    description="Model Context Protocol server for context management", 
     version="1.0.0",
+    debug=False,  # Disable debug mode for production security
 )
+
+# Global exception handler for production security
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Sanitize all unhandled exceptions for production security."""
+    logger.error(f"Unhandled exception on {request.url}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"error": "internal"}
+    )
 
 # Global storage clients
 neo4j_client = None
@@ -321,23 +337,20 @@ async def status() -> Dict[str, Any]:
     
     return {
         "label": "◎ Veris Memory",
-        "subtitle": "memory with covenant",
         "version": "0.9.0",
         "protocol": "MCP-1.0",
+        "deps": {
+            "qdrant": "ok" if health_status["services"]["qdrant"] == "healthy" else "error",
+            "neo4j": "ok" if health_status["services"]["neo4j"] == "healthy" else "error",
+            "redis": "ok" if health_status["services"]["redis"] == "healthy" else "error"
+        },
         "tools": [
             "store_context",
             "retrieve_context", 
             "query_graph",
             "update_scratchpad",
             "get_agent_state"
-        ],
-        "dependencies": {
-            "qdrant": health_status["services"]["qdrant"],
-            "neo4j": health_status["services"]["neo4j"],
-            "redis": health_status["services"]["redis"]
-        },
-        "status": health_status["status"],
-        "agent_ready": health_status["status"] == "healthy"
+        ]
     }
 
 
