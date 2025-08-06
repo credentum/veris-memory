@@ -161,7 +161,7 @@ The symbol represents:
 
 ## License
 
-**MIT License** - Credentum Project
+**MIT License** - Credentum
 
 For agents who remember. For systems that endure. For truth that persists.
 
