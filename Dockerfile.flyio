@@ -125,12 +125,14 @@ RUN echo "bind 127.0.0.1" >> /etc/redis/redis.conf \
 
 # Configure Neo4j
 ENV NEO4J_HOME=/var/lib/neo4j
-# Neo4j password will be set via environment variable NEO4J_PASSWORD at runtime
-RUN echo "server.default_listen_address=0.0.0.0" >> /var/lib/neo4j/conf/neo4j.conf \
+# Create Neo4j configuration directory and file
+RUN mkdir -p /var/lib/neo4j/conf /etc/neo4j \
+    && echo "server.default_listen_address=0.0.0.0" > /var/lib/neo4j/conf/neo4j.conf \
     && echo "server.bolt.listen_address=0.0.0.0:7687" >> /var/lib/neo4j/conf/neo4j.conf \
     && echo "server.http.listen_address=0.0.0.0:7474" >> /var/lib/neo4j/conf/neo4j.conf \
     && echo "server.directories.data=/app/data/neo4j" >> /var/lib/neo4j/conf/neo4j.conf \
-    && echo "server.directories.logs=/app/logs" >> /var/lib/neo4j/conf/neo4j.conf
+    && echo "server.directories.logs=/app/logs" >> /var/lib/neo4j/conf/neo4j.conf \
+    && cp /var/lib/neo4j/conf/neo4j.conf /etc/neo4j/neo4j.conf
 
 # Create neo4j user and set permissions
 RUN if ! id "neo4j" &>/dev/null; then useradd -r -s /bin/false neo4j; fi \
