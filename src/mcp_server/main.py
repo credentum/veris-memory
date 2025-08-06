@@ -251,9 +251,13 @@ async def startup_event() -> None:
         neo4j_client = Neo4jClient()
         neo4j_client.connect(username=os.getenv("NEO4J_USER", "neo4j"), password=neo4j_password)
 
-        # Initialize Qdrant
-        qdrant_client = QdrantClient()
-        qdrant_client.connect()
+        # Initialize Qdrant (allow graceful degradation if unavailable)
+        try:
+            qdrant_client = QdrantClient()
+            qdrant_client.connect()
+        except Exception as qdrant_error:
+            print(f"⚠️ Qdrant unavailable: {qdrant_error}")
+            qdrant_client = None
 
         # Initialize KV Store
         kv_store = KVStore()
