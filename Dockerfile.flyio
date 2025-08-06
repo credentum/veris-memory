@@ -142,10 +142,11 @@ RUN mkdir -p /var/lib/neo4j/conf /etc/neo4j \
     && echo "server.directories.logs=/app/data/logs" >> /var/lib/neo4j/conf/neo4j.conf \
     && cp /var/lib/neo4j/conf/neo4j.conf /etc/neo4j/neo4j.conf
 
-# Set permissions for neo4j user (user already exists from package installation)
-# Note: Only set permissions on directories that exist and are writable
-RUN chown -R neo4j:neo4j /var/lib/neo4j/conf /var/lib/neo4j/logs 2>/dev/null || true \
-    && chmod -R 755 /var/lib/neo4j/conf /var/lib/neo4j/logs 2>/dev/null || true
+# Set permissions for app user to access Neo4j directories
+# Create app user first to get proper UID, then set permissions
+RUN adduser --uid 1001 --disabled-password app \
+    && chown -R 1001:1001 /var/lib/neo4j 2>/dev/null || true \
+    && chmod -R 755 /var/lib/neo4j 2>/dev/null || true
 
 # Expose ports
 EXPOSE 8000 6333 6334 7474 7687 6379
@@ -158,9 +159,8 @@ ENV REDIS_URL=redis://localhost:6379
 ENV MCP_SERVER_PORT=8000
 ENV LOG_LEVEL=info
 
-# Create non-root user for security
-RUN adduser --uid 1001 --disabled-password app \
-    && chown -R app:app /app \
+# Set ownership of app directories for the already-created app user
+RUN chown -R app:app /app \
     && chown -R app:app /app/config
 
 # Health check
