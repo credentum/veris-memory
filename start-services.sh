@@ -22,7 +22,8 @@ cleanup_on_error() {
     fi
 }
 
-echo "Starting Veris Memory services with comprehensive error handling..."
+echo "◎ Veris Memory  | memory with covenant"
+echo "Starting services with comprehensive error handling..."
 
 # Validate critical environment variables
 validate_environment() {

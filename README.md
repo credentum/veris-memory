@@ -2,7 +2,7 @@
 
 [![Version](https://img.shields.io/badge/version-v0.9.0-blue.svg)](version)
 [![Protocol](https://img.shields.io/badge/MCP-1.0-green.svg)](protocol)
-[![Agent](https://img.shields.io/badge/agent--first-schema-purple.svg)](agent)
+[![Agent](https://img.shields.io/badge/agent_first_schema-purple.svg)](agent)
 
 > **memory with covenant**  
 > Truthful memory for agents. For those who remember.
@@ -259,6 +259,52 @@ GET /health
 ```
 
 Returns service status and dependency health.
+
+### System Status
+
+```bash
+GET /status
+```
+
+Returns comprehensive system information for agent orchestration:
+
+```json
+{
+  "label": "◎ Veris Memory",
+  "version": "0.9.0",
+  "protocol": "MCP-1.0",
+  "tools": ["store_context", "retrieve_context", "query_graph", "update_scratchpad", "get_agent_state"],
+  "dependencies": {
+    "qdrant": "healthy",
+    "neo4j": "healthy", 
+    "redis": "healthy"
+  }
+}
+```
+
+### Agent Readiness
+
+```bash
+POST /tools/verify_readiness
+```
+
+Provides diagnostic information for agents to verify system readiness:
+
+```json
+{
+  "ready": true,
+  "readiness_score": 100,
+  "tools_available": 5,
+  "schema_version": "0.9.0",
+  "indexes": {
+    "vector_count": 1250,
+    "graph_nodes": 340
+  },
+  "usage_quotas": {
+    "vector_operations": "unlimited"
+  }
+}
+```
 
 ### MCP Protocol
 

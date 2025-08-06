@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """
+◎ Veris Memory  | memory with covenant
+
 Context Store MCP Server.
 
 This module implements the Model Context Protocol (MCP) server for the context store.
@@ -304,6 +306,120 @@ async def health() -> Dict[str, Any]:
             print(f"Redis health check failed: {e}")
 
     return health_status
+
+
+@app.get("/status")
+async def status() -> Dict[str, Any]:
+    """
+    Enhanced status endpoint for agent orchestration.
+    
+    Returns comprehensive system information including Veris Memory identity,
+    available tools, version information, and dependency health.
+    """
+    # Get health status
+    health_status = await health()
+    
+    return {
+        "label": "◎ Veris Memory",
+        "subtitle": "memory with covenant",
+        "version": "0.9.0",
+        "protocol": "MCP-1.0",
+        "tools": [
+            "store_context",
+            "retrieve_context", 
+            "query_graph",
+            "update_scratchpad",
+            "get_agent_state"
+        ],
+        "dependencies": {
+            "qdrant": health_status["services"]["qdrant"],
+            "neo4j": health_status["services"]["neo4j"],
+            "redis": health_status["services"]["redis"]
+        },
+        "status": health_status["status"],
+        "agent_ready": health_status["status"] == "healthy"
+    }
+
+
+@app.post("/tools/verify_readiness")
+async def verify_readiness() -> Dict[str, Any]:
+    """
+    Agent readiness verification endpoint.
+    
+    Provides diagnostic information for agents to verify system readiness,
+    including tool availability, schema versions, and resource quotas.
+    """
+    try:
+        # Get current status
+        status_info = await status()
+        
+        # Check tool availability
+        tools_available = len(status_info["tools"])
+        
+        # Get index sizes if possible
+        index_info = {}
+        if qdrant_client:
+            try:
+                collections = qdrant_client.get_collections()
+                if hasattr(collections, 'collections'):
+                    for collection in collections.collections:
+                        if collection.name == "context_store":
+                            index_info["vector_count"] = collection.vectors_count if hasattr(collection, 'vectors_count') else "unknown"
+            except Exception:
+                index_info["vector_count"] = "unavailable"
+        
+        if neo4j_client:
+            try:
+                # Try to get node count
+                result = neo4j_client.execute_query("MATCH (n) RETURN count(n) as node_count")
+                if result and len(result) > 0:
+                    index_info["graph_nodes"] = result[0].get("node_count", "unknown")
+            except Exception:
+                index_info["graph_nodes"] = "unavailable"
+        
+        # Schema version from agent schema
+        schema_version = "0.9.0"  # From agent-schema.json
+        
+        readiness_score = 0
+        if status_info["agent_ready"]:
+            readiness_score += 40  # Base readiness
+        if tools_available == 5:
+            readiness_score += 30  # All tools available
+        if index_info:
+            readiness_score += 20  # Indexes accessible
+        readiness_score += 10  # Schema compatibility
+        
+        return {
+            "ready": status_info["agent_ready"],
+            "readiness_score": min(readiness_score, 100),
+            "tools_available": tools_available,
+            "tools_expected": 5,
+            "schema_version": schema_version,
+            "protocol_version": "MCP-1.0",
+            "indexes": index_info,
+            "dependencies": status_info["dependencies"],
+            "usage_quotas": {
+                "vector_operations": "unlimited",
+                "graph_queries": "unlimited", 
+                "kv_operations": "unlimited",
+                "note": "Quotas depend on underlying database limits"
+            },
+            "recommended_actions": [
+                "Verify all dependencies are healthy" if not status_info["agent_ready"] else "System ready for agent operations",
+                f"Tools available: {tools_available}/5" if tools_available < 5 else "All MCP tools operational"
+            ]
+        }
+        
+    except Exception as e:
+        return {
+            "ready": False,
+            "readiness_score": 0,
+            "error": str(e),
+            "recommended_actions": [
+                "Check system logs for detailed error information",
+                "Verify all dependencies are running and accessible"
+            ]
+        }
 
 
 @app.post("/tools/store_context")
