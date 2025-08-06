@@ -134,9 +134,8 @@ RUN mkdir -p /var/lib/neo4j/conf /etc/neo4j \
     && echo "server.directories.logs=/app/logs" >> /var/lib/neo4j/conf/neo4j.conf \
     && cp /var/lib/neo4j/conf/neo4j.conf /etc/neo4j/neo4j.conf
 
-# Create neo4j user and set permissions
-RUN if ! id "neo4j" &>/dev/null; then useradd -r -s /bin/false neo4j; fi \
-    && chown -R neo4j:neo4j /var/lib/neo4j /app/data/neo4j /app/logs \
+# Set permissions for neo4j user (user already exists from package installation)
+RUN chown -R neo4j:neo4j /var/lib/neo4j /app/data/neo4j /app/logs \
     && chmod -R 755 /var/lib/neo4j /app/data/neo4j
 
 # Expose ports
