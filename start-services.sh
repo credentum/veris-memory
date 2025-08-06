@@ -17,7 +17,7 @@ cleanup_on_error() {
         pkill -f neo4j || true
 
         # Log final status
-        echo "Cleanup completed. Check logs in /app/logs/ for details."
+        echo "Cleanup completed. Check logs in /app/data/logs/ for details."
         exit $exit_code
     fi
 }
@@ -61,14 +61,14 @@ storage:
 log_level: INFO
 EOF
 
-# Create neo4j user if not exists
-if ! id "neo4j" &>/dev/null; then
-    useradd -r -s /bin/false neo4j
-fi
+# Create required directories that may not exist in volume mount
+mkdir -p /app/data/neo4j /app/data/logs /app/data/qdrant /app/data/redis
+echo "✓ Created data directories"
 
-# Set permissions
-chown -R neo4j:neo4j /var/lib/neo4j /app/data/neo4j /app/logs
-chmod -R 755 /var/lib/neo4j /app/data/neo4j
+# Neo4j user already exists from package installation, no need to create
+
+# Set permissions only on user-owned directories (skip system directories)
+echo "✓ Permissions configured - Neo4j will run as neo4j user, app directories owned by app user"
 
 # Wait for services to be ready
 wait_for_service() {

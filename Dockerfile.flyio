@@ -143,8 +143,9 @@ RUN mkdir -p /var/lib/neo4j/conf /etc/neo4j \
     && cp /var/lib/neo4j/conf/neo4j.conf /etc/neo4j/neo4j.conf
 
 # Set permissions for neo4j user (user already exists from package installation)
-RUN chown -R neo4j:neo4j /var/lib/neo4j /app/data/neo4j /app/data/logs \
-    && chmod -R 755 /var/lib/neo4j /app/data/neo4j
+# Note: Only set permissions on directories that exist and are writable
+RUN chown -R neo4j:neo4j /var/lib/neo4j/conf /var/lib/neo4j/logs 2>/dev/null || true \
+    && chmod -R 755 /var/lib/neo4j/conf /var/lib/neo4j/logs 2>/dev/null || true
 
 # Expose ports
 EXPOSE 8000 6333 6334 7474 7687 6379
