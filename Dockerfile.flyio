@@ -67,8 +67,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Python runtime (minimal)
     python3.11 \
     python3.11-venv \
-    # Java for Neo4j (minimal JRE)
-    openjdk-11-jre-headless \
+    # Java for Neo4j (JRE 21 required for latest Neo4j)
+    openjdk-21-jre-headless \
     # Essential utilities only
     curl \
     supervisor \
