@@ -1,0 +1,153 @@
+---
+schema_version: "1.0"
+# MCP Response Schema
+# Defines standard response format for all MCP tools
+
+type: object
+title: MCP Tool Response
+description: Standard response schema for MCP tool operations
+
+properties:
+  success:
+    type: boolean
+    description: Whether the operation completed successfully
+
+  data:
+    description: Response data (varies by tool)
+    oneOf:
+      - type: object
+      - type: array
+      - type: string
+      - type: number
+      - type: boolean
+      - type: "null"
+
+  message:
+    type: string
+    description: Human-readable status message or error description
+    maxLength: 1000
+
+  error:
+    type: object
+    description: Error details (present when success=false)
+    properties:
+      code:
+        type: string
+        description: Error code for programmatic handling
+        enum:
+          - VALIDATION_ERROR
+          - RATE_LIMIT_EXCEEDED
+          - STORAGE_ERROR
+          - QUERY_ERROR
+          - PERMISSION_DENIED
+          - RESOURCE_NOT_FOUND
+          - INTERNAL_ERROR
+
+      message:
+        type: string
+        description: Detailed error message
+        maxLength: 1000
+
+      details:
+        type: object
+        description: Additional error context
+        additionalProperties: true
+
+      trace_id:
+        type: string
+        description: Trace ID for debugging
+        pattern: "^[a-f0-9]{32}$"
+
+    required: [code, message]
+    additionalProperties: false
+
+  metadata:
+    type: object
+    description: Operation metadata
+    properties:
+      request_id:
+        type: string
+        description: Unique request identifier
+        pattern: "^[a-f0-9]{32}$"
+
+      timestamp:
+        type: string
+        format: date-time
+        description: Response timestamp
+
+      execution_time_ms:
+        type: number
+        description: Execution time in milliseconds
+        minimum: 0
+
+      tool_name:
+        type: string
+        description: Name of the MCP tool that generated this response
+
+      tool_version:
+        type: string
+        description: Version of the MCP tool
+        pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+
+      rate_limit:
+        type: object
+        description: Rate limiting information
+        properties:
+          remaining:
+            type: integer
+            description: Remaining requests in current window
+            minimum: 0
+
+          reset_time:
+            type: string
+            format: date-time
+            description: When the rate limit window resets
+
+          limit:
+            type: integer
+            description: Total requests allowed in window
+            minimum: 1
+
+        additionalProperties: false
+
+    required: [request_id, timestamp, tool_name]
+    additionalProperties: false
+
+required: [success, message, metadata]
+additionalProperties: false
+
+examples:
+  # Successful response
+  - success: true
+    data:
+      context_id: "ctx-12345"
+      stored_at: "2024-01-15T10:30:00Z"
+    message: "Context stored successfully"
+    metadata:
+      request_id: "a1b2c3d4e5f6789012345678901234567"
+      timestamp: "2024-01-15T10:30:00.123Z"
+      execution_time_ms: 45.2
+      tool_name: "store_context"
+      tool_version: "1.0.0"
+      rate_limit:
+        remaining: 59
+        reset_time: "2024-01-15T10:31:00Z"
+        limit: 60
+
+  # Error response
+  - success: false
+    data: null
+    message: "Validation failed: required field 'content.title' is missing"
+    error:
+      code: "VALIDATION_ERROR"
+      message: "Input validation failed"
+      details:
+        field: "content.title"
+        constraint: "required"
+      trace_id: "e5f6789012345678901234567890abcd"
+    metadata:
+      request_id: "b2c3d4e5f67890123456789012345678"
+      timestamp: "2024-01-15T10:30:00.456Z"
+      execution_time_ms: 12.8
+      tool_name: "store_context"
+      tool_version: "1.0.0"

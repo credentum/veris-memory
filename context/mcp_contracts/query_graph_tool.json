@@ -1,0 +1,161 @@
+{
+  "schema_version": "1.0",
+  "name": "query_graph",
+  "version": "1.0.0",
+  "description": "Query the context graph using Cypher-like syntax for relationship exploration",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Graph query in simplified Cypher syntax",
+        "minLength": 1,
+        "maxLength": 2000
+      },
+      "parameters": {
+        "type": "object",
+        "description": "Parameters for the query",
+        "additionalProperties": true
+      },
+      "max_depth": {
+        "type": "integer",
+        "description": "Maximum traversal depth for relationships",
+        "minimum": 1,
+        "maximum": 5,
+        "default": 3
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Maximum number of nodes to return",
+        "minimum": 1,
+        "maximum": 200,
+        "default": 50
+      },
+      "include_content": {
+        "type": "boolean",
+        "description": "Whether to include full content in results",
+        "default": true
+      }
+    },
+    "required": ["query"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation succeeded"
+      },
+      "nodes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Node identifier"
+            },
+            "type": {
+              "type": "string",
+              "description": "Context type"
+            },
+            "properties": {
+              "type": "object",
+              "description": "Node properties and metadata"
+            },
+            "content": {
+              "type": "object",
+              "description": "Full content (if requested)"
+            }
+          },
+          "required": ["id", "type", "properties"]
+        }
+      },
+      "relationships": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "source_id": {
+              "type": "string",
+              "description": "Source node ID"
+            },
+            "target_id": {
+              "type": "string",
+              "description": "Target node ID"
+            },
+            "type": {
+              "type": "string",
+              "description": "Relationship type"
+            },
+            "properties": {
+              "type": "object",
+              "description": "Relationship properties"
+            }
+          },
+          "required": ["source_id", "target_id", "type"]
+        }
+      },
+      "query_info": {
+        "type": "object",
+        "properties": {
+          "execution_time_ms": {
+            "type": "number",
+            "description": "Query execution time in milliseconds"
+          },
+          "nodes_examined": {
+            "type": "integer",
+            "description": "Number of nodes examined during query"
+          },
+          "relationships_examined": {
+            "type": "integer",
+            "description": "Number of relationships examined"
+          },
+          "query_complexity": {
+            "type": "integer",
+            "description": "Estimated query complexity score"
+          }
+        }
+      },
+      "message": {
+        "type": "string",
+        "description": "Status message or error description"
+      }
+    },
+    "required": ["success", "nodes", "relationships", "message"]
+  },
+  "security": {
+    "rate_limits": {
+      "requests_per_minute": 30,
+      "burst_limit": 5
+    },
+    "validation": {
+      "query_max_length": 2000,
+      "max_traversal_depth": 5,
+      "max_results": 200,
+      "validate_cypher_syntax": true,
+      "disallow_write_operations": true
+    },
+    "allowed_operations": [
+      "MATCH",
+      "RETURN",
+      "WHERE",
+      "WITH",
+      "ORDER BY",
+      "LIMIT",
+      "SKIP",
+      "UNION",
+      "UNWIND"
+    ],
+    "forbidden_operations": [
+      "CREATE",
+      "DELETE",
+      "MERGE",
+      "SET",
+      "REMOVE",
+      "DROP",
+      "CALL",
+      "LOAD CSV"
+    ]
+  }
+}

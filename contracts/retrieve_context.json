@@ -1,0 +1,163 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0",
+  "name": "retrieve_context",
+  "description": "Retrieve context using hybrid search (vector similarity + graph traversal)",
+  "version": "1.0.0",
+  "inputSchema": {
+    "type": "object",
+    "required": ["query"],
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Search query for context retrieval"
+      },
+      "type": {
+        "type": "string",
+        "enum": ["design", "decision", "trace", "sprint", "log", "all"],
+        "default": "all",
+        "description": "Filter by context type"
+      },
+      "search_mode": {
+        "type": "string",
+        "enum": ["vector", "graph", "hybrid"],
+        "default": "hybrid",
+        "description": "Search mode to use"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 10,
+        "description": "Maximum number of results to return"
+      },
+      "filters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "description": "Filter contexts created after this date"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Filter contexts created before this date"
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by status field"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filter by tags"
+          }
+        }
+      },
+      "include_relationships": {
+        "type": "boolean",
+        "default": false,
+        "description": "Include graph relationships in results"
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["success", "results"],
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the retrieval was successful"
+      },
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id", "content", "score"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Context identifier"
+            },
+            "content": {
+              "type": "object",
+              "description": "The context content"
+            },
+            "score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Relevance score"
+            },
+            "type": {
+              "type": "string",
+              "description": "Context type"
+            },
+            "metadata": {
+              "type": "object",
+              "description": "Associated metadata"
+            },
+            "relationships": {
+              "type": "array",
+              "description": "Graph relationships if requested"
+            }
+          }
+        }
+      },
+      "total_count": {
+        "type": "integer",
+        "description": "Total number of matching results"
+      },
+      "search_mode_used": {
+        "type": "string",
+        "description": "The search mode that was used"
+      },
+      "message": {
+        "type": "string",
+        "description": "Additional information or error message"
+      }
+    }
+  },
+  "examples": [
+    {
+      "input": {
+        "query": "MCP server implementation",
+        "type": "design",
+        "search_mode": "hybrid",
+        "limit": 5,
+        "include_relationships": true
+      },
+      "output": {
+        "success": true,
+        "results": [
+          {
+            "id": "ctx_abc123",
+            "content": {
+              "id": "design-001",
+              "title": "MCP Server Architecture",
+              "description": "Design for Model Context Protocol server"
+            },
+            "score": 0.95,
+            "type": "design",
+            "metadata": {
+              "source": "sprint-5",
+              "tags": ["mcp", "architecture"]
+            },
+            "relationships": [
+              {
+                "type": "implements",
+                "target": "decision-001"
+              }
+            ]
+          }
+        ],
+        "total_count": 1,
+        "search_mode_used": "hybrid",
+        "message": "Found 1 matching context"
+      }
+    }
+  ]
+}

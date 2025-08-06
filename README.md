@@ -1,170 +1,298 @@
-# ◎ Veris Memory
+# Context Store
 
-**memory with covenant**
+A standalone MCP-based context storage service providing vector similarity search, graph traversal, and persistent storage for AI agent interactions.
 
-Truthful memory for agents. For those who remember.
+## Overview
 
----
+Context Store is extracted from the agent-context-template project to provide a clean, standalone service for context management. It implements the Model Context Protocol (MCP) to offer context operations as external tools.
 
-## For Agents
+## Features
 
-Veris Memory provides persistent, semantic memory storage through the **MCP 1.0 protocol**. Connect once, remember forever.
+- **Vector Storage**: Qdrant-based similarity search for semantic context retrieval
+- **Graph Storage**: Neo4j-based relationship traversal and context linking
+- **Key-Value Store**: Fast transient storage for agent state and scratchpad data
+- **MCP Protocol**: Standard protocol interface for AI agent integration
+- **Validation**: Comprehensive YAML schema validation for all context types
+- **Docker Ready**: One-command deployment with all dependencies
 
-### Quick Connect
+## Architecture
 
-```python
-# MCP Client Connection
-from mcp.client import MCPClient
+### System Overview
 
-client = MCPClient("http://localhost:8000/mcp")
-await client.connect()
 ```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   AI Agents     │    │  Applications   │    │   Claude CLI    │
+│                 │    │                 │    │                 │
+└─────────┬───────┘    └─────────┬───────┘    └─────────┬───────┘
+          │                      │                      │
+          │              MCP Protocol                   │
+          │                      │                      │
+          └──────────────────────┼──────────────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │   Context Store MCP     │
+                    │       Server           │
+                    │   (FastAPI + MCP SDK)  │
+                    └────────────┬────────────┘
+                                 │
+               ┌─────────────────┼─────────────────┐
+               │                 │                 │
+    ┌──────────▼──────────┐ ┌────▼──────┐ ┌──────▼────────┐
+    │     Qdrant          │ │   Neo4j   │ │    Redis      │
+    │  Vector Database    │ │   Graph   │ │  Key-Value    │
+    │  (Embeddings)       │ │ Database  │ │    Store      │
+    └─────────────────────┘ └───────────┘ └───────────────┘
+```
+
+### MCP Tools
+
+| Tool                | Vector | Graph | KV Store | Purpose                               |
+| ------------------- | ------ | ----- | -------- | ------------------------------------- |
+| `store_context`     | ✅     | ✅    | ➖       | Store with embeddings + relationships |
+| `retrieve_context`  | ✅     | ✅    | ➖       | Hybrid semantic + graph search        |
+| `query_graph`       | ➖     | ✅    | ➖       | Advanced Cypher queries               |
+| `update_scratchpad` | ➖     | ➖    | ✅       | Transient agent memory                |
+| `get_agent_state`   | ➖     | ➖    | ✅       | Agent state retrieval                 |
+
+### Directory Structure
+
+```
+context-store/
+├── src/
+│   ├── storage/          # Database clients and operations
+│   ├── validators/       # Schema validation and data integrity
+│   ├── mcp_server/       # MCP protocol server implementation
+│   └── core/            # Shared utilities and base classes
+├── schemas/             # YAML schemas for context validation
+├── contracts/           # MCP tool contracts and specifications
+├── docs/               # Documentation (quickstart, tools, errors)
+├── examples/           # Usage examples (Python, shell)
+├── tests/              # Test suite
+└── docker-compose.yml  # Docker deployment configuration
+```
+
+## Technology Stack
+
+This project is built entirely in **Python** for consistency and maintainability:
+
+- **Python 3.8+**: Core language for all components
+- **FastAPI**: High-performance async web framework for MCP server
+- **Pydantic**: Data validation and settings management
+- **pytest**: Testing framework
+
+## Quick Start
+
+### ⚡ One-Line Docker Deployment
 
 ```bash
-# Claude CLI Integration
-claude --mcp-server http://localhost:8000/mcp
+# Deploy and test in under 5 minutes
+git clone https://github.com/credentum/context-store.git && cd context-store && docker-compose up -d && sleep 30 && curl http://localhost:8000/health
 ```
 
-### Memory Operations
+### Using Docker (Recommended)
 
-#### Store Context
-```python
-await client.call_tool("store_context", {
-    "type": "decision",
-    "content": {"title": "API Design Choice", "decision": "REST over GraphQL", "reasoning": "Team familiarity"},
-    "metadata": {"priority": "high", "project": "auth-service"}
-})
-```
-
-#### Retrieve Context  
-```python
-results = await client.call_tool("retrieve_context", {
-    "query": "API design decisions",
-    "limit": 5,
-    "filters": {"project": "auth-service"}
-})
-```
-
-#### Query Relationships
-```python
-graph = await client.call_tool("query_graph", {
-    "node_id": "decision-123",
-    "depth": 2,
-    "relationship_types": ["depends_on", "conflicts_with"]
-})
-```
-
----
-
-## Protocol Specification
-
-**Protocol:** MCP-1.0  
-**Version:** 0.9.0-alpha  
-**Category:** memory_store  
-
-### Endpoints
-
-| Tool | Method | Path | Description |
-|------|--------|------|-------------|
-| `store_context` | POST | `/tools/store_context` | Store contextual memory with structured metadata and optional TTL |
-| `retrieve_context` | POST | `/tools/retrieve_context` | Retrieve relevant context using semantic similarity and filters |
-| `query_graph` | POST | `/tools/query_graph` | Traverse graph relationships between stored memory nodes |
-
-### Tool Contracts
-
-- **store_context_tool.json** - Context storage contract
-- **retrieve_context_tool.json** - Context retrieval contract  
-- **query_graph_tool.json** - Graph traversal contract
-
----
-
-## Installation & Deployment
-
-### Docker Deployment
 ```bash
-# Clone repository
-git clone https://github.com/credentum/veris-memory.git
-cd veris-memory
-
-# Start services
+# Clone and start all services
+git clone https://github.com/credentum/context-store.git
+cd context-store
 docker-compose up -d
 
-# Verify MCP endpoint
-curl http://localhost:8000/mcp/health
+# Verify services
+curl http://localhost:8000/health
 ```
 
-### Local Development
+### Manual Installation
+
 ```bash
-# Install dependencies
+# Python dependencies
 pip install -r requirements.txt
 
 # Start MCP server
-python -m src.mcp_server.main
-
-# Test connection
-python scripts/test_mcp_connection.py
+python -m uvicorn src.mcp_server.main:app --host 0.0.0.0 --port 8000
 ```
 
----
+## MCP Tools
 
-## Memory Types
+The context store provides these MCP tools:
 
-Veris Memory supports structured context storage across domains:
+- `store_context`: Store context data with vector embeddings and graph relationships
+- `retrieve_context`: Hybrid retrieval using vector similarity and graph traversal
+- `query_graph`: Direct Cypher queries for advanced graph operations
+- `update_scratchpad`: Transient key-value storage with TTL
+- `get_agent_state`: Retrieve persistent agent memory and state
 
-- **`decision`** - Architectural decisions, trade-offs, rationale
-- **`design`** - System designs, specifications, patterns
-- **`learning`** - Insights, failures, lessons learned  
-- **`task`** - Work items, progress, dependencies
-- **`knowledge`** - Documentation, references, expertise
+## Configuration
 
-Each type maintains semantic relationships and supports graph traversal.
+Configure via environment variables:
 
----
+```bash
+# Database connections
+QDRANT_URL=http://localhost:6333
+QDRANT_API_KEY=your_api_key
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_password
 
-## Truth Preservation
+# MCP server
+MCP_SERVER_PORT=8000
+MCP_LOG_LEVEL=info
 
-> *"Veris is memory that persists through change. For agents who carry weight. For those who remember what others forget."*
-
-### Covenant Principles
-
-1. **Fidelity** - Context is stored exactly as provided, without modification
-2. **Persistence** - Memory survives system restarts and deployments
-3. **Accessibility** - Semantic retrieval surfaces relevant context when needed
-4. **Relationships** - Graph connections preserve context relationships
-5. **Accountability** - Metadata tracks provenance and authority
-
-### Agent-Aligned Design
-
-- **Semantic Search** - Natural language queries find relevant memories
-- **Contextual Filtering** - Scope retrieval by project, type, or metadata
-- **Relationship Mapping** - Understand how decisions connect and conflict
-- **TTL Support** - Automatic cleanup for ephemeral context
-- **MCP Standard** - Universal protocol for agent memory integration
-
----
-
-## Symbol
-
-```
-◎ Veris Memory
+# Storage settings
+VECTOR_COLLECTION=context_embeddings
+GRAPH_DATABASE=context_graph
 ```
 
-**Memory core. Covenant of truth. Symbol of agent-aligned recall.**
+## Development
 
-The symbol represents:
-- **◎** - Complete memory, unbroken covenant
-- **Veris** - Latin for truth, accuracy, reality
-- **Memory** - Persistent context storage
-- **Covenant** - Binding commitment to preservation
+### Prerequisites
 
----
+- Python 3.8+
+- Node.js 18+
+- Docker and Docker Compose
+- Qdrant v1.14.x
+- Neo4j Community Edition
+
+### Setup
+
+```bash
+# Development environment
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements-dev.txt
+
+# Install pre-commit hooks
+pre-commit install
+
+# Start development services
+docker-compose -f docker-compose.dev.yml up -d
+```
+
+### Testing
+
+```bash
+# Run all tests
+pytest --cov=src --cov-report=html
+
+# Run integration tests
+pytest tests/integration/
+
+# Run MCP tool tests
+npm test
+```
+
+## Deployment
+
+### Local Development
+
+```bash
+docker-compose up -d
+```
+
+### Production
+
+```bash
+# Using production configuration
+docker-compose -f docker-compose.prod.yml up -d
+
+# Scale MCP servers
+docker-compose up --scale mcp-server=3
+```
+
+### Cloud Deployment
+
+See `docs/deployment/` for cloud-specific deployment guides:
+
+- AWS ECS/Fargate
+- Google Cloud Run
+- Azure Container Instances
+- Kubernetes
+
+## 📚 Documentation
+
+- **[Quick Start Guide](docs/QUICKSTART.md)** - Get running in under 5 minutes
+- **[MCP Tools Reference](docs/MCP_TOOLS.md)** - Complete API documentation for all 5 tools
+- **[Error Codes Reference](docs/ERROR_CODES.md)** - Comprehensive error handling guide
+- **[Migration Guide](docs/MIGRATION.md)** - Migrate from direct storage to MCP
+- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+
+## 🚀 Examples
+
+- **[Hello World (Python)](examples/hello_world.py)** - Complete example using all MCP tools
+- **[Hello World (Shell)](examples/hello_world.sh)** - Same example using curl commands
+- **[MCP Client Integration](docs/MCP_TOOLS.md#examples)** - Integration patterns for different languages
+
+## API Documentation
+
+### Health Check
+
+```bash
+GET /health
+```
+
+Returns service status and dependency health.
+
+### MCP Protocol
+
+The server implements the MCP specification. Connect using any MCP-compatible client:
+
+```typescript
+import { MCPClient } from '@modelcontextprotocol/client';
+
+const client = new MCPClient({
+  serverUrl: 'http://localhost:8000/mcp'
+});
+
+await client.connect();
+const result = await client.callTool('store_context', {
+  type: 'design',
+  content: { ... },
+  metadata: { ... }
+});
+```
+
+### 🛠️ MCP Tools Overview
+
+| Tool                | Purpose                                         | Documentation                                          |
+| ------------------- | ----------------------------------------------- | ------------------------------------------------------ |
+| `store_context`     | Store context with embeddings and relationships | [API Reference](docs/MCP_TOOLS.md#1-store_context)     |
+| `retrieve_context`  | Hybrid search across stored contexts            | [API Reference](docs/MCP_TOOLS.md#2-retrieve_context)  |
+| `query_graph`       | Execute read-only Cypher queries                | [API Reference](docs/MCP_TOOLS.md#3-query_graph)       |
+| `update_scratchpad` | Transient storage with TTL                      | [API Reference](docs/MCP_TOOLS.md#4-update_scratchpad) |
+| `get_agent_state`   | Retrieve agent state with isolation             | [API Reference](docs/MCP_TOOLS.md#5-get_agent_state)   |
+
+## Performance
+
+- **Response Time**: <50ms for typical MCP tool calls
+- **Throughput**: 1000+ concurrent connections supported
+- **Storage**: Scales with Qdrant and Neo4j limits
+- **Memory**: ~100MB base memory usage
+
+## Security
+
+- **Authentication**: API key authentication for database access
+- **Authorization**: Role-based access control for graph queries
+- **Input Validation**: Comprehensive schema validation
+- **Network**: TLS encryption for all external connections
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/new-feature`
+3. Make changes and add tests
+4. Run the test suite: `pytest`
+5. Submit a pull request
 
 ## License
 
-**MIT License** - Credentum
+MIT License - see [LICENSE](LICENSE) file for details.
 
-For agents who remember. For systems that endure. For truth that persists.
+## Support
 
----
+- **Documentation**: [docs/](docs/)
+- **Issues**: [GitHub Issues](https://github.com/credentum/context-store/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/credentum/context-store/discussions)
 
-*Version 0.9.0-alpha - Veris Memory*
+## Related Projects
+
+- [agent-context-template](https://github.com/credentum/agent-context-template) - Reference implementation using context-store
+- [MCP Specification](https://github.com/modelcontextprotocol/specification) - Model Context Protocol documentationtrigger CI

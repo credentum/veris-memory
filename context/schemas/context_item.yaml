@@ -1,0 +1,215 @@
+---
+schema_version: "1.0"
+# Context Item Schema
+# Defines the structure for all context items stored in the system
+
+type: object
+title: Context Item
+description: Schema for contextual information items with metadata and relationships
+
+properties:
+  id:
+    type: string
+    description: Unique identifier for the context item
+    pattern: "^[a-zA-Z0-9_-]+$"
+
+  type:
+    type: string
+    description: Type classification of the context
+    enum:
+      - code
+      - design
+      - decision
+      - issue
+      - requirement
+      - documentation
+      - test
+      - deployment
+      - architecture
+      - api
+
+  content:
+    type: object
+    description: Main content of the context item
+    properties:
+      title:
+        type: string
+        description: Brief title or summary
+        minLength: 1
+        maxLength: 200
+
+      description:
+        type: string
+        description: Detailed description or content
+        minLength: 1
+        maxLength: 10000
+
+      data:
+        type: object
+        description: Additional structured data specific to context type
+        additionalProperties: true
+
+      format:
+        type: string
+        description: Content format
+        enum: [text, markdown, json, yaml, code]
+        default: text
+
+    required: [title, description]
+
+  metadata:
+    type: object
+    description: Metadata for organization and filtering
+    properties:
+      tags:
+        type: array
+        items:
+          type: string
+          pattern: "^[a-zA-Z0-9_-]+$"
+        description: Tags for categorization
+        maxItems: 20
+
+      priority:
+        type: string
+        enum: [low, medium, high, critical]
+        description: Priority level
+        default: medium
+
+      author:
+        type: string
+        description: Author or creator
+        maxLength: 100
+
+      project:
+        type: string
+        description: Project or component name
+        maxLength: 100
+
+      version:
+        type: string
+        description: Version information
+        pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+
+      status:
+        type: string
+        enum: [draft, active, deprecated, archived]
+        description: Current status
+        default: active
+
+      visibility:
+        type: string
+        enum: [public, private, internal]
+        description: Visibility level
+        default: internal
+
+    additionalProperties: false
+
+  relationships:
+    type: array
+    description: Relationships to other context items
+    items:
+      type: object
+      properties:
+        target_id:
+          type: string
+          description: ID of the related context item
+          pattern: "^[a-zA-Z0-9_-]+$"
+
+        relationship_type:
+          type: string
+          enum:
+            - depends_on
+            - blocks
+            - relates_to
+            - implements
+            - references
+            - supersedes
+            - part_of
+            - uses
+            - extends
+          description: Type of relationship
+
+        strength:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Relationship strength (0-1)
+          default: 0.5
+
+        description:
+          type: string
+          description: Optional description of the relationship
+          maxLength: 500
+
+      required: [target_id, relationship_type]
+      additionalProperties: false
+    maxItems: 50
+
+  timestamps:
+    type: object
+    description: Timestamp information
+    properties:
+      created_at:
+        type: string
+        format: date-time
+        description: Creation timestamp
+
+      updated_at:
+        type: string
+        format: date-time
+        description: Last update timestamp
+
+      accessed_at:
+        type: string
+        format: date-time
+        description: Last access timestamp
+
+    required: [created_at, updated_at]
+    additionalProperties: false
+
+  storage:
+    type: object
+    description: Internal storage metadata
+    properties:
+      vector_id:
+        type: string
+        description: Vector database identifier
+
+      graph_id:
+        type: string
+        description: Graph database identifier
+
+      cache_key:
+        type: string
+        description: Cache key for quick access
+
+      checksum:
+        type: string
+        description: Content checksum for integrity
+        pattern: "^[a-f0-9]{64}$"
+
+    additionalProperties: false
+
+required: [id, type, content, timestamps]
+additionalProperties: false
+
+examples:
+  - id: "req-001"
+    type: "requirement"
+    content:
+      title: "User Authentication System"
+      description: "The system must provide secure user authentication with multi-factor support"
+      format: "markdown"
+    metadata:
+      tags: ["authentication", "security", "user-management"]
+      priority: "high"
+      author: "product-team"
+      project: "core-platform"
+      status: "active"
+    relationships:
+      - target_id: "arch-002"
+        relationship_type: "implements"
+        strength: 0.9
+    timestamps:
+      created_at: "2024-01-15T10:30:00Z"
+      updated_at: "2024-01-20T14:45:00Z"

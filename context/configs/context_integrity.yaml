@@ -1,0 +1,148 @@
+---
+schema_version: "1.0"
+# Context Integrity Configuration
+# Defines rules and constraints for maintaining context data integrity
+
+version: "1.0.0"
+description: "Configuration for context data integrity validation and enforcement"
+
+validation_rules:
+  content:
+    max_size_bytes: 1048576 # 1MB per context item
+    min_title_length: 3
+    max_title_length: 200
+    max_description_length: 10000
+    allowed_formats: [text, markdown, json, yaml, code]
+    required_fields: [title, description]
+
+  metadata:
+    max_tags: 20
+    tag_pattern: "^[a-zA-Z0-9_-]+$"
+    max_tag_length: 50
+    allowed_priorities: [low, medium, high, critical]
+    allowed_statuses: [draft, active, deprecated, archived]
+    allowed_visibility: [public, private, internal]
+    max_author_length: 100
+    max_project_length: 100
+
+  relationships:
+    max_relationships_per_item: 50
+    allowed_types:
+      - depends_on
+      - blocks
+      - relates_to
+      - implements
+      - references
+      - supersedes
+      - part_of
+      - uses
+      - extends
+    strength_range: [0.0, 1.0]
+    prevent_circular_dependencies: true
+    max_relationship_depth: 10
+
+integrity_checks:
+  referential_integrity:
+    enabled: true
+    check_relationship_targets: true
+    auto_cleanup_broken_refs: false
+    warn_on_missing_targets: true
+
+  content_validation:
+    enabled: true
+    sanitize_html: true
+    validate_json_format: true
+    check_encoding: "utf-8"
+
+  duplicate_detection:
+    enabled: true
+    check_title_similarity: true
+    similarity_threshold: 0.95
+    check_content_hash: true
+
+  version_control:
+    enabled: true
+    track_changes: true
+    max_history_versions: 10
+    compress_old_versions: true
+
+storage_integrity:
+  checksums:
+    enabled: true
+    algorithm: "sha256"
+    verify_on_read: true
+    update_on_write: true
+
+  replication:
+    enabled: false
+    min_replicas: 2
+    consistency_level: "eventual"
+
+  backup:
+    enabled: true
+    frequency: "daily"
+    retention_days: 30
+    compress_backups: true
+
+performance_limits:
+  query_timeout_seconds: 30
+  max_concurrent_operations: 100
+  rate_limits:
+    per_user_per_minute: 60
+    per_user_per_hour: 1000
+    global_per_second: 10
+
+  cache_settings:
+    ttl_seconds: 3600
+    max_cache_size_mb: 100
+    eviction_policy: "lru"
+
+monitoring:
+  metrics:
+    enabled: true
+    collect_performance: true
+    collect_usage: true
+    collect_errors: true
+
+  alerts:
+    integrity_violations: true
+    performance_degradation: true
+    storage_errors: true
+    rate_limit_exceeded: true
+
+  logging:
+    level: "info"
+    include_request_ids: true
+    include_performance_metrics: true
+    retention_days: 90
+
+security:
+  content_sanitization:
+    enabled: true
+    remove_scripts: true
+    validate_urls: true
+    max_url_length: 2048
+
+  access_control:
+    enabled: true
+    default_visibility: "internal"
+    require_authentication: true
+
+  encryption:
+    at_rest: false
+    in_transit: true
+    key_rotation_days: 90
+
+cleanup_policies:
+  orphaned_relationships:
+    auto_remove: true
+    grace_period_days: 7
+
+  deprecated_items:
+    auto_archive_days: 365
+    auto_delete_days: 1095 # 3 years
+
+  unused_items:
+    track_access: true
+    archive_after_days: 180
+    delete_after_days: 365
