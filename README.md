@@ -1,19 +1,37 @@
-# Context Store
+# ◎ Veris Memory
 
-A standalone MCP-based context storage service providing vector similarity search, graph traversal, and persistent storage for AI agent interactions.
+[![Version](https://img.shields.io/badge/version-v0.9.0-blue.svg)](version)
+[![Protocol](https://img.shields.io/badge/MCP-1.0-green.svg)](protocol)
+[![Agent](https://img.shields.io/badge/agent--first-schema-purple.svg)](agent)
 
-## Overview
+> **memory with covenant**  
+> Truthful memory for agents. For those who remember.
 
-Context Store is extracted from the agent-context-template project to provide a clean, standalone service for context management. It implements the Model Context Protocol (MCP) to offer context operations as external tools.
+Veris is memory that persists through change. For agents who carry weight. For those who remember what others forget.
 
-## Features
+## Agent-First Schema
 
-- **Vector Storage**: Qdrant-based similarity search for semantic context retrieval
-- **Graph Storage**: Neo4j-based relationship traversal and context linking
-- **Key-Value Store**: Fast transient storage for agent state and scratchpad data
-- **MCP Protocol**: Standard protocol interface for AI agent integration
-- **Validation**: Comprehensive YAML schema validation for all context types
-- **Docker Ready**: One-command deployment with all dependencies
+Veris Memory implements the **Agent-First Schema Protocol** - a structured approach to memory management designed specifically for AI agents:
+
+```json
+{
+  "name": "veris_memory",
+  "label": "◎ Veris Memory", 
+  "subtitle": "memory with covenant",
+  "type": "tool",
+  "category": "memory_store",
+  "tags": ["memory", "semantic", "agent-aligned", "truth-preserving", "long-term", "context"]
+}
+```
+
+## Core Capabilities
+
+- **🎯 Semantic Retrieval**: Vector similarity search using Qdrant
+- **🕸️ Graph Traversal**: Complex relationship queries via Neo4j  
+- **⚡ Fast Lookup**: Key-value storage with Redis
+- **🤝 MCP Protocol**: Full Model Context Protocol v1.0 implementation
+- **🛡️ Schema Validation**: Comprehensive YAML validation
+- **🚀 Deploy Ready**: Docker + Fly.io deployment
 
 ## Architecture
 
@@ -44,7 +62,18 @@ Context Store is extracted from the agent-context-template project to provide a 
     └─────────────────────┘ └───────────┘ └───────────────┘
 ```
 
-### MCP Tools
+## MCP Tools
+
+**Core Memory Operations:**
+1. `store_context` - Store structured context with covenant metadata
+2. `retrieve_context` - Semantic similarity search with agent filters
+3. `query_graph` - Traverse memory relationships and connections
+
+**Agent State Management:**
+4. `update_scratchpad` - Manage agent working memory  
+5. `get_agent_state` - Retrieve current agent state
+
+### Tool Coverage
 
 | Tool                | Vector | Graph | KV Store | Purpose                               |
 | ------------------- | ------ | ----- | -------- | ------------------------------------- |
@@ -71,14 +100,14 @@ context-store/
 └── docker-compose.yml  # Docker deployment configuration
 ```
 
-## Technology Stack
+## Architecture
 
-This project is built entirely in **Python** for consistency and maintainability:
-
-- **Python 3.8+**: Core language for all components
-- **FastAPI**: High-performance async web framework for MCP server
-- **Pydantic**: Data validation and settings management
-- **pytest**: Testing framework
+Built for agents, by agents:
+- **Python 3.8+** with FastAPI core
+- **Qdrant** for semantic embeddings
+- **Neo4j** for memory graphs  
+- **Redis** for fast recall
+- **Pydantic** for data integrity
 
 ## Quick Start
 
@@ -86,15 +115,15 @@ This project is built entirely in **Python** for consistency and maintainability
 
 ```bash
 # Deploy and test in under 5 minutes
-git clone https://github.com/credentum/context-store.git && cd context-store && docker-compose up -d && sleep 30 && curl http://localhost:8000/health
+git clone https://github.com/credentum/veris-memory.git && cd veris-memory && docker-compose up -d && sleep 30 && curl http://localhost:8000/health
 ```
 
 ### Using Docker (Recommended)
 
 ```bash
 # Clone and start all services
-git clone https://github.com/credentum/context-store.git
-cd context-store
+git clone https://github.com/credentum/veris-memory.git
+cd veris-memory
 docker-compose up -d
 
 # Verify services
