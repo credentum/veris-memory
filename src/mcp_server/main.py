@@ -57,10 +57,12 @@ except ImportError as e:
     from ..storage.neo4j_client import Neo4jInitializer as Neo4jClient
 
 try:
-    from ..storage.qdrant_client import VectorDBInitializer as QdrantClient
+    from ..storage.qdrant_client import VectorDBInitializer
+    from qdrant_client import QdrantClient as QdrantClientLib
 except ImportError as e:
-    logger.warning(f"Failed to import QdrantClient: {e}")
-    from ..storage.qdrant_client import VectorDBInitializer as QdrantClient
+    logger.warning(f"Failed to import Qdrant components: {e}")
+    from ..storage.qdrant_client import VectorDBInitializer
+    QdrantClientLib = None
 from ..validators.config_validator import validate_all_configs
 
 # Global embedding model instance
@@ -158,18 +160,27 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
                 f"Failed to generate semantic embedding, falling back to hash-based: {e}"
             )
 
-    # Fallback to hash-based embedding (deprecated but functional)
-    logger.info(
-        "Using hash-based fallback embedding "
-        "(install sentence-transformers for semantic embeddings)"
+    # Critical error: Hash-based embeddings lack semantic meaning
+    # This breaks MCP protocol compatibility for semantic search
+    logger.error(
+        "EMBEDDING_FALLBACK_ERROR: Hash-based embeddings are semantically meaningless. "
+        "Install sentence-transformers for MCP protocol compliance."
     )
+    
+    # For MCP protocol compliance, we should fail rather than provide meaningless embeddings
+    if os.getenv('STRICT_EMBEDDINGS', 'false').lower() == 'true':
+        raise ValueError(
+            "Semantic embeddings unavailable and STRICT_EMBEDDINGS=true. "
+            "Install sentence-transformers package for proper MCP protocol support."
+        )
+    
+    # Legacy hash-based fallback (deprecated, breaks semantic search)
     import hashlib
-
     hash_obj = hashlib.sha256(text_to_embed.encode())
     hash_bytes = hash_obj.digest()
 
     # Use configurable embedding dimensions
-    embedding_dim = getattr(Config, "EMBEDDING_DIMENSIONS", 384)  # Default to MiniLM dimensions
+    embedding_dim = int(os.getenv('EMBEDDING_DIMENSIONS', '384'))  # Make configurable via env var
     embedding = []
 
     for i in range(embedding_dim):
@@ -187,14 +198,40 @@ app = FastAPI(
     debug=False,  # Disable debug mode for production security
 )
 
-# Global exception handler for production security
+# Global exception handler for production security with request tracking
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """Sanitize all unhandled exceptions for production security."""
-    logger.error(f"Unhandled exception on {request.url}: {exc}", exc_info=True)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Sanitize all unhandled exceptions for production security with structured logging."""
+    import uuid
+    import time
+    
+    # Generate request ID for tracking
+    request_id = str(uuid.uuid4())[:8]
+    timestamp = time.time()
+    
+    # Structured logging with context (but sanitized response)
+    logger.error(
+        "Unhandled exception in request",
+        extra={
+            "request_id": request_id,
+            "timestamp": timestamp,
+            "method": request.method,
+            "url": str(request.url),
+            "client_host": request.client.host if request.client else "unknown",
+            "exception_type": type(exc).__name__,
+            "exception_message": str(exc)
+        },
+        exc_info=True
+    )
+    
+    # Return sanitized error with request ID for debugging
     return JSONResponse(
         status_code=500,
-        content={"error": "internal"}
+        content={
+            "error": "internal",
+            "request_id": request_id,
+            "timestamp": timestamp
+        }
     )
 
 # Global storage clients
@@ -259,9 +296,13 @@ async def startup_event() -> None:
 
         # Initialize Qdrant (allow graceful degradation if unavailable)
         try:
-            qdrant_client = QdrantClient()
-            qdrant_client.connect()
-            print("✅ Qdrant connected successfully")
+            qdrant_initializer = VectorDBInitializer()
+            if qdrant_initializer.connect():
+                # Get the actual Qdrant client for operations
+                qdrant_client = qdrant_initializer.client
+                print("✅ Qdrant connected successfully")
+            else:
+                qdrant_client = None
         except Exception as qdrant_error:
             print(f"⚠️ Qdrant unavailable: {qdrant_error}")
             qdrant_client = None
@@ -607,16 +648,33 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
 
             query_hash = hashlib.sha256(request.query.encode()).digest()
             query_vector = []
-            for i in range(768):
+            embedding_dim = int(os.getenv('EMBEDDING_DIMENSIONS', '384'))  # Use configurable dimensions
+            for i in range(embedding_dim):
                 byte_idx = i % len(query_hash)
                 query_vector.append(float(query_hash[byte_idx]) / 255.0)
 
-            vector_results = qdrant_client.search(
-                collection="context_store",
-                query_vector=query_vector,
-                limit=request.limit,
-            )
-            results.extend(vector_results)
+            try:
+                # Get collection name from config (default: context_store)
+                collection_name = os.getenv('QDRANT_COLLECTION', 'context_store')
+                
+                vector_results = qdrant_client.search(
+                    collection_name=collection_name,
+                    query_vector=query_vector,
+                    limit=request.limit,
+                )
+                
+                # Convert results to proper format
+                for result in vector_results:
+                    results.append({
+                        "id": result.id,
+                        "content": result.payload,
+                        "score": result.score,
+                        "source": "vector"
+                    })
+                    
+            except Exception as e:
+                logger.warning(f"Vector search failed: {e}")
+                # Continue with other search modes
 
         if request.search_mode in ["graph", "hybrid"] and neo4j_client:
             # Perform graph search
