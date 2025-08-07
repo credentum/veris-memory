@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import yaml
+
 from validators.config_validator import (  # noqa: E402
     ConfigValidationError,
     ConfigValidator,

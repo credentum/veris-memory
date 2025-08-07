@@ -150,14 +150,16 @@ if command -v ufw &> /dev/null; then
     ufw default deny incoming
     ufw default allow outgoing
     ufw allow ssh
+    ufw allow 2222/tcp comment 'Claude CLI dev container'
     ufw --force enable
-    log "✅ UFW firewall configured (SSH-only access)"
+    log "✅ UFW firewall configured (SSH + dev container access)"
 else
     apt install -y ufw
     ufw --force reset
     ufw default deny incoming
     ufw default allow outgoing
     ufw allow ssh
+    ufw allow 2222/tcp comment 'Claude CLI dev container'
     ufw --force enable
     log "✅ UFW installed and configured"
 fi

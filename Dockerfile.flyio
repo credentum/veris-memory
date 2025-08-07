@@ -1,6 +1,5 @@
 # Multi-stage Dockerfile for Fly.io deployment
 # Stage 1: Build dependencies and download binaries
-# Using Ubuntu 22.04 with compatible Qdrant v1.10.1 (GLIBC 2.35 compatible)
 FROM ubuntu:22.04@sha256:965fbcae990b0467ed5657caceaec165018ef44a4d2d46c7cdea80a9dff0d1ea AS builder
 
 # Prevent interactive prompts during apt install
@@ -56,8 +55,8 @@ RUN QDRANT_URL="https://github.com/qdrant/qdrant/releases/download/v${QDRANT_VER
     && mv qdrant /usr/local/bin/ \
     && rm qdrant.tar.gz
 
-# Stage 2: Runtime image  
-# Using Ubuntu 22.04 with compatible Qdrant v1.10.1 (GLIBC 2.35 compatible)
+# Stage 2: Runtime image
+# Using Ubuntu 22.04 with compatible Qdrant v1.9.7 (GLIBC 2.35 compatible)
 FROM ubuntu:22.04@sha256:965fbcae990b0467ed5657caceaec165018ef44a4d2d46c7cdea80a9dff0d1ea AS runtime
 
 # Prevent interactive prompts during apt install
@@ -152,9 +151,8 @@ RUN adduser --uid 1001 --disabled-password app \
     && chown -R 1001:1001 /var/lib/neo4j 2>/dev/null || true \
     && chmod -R 755 /var/lib/neo4j 2>/dev/null || true
 
-# Expose ports - Primary service port first for Fly.io
-EXPOSE 8000
-EXPOSE 6333 6334 7474 7687 6379
+# Expose ports
+EXPOSE 8000 6333 6334 7474 7687 6379
 
 # Environment variables
 ENV QDRANT_URL=http://localhost:6333

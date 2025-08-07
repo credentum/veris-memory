@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import yaml
 from click.testing import CliRunner
+
 from validators.config_validator import (
     ConfigValidator,
     main,

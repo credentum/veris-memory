@@ -15,6 +15,7 @@ import os
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+
 from core.embedding_config import (  # noqa: E402
     EmbeddingConfig,
     EmbeddingGenerator,

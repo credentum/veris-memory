@@ -20,6 +20,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 import yaml
+
 from validators.config_validator import (
     ConfigValidationError,
     ConfigValidator,

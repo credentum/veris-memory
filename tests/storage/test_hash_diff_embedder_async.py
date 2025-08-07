@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import yaml
+
 from storage.hash_diff_embedder import EmbeddingTask  # noqa: E402
 
 

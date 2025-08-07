@@ -37,13 +37,13 @@ EOF
 
 install_trivy() {
     echo "Installing Trivy security scanner..."
-    
+
     if command -v trivy >/dev/null 2>&1; then
         echo "✓ Trivy is already installed"
         trivy --version
         return 0
     fi
-    
+
     # Detect OS
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         # Linux installation
@@ -66,7 +66,7 @@ install_trivy() {
         echo "Please install Trivy manually: https://aquasecurity.github.io/trivy/latest/getting-started/installation/"
         exit 1
     fi
-    
+
     echo "✓ Trivy installed successfully"
     trivy --version
 }
@@ -76,19 +76,19 @@ scan_base_images() {
     local format=${2:-table}
     local output_file=${3:-}
     local fail_on_vuln=${4:-false}
-    
+
     echo "Scanning Ubuntu base image for vulnerabilities..."
-    
+
     local trivy_cmd="trivy image --severity $severity --format $format"
-    
+
     if [ -n "$output_file" ]; then
         trivy_cmd="$trivy_cmd --output $output_file"
     fi
-    
+
     if [ "$fail_on_vuln" = "true" ]; then
         trivy_cmd="$trivy_cmd --exit-code 1"
     fi
-    
+
     echo "Running: $trivy_cmd ubuntu:22.04@sha256:965fbcae990b0467ed5657caceaec165018ef44a4d2d46c7cdea80a9dff0d1ea"
     $trivy_cmd ubuntu:22.04@sha256:965fbcae990b0467ed5657caceaec165018ef44a4d2d46c7cdea80a9dff0d1ea
 }
@@ -97,15 +97,15 @@ scan_dockerfile() {
     local severity=${1:-HIGH}
     local format=${2:-table}
     local output_file=${3:-}
-    
+
     echo "Scanning Dockerfile for security misconfigurations..."
-    
+
     local trivy_cmd="trivy config --severity $severity --format $format"
-    
+
     if [ -n "$output_file" ]; then
         trivy_cmd="$trivy_cmd --output $output_file"
     fi
-    
+
     echo "Running: $trivy_cmd $PROJECT_DIR/Dockerfile.flyio"
     $trivy_cmd "$PROJECT_DIR/Dockerfile.flyio"
 }
@@ -115,26 +115,26 @@ scan_built_image() {
     local format=${2:-table}
     local output_file=${3:-}
     local fail_on_vuln=${4:-false}
-    
+
     echo "Building and scanning complete Docker image..."
-    
+
     cd "$PROJECT_DIR"
-    
+
     # Build image
     echo "Building veris-memory-scan:latest..."
     docker build -t veris-memory-scan:latest -f Dockerfile.flyio .
-    
+
     # Scan image
     local trivy_cmd="trivy image --severity $severity --format $format"
-    
+
     if [ -n "$output_file" ]; then
         trivy_cmd="$trivy_cmd --output $output_file"
     fi
-    
+
     if [ "$fail_on_vuln" = "true" ]; then
         trivy_cmd="$trivy_cmd --exit-code 1"
     fi
-    
+
     echo "Running: $trivy_cmd veris-memory-scan:latest"
     $trivy_cmd veris-memory-scan:latest
 }
@@ -143,18 +143,18 @@ scan_dependencies() {
     local severity=${1:-HIGH}
     local format=${2:-table}
     local output_file=${3:-}
-    
+
     echo "Scanning Python dependencies for vulnerabilities..."
-    
+
     local trivy_cmd="trivy fs --severity $severity --format $format"
-    
+
     if [ -n "$output_file" ]; then
         trivy_cmd="$trivy_cmd --output $output_file"
     fi
-    
+
     echo "Running: $trivy_cmd $PROJECT_DIR/requirements.txt"
     $trivy_cmd "$PROJECT_DIR/requirements.txt"
-    
+
     echo "Scanning development dependencies..."
     echo "Running: $trivy_cmd $PROJECT_DIR/requirements-dev.txt"
     $trivy_cmd "$PROJECT_DIR/requirements-dev.txt"
@@ -165,33 +165,33 @@ full_scan() {
     local format=${2:-table}
     local output_file=${3:-}
     local fail_on_vuln=${4:-false}
-    
+
     echo "Running complete security audit..."
     echo "======================================"
-    
+
     # Create output directory if needed
     if [ -n "$output_file" ]; then
         mkdir -p "$(dirname "$output_file")"
     fi
-    
+
     # Base image scan
     echo -e "\n1. Scanning base Ubuntu image..."
     scan_base_images "$severity" "$format" "${output_file:+${output_file}.base-image}" "$fail_on_vuln"
-    
+
     # Dockerfile scan
     echo -e "\n2. Scanning Dockerfile configuration..."
     scan_dockerfile "$severity" "$format" "${output_file:+${output_file}.dockerfile}"
-    
+
     # Dependencies scan
     echo -e "\n3. Scanning Python dependencies..."
     scan_dependencies "$severity" "$format" "${output_file:+${output_file}.dependencies}"
-    
+
     # Built image scan
     echo -e "\n4. Building and scanning complete image..."
     scan_built_image "$severity" "$format" "${output_file:+${output_file}.full-image}" "$fail_on_vuln"
-    
+
     echo -e "\n✅ Complete security audit finished"
-    
+
     if [ -n "$output_file" ]; then
         echo "Reports saved to: ${output_file}.*"
     fi
@@ -211,7 +211,7 @@ main() {
     local format="table"
     local output_file=""
     local fail_on_vuln=false
-    
+
     while [[ $# -gt 0 ]]; do
         case $1 in
             install-trivy|scan-base-images|scan-dockerfile|scan-built-image|scan-dependencies|full-scan|help)
@@ -241,17 +241,17 @@ main() {
                 ;;
         esac
     done
-    
+
     if [ -z "$command" ]; then
         show_usage
         exit 1
     fi
-    
+
     # Check Trivy availability for commands that need it
     if [[ "$command" != "help" && "$command" != "install-trivy" ]]; then
         check_trivy
     fi
-    
+
     # Execute command
     case "$command" in
         install-trivy)

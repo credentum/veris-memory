@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import yaml
+
 from storage.neo4j_client import Neo4jInitializer  # noqa: E402
 
 

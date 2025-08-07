@@ -7,14 +7,16 @@ This document outlines the security measures and scanning tools available for th
 ### Overview
 
 We use [Trivy](https://trivy.dev/) for comprehensive vulnerability scanning of:
+
 - Base Docker images
-- Built application images  
+- Built application images
 - Python dependencies
 - Dockerfile configurations
 
 ### Automated Scanning
 
 CVE scanning runs automatically:
+
 - **On every push** to the repository (GitHub Actions)
 - **On pull requests** affecting the context-store directory
 - **Daily at 2 AM UTC** for continuous monitoring
@@ -63,7 +65,7 @@ docker build \
 - Multi-stage builds to reduce attack surface
 - Non-root user execution where possible
 
-### 2. Secrets Management  
+### 2. Secrets Management
 
 - No hardcoded passwords in configuration files
 - Fly.io secrets integration for production deployment
@@ -170,6 +172,7 @@ trivy fs requirements.txt
 ## Reporting Security Issues
 
 For security vulnerabilities:
+
 1. **DO NOT** create public GitHub issues
 2. Email security concerns to the project maintainers
 3. Include detailed reproduction steps

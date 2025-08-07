@@ -427,10 +427,13 @@ _server_startup_time = time.time()
 
 
 async def _check_service_with_retries(
-    service_name: str, check_func, max_retries: Optional[int] = None, retry_delay: Optional[float] = None
+    service_name: str,
+    check_func,
+    max_retries: Optional[int] = None,
+    retry_delay: Optional[float] = None,
 ) -> Tuple[str, str]:
     """Check a service with retry logic and detailed error reporting.
-    
+
     Args:
         service_name: Name of the service being checked
         check_func: Function to call for health check
@@ -443,10 +446,14 @@ async def _check_service_with_retries(
     """
     # Use environment variables for configuration with defaults
     if max_retries is None:
-        max_retries = int(os.getenv("HEALTH_CHECK_MAX_RETRIES", str(HEALTH_CHECK_MAX_RETRIES_DEFAULT)))
+        max_retries = int(
+            os.getenv("HEALTH_CHECK_MAX_RETRIES", str(HEALTH_CHECK_MAX_RETRIES_DEFAULT))
+        )
     if retry_delay is None:
-        retry_delay = float(os.getenv("HEALTH_CHECK_RETRY_DELAY", str(HEALTH_CHECK_RETRY_DELAY_DEFAULT)))
-        
+        retry_delay = float(
+            os.getenv("HEALTH_CHECK_RETRY_DELAY", str(HEALTH_CHECK_RETRY_DELAY_DEFAULT))
+        )
+
     last_error = None
 
     for attempt in range(max_retries):
@@ -463,9 +470,7 @@ async def _check_service_with_retries(
         except TimeoutError as e:
             # Timeout errors
             last_error = f"Timeout error: {e}"
-            logger.warning(
-                f"{service_name} timeout on attempt {attempt + 1}/{max_retries}: {e}"
-            )
+            logger.warning(f"{service_name} timeout on attempt {attempt + 1}/{max_retries}: {e}")
         except ImportError as e:
             # Missing dependencies - don't retry these
             last_error = f"Missing dependency: {e}"
@@ -489,13 +494,15 @@ async def _check_service_with_retries(
 
 def _is_in_startup_grace_period(grace_period_seconds: int = None) -> bool:
     """Check if we're still in the startup grace period.
-    
+
     Args:
         grace_period_seconds: Grace period duration (default from env HEALTH_CHECK_GRACE_PERIOD)
     """
     if grace_period_seconds is None:
-        grace_period_seconds = int(os.getenv("HEALTH_CHECK_GRACE_PERIOD", str(HEALTH_CHECK_GRACE_PERIOD_DEFAULT)))
-    
+        grace_period_seconds = int(
+            os.getenv("HEALTH_CHECK_GRACE_PERIOD", str(HEALTH_CHECK_GRACE_PERIOD_DEFAULT))
+        )
+
     return (time.time() - _server_startup_time) < grace_period_seconds
 
 
@@ -623,12 +630,6 @@ async def status() -> Dict[str, Any]:
         "label": "◎ Veris Memory",
         "version": "0.9.0",
         "protocol": "MCP-1.0",
-        "agent_ready": health_status["status"] == "healthy",
-        "dependencies": {
-            "qdrant": "ok" if health_status["services"]["qdrant"] == "healthy" else "error",
-            "neo4j": "ok" if health_status["services"]["neo4j"] == "healthy" else "error",
-            "redis": "ok" if health_status["services"]["redis"] == "healthy" else "error",
-        },
         "deps": {
             "qdrant": "ok" if health_status["services"]["qdrant"] == "healthy" else "error",
             "neo4j": "ok" if health_status["services"]["neo4j"] == "healthy" else "error",

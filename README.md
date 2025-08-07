@@ -4,7 +4,7 @@
 [![Protocol](https://img.shields.io/badge/MCP-1.0-green.svg)](protocol)
 [![Agent](https://img.shields.io/badge/agent_first_schema-purple.svg)](agent)
 
-> **memory with covenant**  
+> **memory with covenant**
 > Truthful memory for agents. For those who remember.
 
 Veris is memory that persists through change. For agents who carry weight. For those who remember what others forget.
@@ -16,18 +16,25 @@ Veris Memory implements the **Agent-First Schema Protocol** - a structured appro
 ```json
 {
   "name": "veris_memory",
-  "label": "◎ Veris Memory", 
+  "label": "◎ Veris Memory",
   "subtitle": "memory with covenant",
   "type": "tool",
   "category": "memory_store",
-  "tags": ["memory", "semantic", "agent-aligned", "truth-preserving", "long-term", "context"]
+  "tags": [
+    "memory",
+    "semantic",
+    "agent-aligned",
+    "truth-preserving",
+    "long-term",
+    "context"
+  ]
 }
 ```
 
 ## Core Capabilities
 
 - **🎯 Semantic Retrieval**: Vector similarity search using Qdrant
-- **🕸️ Graph Traversal**: Complex relationship queries via Neo4j  
+- **🕸️ Graph Traversal**: Complex relationship queries via Neo4j
 - **⚡ Fast Lookup**: Key-value storage with Redis
 - **🤝 MCP Protocol**: Full Model Context Protocol v1.0 implementation
 - **🛡️ Schema Validation**: Comprehensive YAML validation
@@ -65,13 +72,12 @@ Veris Memory implements the **Agent-First Schema Protocol** - a structured appro
 ## MCP Tools
 
 **Core Memory Operations:**
+
 1. `store_context` - Store structured context with covenant metadata
 2. `retrieve_context` - Semantic similarity search with agent filters
 3. `query_graph` - Traverse memory relationships and connections
 
-**Agent State Management:**
-4. `update_scratchpad` - Manage agent working memory  
-5. `get_agent_state` - Retrieve current agent state
+**Agent State Management:** 4. `update_scratchpad` - Manage agent working memory 5. `get_agent_state` - Retrieve current agent state
 
 ### Tool Coverage
 
@@ -103,9 +109,10 @@ context-store/
 ## Architecture
 
 Built for agents, by agents:
+
 - **Python 3.8+** with FastAPI core
 - **Qdrant** for semantic embeddings
-- **Neo4j** for memory graphs  
+- **Neo4j** for memory graphs
 - **Redis** for fast recall
 - **Pydantic** for data integrity
 
@@ -273,10 +280,16 @@ Returns comprehensive system information for agent orchestration:
   "label": "◎ Veris Memory",
   "version": "0.9.0",
   "protocol": "MCP-1.0",
-  "tools": ["store_context", "retrieve_context", "query_graph", "update_scratchpad", "get_agent_state"],
+  "tools": [
+    "store_context",
+    "retrieve_context",
+    "query_graph",
+    "update_scratchpad",
+    "get_agent_state"
+  ],
   "dependencies": {
     "qdrant": "healthy",
-    "neo4j": "healthy", 
+    "neo4j": "healthy",
     "redis": "healthy"
   }
 }

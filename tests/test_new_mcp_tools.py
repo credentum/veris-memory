@@ -8,8 +8,8 @@ security validation, namespace isolation, and proper functionality.
 from unittest.mock import patch
 
 import pytest
-from core.agent_namespace import AgentNamespace, NamespaceError
 
+from core.agent_namespace import AgentNamespace, NamespaceError
 from src.security.cypher_validator import CypherValidator
 
 # Removed unused imports: asyncio, AsyncMock, Mock

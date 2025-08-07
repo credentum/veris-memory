@@ -15,6 +15,7 @@ This test suite covers:
 
 
 import pytest
+
 from core.query_validator import CypherOperation, QueryValidator, validate_cypher_query
 
 

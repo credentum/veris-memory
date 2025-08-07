@@ -34,7 +34,9 @@ from src.mcp_server.server import (
 class TestServerInitialization:
     """Test server initialization and startup."""
 
-    @pytest.mark.skip(reason="Complex mock setup requiring extensive debugging - skip for systematic test fixing")
+    @pytest.mark.skip(
+        reason="Complex mock setup requiring extensive debugging - skip for systematic test fixing"
+    )
     @pytest.mark.asyncio
     async def test_initialize_storage_clients_success(self):
         """Test successful storage client initialization."""
@@ -128,7 +130,9 @@ class TestServerInitialization:
             # Should handle missing credentials gracefully
             mock_validate.assert_called_once_with()
 
-    @pytest.mark.skip(reason="Complex mock setup requiring extensive debugging - skip for systematic test fixing")
+    @pytest.mark.skip(
+        reason="Complex mock setup requiring extensive debugging - skip for systematic test fixing"
+    )
     @pytest.mark.asyncio
     async def test_initialize_storage_clients_connection_failure(self):
         """Test initialization with connection failures."""

@@ -775,7 +775,9 @@ class TestListToolsEndpoint:
 
         with patch("src.mcp_server.main.Path") as mock_path:
             mock_path_instance = Mock()
-            mock_path_instance.parent.parent.parent.__truediv__ = Mock(return_value=mock_contracts_dir)
+            mock_path_instance.parent.parent.parent.__truediv__ = Mock(
+                return_value=mock_contracts_dir
+            )
             mock_path.return_value = mock_path_instance
             with patch("builtins.open", side_effect=mock_files):
                 result = await list_tools()
@@ -793,7 +795,9 @@ class TestListToolsEndpoint:
 
         with patch("src.mcp_server.main.Path") as mock_path:
             mock_path_instance = Mock()
-            mock_path_instance.parent.parent.parent.__truediv__ = Mock(return_value=mock_contracts_dir)
+            mock_path_instance.parent.parent.parent.__truediv__ = Mock(
+                return_value=mock_contracts_dir
+            )
             mock_path.return_value = mock_path_instance
             result = await list_tools()
 
@@ -809,7 +813,9 @@ class TestListToolsEndpoint:
 
         with patch("src.mcp_server.main.Path") as mock_path:
             mock_path_instance = Mock()
-            mock_path_instance.parent.parent.parent.__truediv__ = Mock(return_value=mock_contracts_dir)
+            mock_path_instance.parent.parent.parent.__truediv__ = Mock(
+                return_value=mock_contracts_dir
+            )
             mock_path.return_value = mock_path_instance
             result = await list_tools()
 
@@ -825,7 +831,9 @@ class TestListToolsEndpoint:
 
         with patch("src.mcp_server.main.Path") as mock_path:
             mock_path_instance = Mock()
-            mock_path_instance.parent.parent.parent.__truediv__ = Mock(return_value=mock_contracts_dir)
+            mock_path_instance.parent.parent.parent.__truediv__ = Mock(
+                return_value=mock_contracts_dir
+            )
             mock_path.return_value = mock_path_instance
             with patch("builtins.open", side_effect=FileNotFoundError()):
                 # Should handle the error gracefully
@@ -862,7 +870,9 @@ class TestIntegrationWithTestClient:
 
         with patch("src.mcp_server.main.Path") as mock_path:
             mock_path_instance = Mock()
-            mock_path_instance.parent.parent.parent.__truediv__ = Mock(return_value=mock_contracts_dir)
+            mock_path_instance.parent.parent.parent.__truediv__ = Mock(
+                return_value=mock_contracts_dir
+            )
             mock_path.return_value = mock_path_instance
             response = client.get("/tools")
 

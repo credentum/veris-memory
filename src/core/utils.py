@@ -159,18 +159,19 @@ def get_secure_connection_config(config: dict[str, Any], service: str) -> dict[s
     # Extract host and port from URI if provided (e.g., bolt://localhost:7687)
     host = service_config.get("host", "localhost")
     port = service_config.get("port")
-    
+
     # Parse URI if present (common for Neo4j configuration)
     uri = service_config.get("uri")
     if uri and not port:
         import re
+
         # Match protocol://host:port pattern
-        uri_match = re.match(r'^[a-z+]+://([^:/]+):?(\d+)?', uri)
+        uri_match = re.match(r"^[a-z+]+://([^:/]+):?(\d+)?", uri)
         if uri_match:
             host = uri_match.group(1)
             if uri_match.group(2):
                 port = int(uri_match.group(2))
-    
+
     # Set default ports if not specified
     if not port:
         if service == "neo4j":

@@ -146,11 +146,16 @@ class TestFlyioDeployment:
 
         # Check that no hardcoded passwords are present
         assert "changeme123" not in content, "Should not contain hardcoded passwords"
-        assert "password" not in content.lower() or "NEO4J_PASSWORD must be set as a Fly.io secret" in content, "Should use secrets management"
+        assert (
+            "password" not in content.lower()
+            or "NEO4J_PASSWORD must be set as a Fly.io secret" in content
+        ), "Should use secrets management"
 
         # Should have instructions for setting secrets
         if "NEO4J_PASSWORD" in content:
-            assert "flyctl secrets set" in content, "Should provide instructions for setting secrets"
+            assert (
+                "flyctl secrets set" in content
+            ), "Should provide instructions for setting secrets"
 
     def test_dockerfile_builds_successfully(self, dockerfile_path):
         """Test that Dockerfile.flyio builds without errors."""

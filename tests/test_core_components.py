@@ -7,6 +7,7 @@ Tests for config, rate_limiter, utils, and other core functionality.
 from unittest.mock import patch
 
 import pytest
+
 from core.config import Config
 from core.rate_limiter import get_rate_limiter
 

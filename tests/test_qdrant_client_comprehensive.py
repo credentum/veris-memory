@@ -16,6 +16,7 @@ from unittest.mock import Mock, mock_open, patch
 
 import pytest
 import yaml
+
 from core.config_error import ConfigParseError
 from storage.qdrant_client import VectorDBInitializer
 
@@ -681,6 +682,7 @@ class TestVectorDBInitializerCLI:
         mock_initializer.insert_test_point.return_value = True
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -700,6 +702,7 @@ class TestVectorDBInitializerCLI:
         mock_initializer.connect.return_value = False
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -717,6 +720,7 @@ class TestVectorDBInitializerCLI:
         mock_initializer.create_collection.return_value = False
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -734,6 +738,7 @@ class TestVectorDBInitializerCLI:
         mock_initializer.verify_setup.return_value = False
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -753,6 +758,7 @@ class TestVectorDBInitializerCLI:
         mock_initializer.insert_test_point.return_value = False
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -771,6 +777,7 @@ class TestVectorDBInitializerCLI:
         mock_initializer.insert_test_point.return_value = True
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -789,6 +796,7 @@ class TestVectorDBInitializerCLI:
         mock_initializer.verify_setup.return_value = True
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -807,6 +815,7 @@ class TestVectorDBInitializerCLI:
         mock_initializer.verify_setup.return_value = True
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()

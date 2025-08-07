@@ -17,6 +17,7 @@ from unittest.mock import Mock, patch
 import pytest
 import yaml
 from neo4j.exceptions import AuthError, ServiceUnavailable
+
 from storage.neo4j_client import Neo4jInitializer
 
 
@@ -530,6 +531,7 @@ class TestNeo4jCliCommands:
         mock_initializer_class.return_value = mock_initializer
 
         from click.testing import CliRunner
+
         from storage.neo4j_client import main
 
         runner = CliRunner()
@@ -552,6 +554,7 @@ class TestNeo4jCliCommands:
         mock_initializer_class.return_value = mock_initializer
 
         from click.testing import CliRunner
+
         from storage.neo4j_client import main
 
         runner = CliRunner()
@@ -572,6 +575,7 @@ class TestNeo4jCliCommands:
         mock_initializer_class.return_value = mock_initializer
 
         from click.testing import CliRunner
+
         from storage.neo4j_client import main
 
         runner = CliRunner()
@@ -618,6 +622,7 @@ class TestNeo4jCliCommands:
         mock_initializer_class.return_value = mock_initializer
 
         from click.testing import CliRunner
+
         from storage.neo4j_client import main
 
         runner = CliRunner()
@@ -648,6 +653,7 @@ class TestNeo4jCliCommands:
         mock_initializer_class.return_value = mock_initializer
 
         from click.testing import CliRunner
+
         from storage.neo4j_client import main
 
         runner = CliRunner()

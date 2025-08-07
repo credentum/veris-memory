@@ -24,6 +24,7 @@ class TestSimpleMCPServer:
         context_storage.clear()
         # Reset the ID counter
         from src.mcp_server import simple_server
+
         simple_server.next_id = 1
 
     @pytest.mark.asyncio

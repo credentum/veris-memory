@@ -101,7 +101,6 @@ class TestStoreContextTool:
             patch("src.mcp_server.server.embedding_generator", mock_storage_clients["embedding"]),
             patch("uuid.uuid4") as mock_uuid,
         ):
-
             mock_uuid.return_value.hex = "abc123def456"
 
             # Mock Neo4j session operations
@@ -159,7 +158,6 @@ class TestStoreContextTool:
             patch("src.mcp_server.server.embedding_generator", mock_storage_clients["embedding"]),
             patch("uuid.uuid4") as mock_uuid,
         ):
-
             mock_uuid.return_value.hex = "def456abc123"
             mock_storage_clients["qdrant"].client.upsert = AsyncMock()
 
@@ -182,7 +180,6 @@ class TestStoreContextTool:
             patch("src.mcp_server.server.embedding_generator", None),
             patch("uuid.uuid4") as mock_uuid,
         ):
-
             mock_uuid.return_value.hex = "ghi789jkl012"
 
             # Mock Neo4j session operations
@@ -215,7 +212,6 @@ class TestStoreContextTool:
             patch("src.mcp_server.server.embedding_generator", None),
             patch("uuid.uuid4") as mock_uuid,
         ):
-
             mock_uuid.return_value.hex = "mno345pqr678"
 
             arguments = {"content": {"title": "No Backend Test"}, "type": "log"}
@@ -236,7 +232,6 @@ class TestStoreContextTool:
             patch("src.mcp_server.server.embedding_generator", None),
             patch("uuid.uuid4") as mock_uuid,
         ):
-
             mock_uuid.return_value.hex = "stu901vwx234"
             mock_storage_clients["qdrant"].client.upsert = AsyncMock()
 
@@ -257,7 +252,6 @@ class TestStoreContextTool:
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
             patch("uuid.uuid4") as mock_uuid,
         ):
-
             mock_uuid.return_value.hex = "yza567bcd890"
 
             # Mock Neo4j session operations with relationship failure
@@ -294,7 +288,6 @@ class TestStoreContextTool:
             patch("src.mcp_server.server.embedding_generator", mock_storage_clients["embedding"]),
             patch("uuid.uuid4") as mock_uuid,
         ):
-
             mock_uuid.return_value.hex = "efg123hij456"
             mock_storage_clients["qdrant"].client.upsert.side_effect = Exception(
                 "Qdrant connection failed"
@@ -316,7 +309,6 @@ class TestStoreContextTool:
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
             patch("uuid.uuid4") as mock_uuid,
         ):
-
             mock_uuid.return_value.hex = "klm789nop012"
             mock_storage_clients["neo4j"].driver.session.side_effect = Exception(
                 "Neo4j session failed"
@@ -333,7 +325,6 @@ class TestStoreContextTool:
     async def test_store_context_missing_required_fields(self):
         """Test validation of required fields."""
         with patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)):
-
             # Missing content
             arguments = {"type": "design"}
             result = await store_context_tool(arguments)
@@ -355,7 +346,6 @@ class TestStoreContextTool:
             patch("src.mcp_server.server.embedding_generator", mock_storage_clients["embedding"]),
             patch("uuid.uuid4") as mock_uuid,
         ):
-
             mock_uuid.return_value.hex = "qrs345tuv678"
             mock_storage_clients["qdrant"].client.upsert = AsyncMock()
 
@@ -388,7 +378,6 @@ class TestRetrieveContextTool:
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
             patch("src.mcp_server.server.embedding_generator", mock_storage_clients["embedding"]),
         ):
-
             # Mock Qdrant search results
             vector_hit = AsyncMock()
             vector_hit.id = "ctx_123"
@@ -450,7 +439,6 @@ class TestRetrieveContextTool:
             patch("src.mcp_server.server.neo4j_client", None),
             patch("src.mcp_server.server.embedding_generator", mock_storage_clients["embedding"]),
         ):
-
             # Mock Qdrant search results
             vector_hit = AsyncMock()
             vector_hit.id = "ctx_789"
@@ -475,7 +463,6 @@ class TestRetrieveContextTool:
             patch("src.mcp_server.server.qdrant_client", None),
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
         ):
-
             # Mock Neo4j session operations
             session_mock = AsyncMock()
             graph_result_mock = AsyncMock()
@@ -517,7 +504,6 @@ class TestRetrieveContextTool:
             patch("src.mcp_server.server.qdrant_client", mock_storage_clients["qdrant"]),
             patch("src.mcp_server.server.embedding_generator", None),
         ):
-
             mock_storage_clients["qdrant"].client.search.return_value = []
 
             arguments = {"query": "fallback embedding test", "search_mode": "vector"}
@@ -535,7 +521,6 @@ class TestRetrieveContextTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
         ):
-
             # Mock Neo4j session with invalid JSON
             session_mock = AsyncMock()
             graph_result_mock = AsyncMock()
@@ -588,7 +573,6 @@ class TestRetrieveContextTool:
             patch("src.mcp_server.server.qdrant_client", mock_storage_clients["qdrant"]),
             patch("src.mcp_server.server.embedding_generator", mock_storage_clients["embedding"]),
         ):
-
             mock_storage_clients["qdrant"].client.search.side_effect = Exception(
                 "Qdrant search failed"
             )
@@ -608,7 +592,6 @@ class TestRetrieveContextTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
         ):
-
             session_mock = AsyncMock()
             session_mock.run.side_effect = Exception("Cypher query failed")
             session_mock.__enter__ = Mock(return_value=session_mock)
@@ -631,7 +614,6 @@ class TestRetrieveContextTool:
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
             patch("src.mcp_server.server.embedding_generator", mock_storage_clients["embedding"]),
         ):
-
             # Create multiple mock results
             vector_hits = []
             for i in range(5):
@@ -697,7 +679,6 @@ class TestQueryGraphTool:
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
             patch("src.mcp_server.server.cypher_validator") as mock_validator,
         ):
-
             mock_validator.validate_query.return_value = mock_validation_result
 
             # Mock Neo4j session operations
@@ -740,7 +721,6 @@ class TestQueryGraphTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.cypher_validator") as mock_validator,
         ):
-
             invalid_result = AsyncMock()
             invalid_result.is_valid = False
             invalid_result.error_message = "CREATE operation not allowed"
@@ -768,7 +748,6 @@ class TestQueryGraphTool:
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
             patch("src.mcp_server.server.cypher_validator") as mock_validator,
         ):
-
             warning_result = AsyncMock()
             warning_result.is_valid = True
             warning_result.error_message = None
@@ -803,7 +782,6 @@ class TestQueryGraphTool:
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
             patch("src.mcp_server.server.cypher_validator") as mock_validator,
         ):
-
             mock_validator.validate_query.return_value = mock_validation_result
 
             # Mock session
@@ -841,7 +819,6 @@ class TestQueryGraphTool:
             patch("src.mcp_server.server.neo4j_client", None),
             patch("src.mcp_server.server.cypher_validator") as mock_validator,
         ):
-
             mock_validator.validate_query.return_value = mock_validation_result
 
             arguments = {"query": "MATCH (n:Context) RETURN n", "parameters": {}}
@@ -861,7 +838,6 @@ class TestQueryGraphTool:
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
             patch("src.mcp_server.server.cypher_validator") as mock_validator,
         ):
-
             mock_validator.validate_query.return_value = mock_validation_result
 
             # Mock session with exception
@@ -888,7 +864,6 @@ class TestQueryGraphTool:
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
             patch("src.mcp_server.server.cypher_validator") as mock_validator,
         ):
-
             mock_validator.validate_query.return_value = mock_validation_result
 
             # Create a mock object that behaves like a Neo4j node with items method
@@ -951,7 +926,6 @@ class TestQueryGraphTool:
             patch("src.mcp_server.server.neo4j_client", mock_storage_clients["neo4j"]),
             patch("src.mcp_server.server.cypher_validator") as mock_validator,
         ):
-
             mock_validator.validate_query.return_value = mock_validation_result
 
             # Mock session with many results
@@ -1003,7 +977,6 @@ class TestQueryGraphTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.cypher_validator") as mock_validator,
         ):
-
             mock_validator.validate_query.side_effect = Exception("Unexpected error")
 
             arguments = {"query": "MATCH (n) RETURN n", "parameters": {}}
@@ -1025,7 +998,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_key.return_value = True
             mock_namespace.create_namespaced_key.return_value = "agent:test-agent:scratchpad:memory"
@@ -1061,7 +1033,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_key.return_value = True
             mock_namespace.create_namespaced_key.return_value = "agent:test-agent:scratchpad:notes"
@@ -1097,7 +1068,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_key.return_value = True
             mock_namespace.create_namespaced_key.return_value = (
@@ -1131,7 +1101,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = False
 
             arguments = {
@@ -1153,7 +1122,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_key.return_value = False
 
@@ -1176,7 +1144,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_key.return_value = True
 
@@ -1199,7 +1166,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_key.return_value = True
 
@@ -1220,7 +1186,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_key.return_value = True
 
@@ -1252,7 +1217,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_key.return_value = True
             mock_namespace.create_namespaced_key.side_effect = Exception("Namespace error")
@@ -1273,7 +1237,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.kv_store", None),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_key.return_value = True
 
@@ -1293,7 +1256,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_key.return_value = True
             mock_namespace.create_namespaced_key.return_value = "agent:test-agent:scratchpad:memory"
@@ -1317,7 +1279,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_key.return_value = True
             mock_namespace.create_namespaced_key.return_value = "agent:test-agent:scratchpad:memory"
@@ -1337,7 +1298,6 @@ class TestUpdateScratchpadTool:
     async def test_update_scratchpad_missing_required_parameters(self):
         """Test handling of missing required parameters."""
         with patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)):
-
             # Missing agent_id
             arguments = {"key": "memory", "content": "Test"}
             result = await update_scratchpad_tool(arguments)
@@ -1378,7 +1338,6 @@ class TestUpdateScratchpadTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.side_effect = Exception("Unexpected error")
 
             arguments = {"agent_id": "test-agent", "key": "memory", "content": "Test content"}
@@ -1401,7 +1360,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_prefix.return_value = True
             mock_namespace.validate_key.return_value = True
@@ -1428,7 +1386,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_prefix.return_value = True
 
@@ -1467,7 +1424,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_prefix.return_value = True
 
@@ -1490,7 +1446,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_prefix.return_value = True
             mock_namespace.validate_key.return_value = True
@@ -1515,7 +1470,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = False
 
             arguments = {"agent_id": "invalid-agent!@#", "prefix": "state"}
@@ -1534,7 +1488,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_prefix.return_value = False
 
@@ -1554,7 +1507,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_prefix.return_value = True
             mock_namespace.validate_key.return_value = False
@@ -1576,7 +1528,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_prefix.return_value = True
             mock_namespace.validate_key.return_value = True
@@ -1600,7 +1551,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.kv_store", None),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_prefix.return_value = True
 
@@ -1621,7 +1571,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_prefix.return_value = True
             mock_namespace.validate_key.return_value = True
@@ -1647,7 +1596,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_prefix.return_value = True
 
@@ -1684,7 +1632,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_prefix.return_value = True
 
@@ -1711,7 +1658,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.return_value = True
             mock_namespace.validate_prefix.return_value = True
 
@@ -1732,7 +1678,6 @@ class TestGetAgentStateTool:
     async def test_get_agent_state_missing_required_parameter(self):
         """Test handling of missing required agent_id parameter."""
         with patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)):
-
             arguments = {"prefix": "state"}  # Missing agent_id
 
             result = await get_agent_state_tool(arguments)
@@ -1764,7 +1709,6 @@ class TestGetAgentStateTool:
             patch("src.mcp_server.server.rate_limit_check", return_value=(True, None)),
             patch("src.mcp_server.server.agent_namespace") as mock_namespace,
         ):
-
             mock_namespace.validate_agent_id.side_effect = Exception("Unexpected error")
 
             arguments = {"agent_id": "test-agent", "prefix": "state"}
@@ -1950,7 +1894,6 @@ class TestMCPServerUtilities:
             patch("src.mcp_server.server.qdrant_client", mock_storage_clients["qdrant"]),
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
         ):
-
             # Mock healthy responses
             session_mock = AsyncMock()
             result_mock = AsyncMock()
@@ -1978,7 +1921,6 @@ class TestMCPServerUtilities:
             patch("src.mcp_server.server.qdrant_client", mock_storage_clients["qdrant"]),
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
         ):
-
             # Mock Neo4j failure
             session_mock = AsyncMock()
             session_mock.run.side_effect = Exception("Connection failed")
@@ -2005,7 +1947,6 @@ class TestMCPServerUtilities:
             patch("pathlib.Path.glob") as mock_glob,
             patch("builtins.open", mock_open(read_data='{"name": "test_tool", "version": "1.0"}')),
         ):
-
             mock_contract_file = AsyncMock()
             mock_contract_file.name = "test_contract.json"
             mock_glob.return_value = [mock_contract_file]
@@ -2041,7 +1982,6 @@ class TestStorageClientManagement:
                 },
             ),
         ):
-
             # Mock configurations
             mock_validate.return_value = {"valid": True, "config": {}}
             ssl_manager_mock = AsyncMock()
@@ -2088,7 +2028,6 @@ class TestStorageClientManagement:
                 },
             ),
         ):
-
             mock_validate.return_value = {"valid": True, "config": {}}
             ssl_manager_mock = AsyncMock()
             ssl_manager_mock.validate_ssl_certificates.return_value = {
@@ -2118,7 +2057,6 @@ class TestStorageClientManagement:
             patch("src.mcp_server.server.SSLConfigManager") as mock_ssl,
             patch.dict(os.environ, {}, clear=True),
         ):  # Clear all env vars
-
             mock_validate.return_value = {"valid": True, "config": {}}
             ssl_manager_mock = AsyncMock()
             ssl_manager_mock.validate_ssl_certificates.return_value = {}
@@ -2135,7 +2073,6 @@ class TestStorageClientManagement:
             patch("src.mcp_server.server.qdrant_client", mock_storage_clients["qdrant"]),
             patch("src.mcp_server.server.kv_store", mock_storage_clients["kv"]),
         ):
-
             await cleanup_storage_clients()
 
             # Verify cleanup methods were called

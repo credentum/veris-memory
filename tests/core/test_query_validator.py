@@ -538,9 +538,7 @@ class TestSafeQueryCreation:
         assert "n.name = 'John'" in query
         assert "n.age = 25" in query
         assert "n.salary = 50000.5" in query
-        assert (
-            "n.active = true" in query
-        )  # Correctly lowercase for Cypher
+        assert "n.active = true" in query  # Correctly lowercase for Cypher
         assert "n.inactive = false" in query
         assert "n.description IS NULL" in query
 

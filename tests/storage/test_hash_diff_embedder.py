@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, Mock, mock_open, patch
 
 import pytest
 import yaml
+
 from storage.hash_diff_embedder import DocumentHash, HashDiffEmbedder  # noqa: E402
 
 
@@ -151,9 +152,7 @@ class TestHashDiffEmbedder:
             len(embedder.hash_cache) == 1
         ), f"Expected 1 item in cache, found {len(embedder.hash_cache)}"
         assert "doc1" in embedder.hash_cache, "Document 'doc1' should be in hash cache"
-        assert isinstance(
-            embedder.hash_cache["doc1"], dict
-        ), "Cache entry should be dictionary"
+        assert isinstance(embedder.hash_cache["doc1"], dict), "Cache entry should be dictionary"
         assert embedder.hash_cache["doc1"]["document_id"] == "doc1"
 
     @patch("pathlib.Path.exists", return_value=False)

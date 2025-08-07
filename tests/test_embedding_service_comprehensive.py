@@ -12,6 +12,7 @@ This test suite covers:
 from unittest.mock import Mock
 
 import pytest
+
 from core.embedding_service import EmbeddingProvider, EmbeddingService
 
 

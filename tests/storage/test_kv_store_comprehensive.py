@@ -17,6 +17,7 @@ from unittest.mock import Mock, mock_open, patch
 
 import pytest
 import yaml
+
 from storage.kv_store import CacheEntry, ContextKV, DuckDBAnalytics, MetricEvent, RedisConnector
 
 
@@ -948,6 +949,7 @@ class TestKVStoreCliCommands:
         mock_kv_class.return_value = mock_kv
 
         from click.testing import CliRunner
+
         from storage.kv_store import test_connection
 
         runner = CliRunner()
@@ -967,6 +969,7 @@ class TestKVStoreCliCommands:
         mock_kv_class.return_value = mock_kv
 
         from click.testing import CliRunner
+
         from storage.kv_store import record_metric
 
         runner = CliRunner()
@@ -1001,6 +1004,7 @@ class TestKVStoreCliCommands:
         mock_kv_class.return_value = mock_kv
 
         from click.testing import CliRunner
+
         from storage.kv_store import activity_summary
 
         runner = CliRunner()

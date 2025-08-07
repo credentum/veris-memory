@@ -16,7 +16,6 @@ def test_imports_work():
     """Test that all modules can be imported without errors."""
     try:
         from core.rate_limiter import TokenBucket
-
         from src.core import config, utils
 
         assert config is not None

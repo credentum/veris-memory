@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import yaml
+
 from storage.hash_diff_embedder import DocumentHash, HashDiffEmbedder  # noqa: E402
 
 

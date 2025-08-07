@@ -17,6 +17,7 @@ from unittest.mock import Mock, patch
 import pytest
 import yaml
 from qdrant_client.models import Distance, VectorParams
+
 from storage.qdrant_client import VectorDBInitializer
 
 
@@ -454,6 +455,7 @@ class TestQdrantCliCommands:
         mock_initializer_class.return_value = mock_initializer
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -474,6 +476,7 @@ class TestQdrantCliCommands:
         mock_initializer_class.return_value = mock_initializer
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -493,6 +496,7 @@ class TestQdrantCliCommands:
         mock_initializer_class.return_value = mock_initializer
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -514,6 +518,7 @@ class TestQdrantCliCommands:
         mock_initializer_class.return_value = mock_initializer
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -533,6 +538,7 @@ class TestQdrantCliCommands:
         mock_initializer_class.return_value = mock_initializer
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -553,6 +559,7 @@ class TestQdrantCliCommands:
         mock_initializer_class.return_value = mock_initializer
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()
@@ -574,6 +581,7 @@ class TestQdrantCliCommands:
         mock_initializer_class.return_value = mock_initializer
 
         from click.testing import CliRunner
+
         from storage.qdrant_client import main
 
         runner = CliRunner()

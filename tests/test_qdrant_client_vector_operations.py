@@ -15,7 +15,6 @@ Uses extensive mocking to avoid actual Qdrant connections and focuses on busines
 from unittest.mock import AsyncMock, Mock, mock_open, patch
 
 import yaml
-from core.config import Config
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
@@ -24,6 +23,8 @@ from qdrant_client.models import (
     PointStruct,
     VectorParams,
 )
+
+from core.config import Config
 from storage.qdrant_client import VectorDBInitializer
 
 

@@ -9,6 +9,7 @@ to ensure they work correctly with the MCP server.
 from unittest.mock import Mock, patch
 
 import pytest
+
 from mcp_server.server import detect_communities_tool, retrieve_context_tool
 
 

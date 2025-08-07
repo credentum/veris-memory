@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 import yaml
+
 from core.config import Config, ConfigurationError, get_config, reload_config
 from core.utils import get_environment, get_secure_connection_config, sanitize_error_message
 

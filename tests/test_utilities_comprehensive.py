@@ -16,6 +16,7 @@ import warnings
 from unittest.mock import patch
 
 import pytest
+
 from core.config_error import (
     ConfigFileNotFoundError,
     ConfigParseError,

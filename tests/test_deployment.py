@@ -6,12 +6,13 @@ import subprocess
 import yaml
 import json
 from pathlib import Path
+from typing import Any, Dict
 
 
 class TestDeploymentConfiguration:
     """Test deployment configuration files."""
     
-    def test_docker_compose_valid(self):
+    def test_docker_compose_valid(self) -> None:
         """Test that docker-compose.hetzner.yml is valid YAML."""
         compose_path = Path("docker-compose.hetzner.yml")
         assert compose_path.exists(), "docker-compose.hetzner.yml must exist"
@@ -25,7 +26,7 @@ class TestDeploymentConfiguration:
         assert "neo4j" in config["services"]
         assert "redis" in config["services"]
     
-    def test_dockerfile_exists(self):
+    def test_dockerfile_exists(self) -> None:
         """Test that Dockerfile.hetzner exists and has required stages."""
         dockerfile_path = Path("Dockerfile.hetzner")
         assert dockerfile_path.exists(), "Dockerfile.hetzner must exist"
@@ -37,7 +38,7 @@ class TestDeploymentConfiguration:
         assert "AS builder" in content
         assert "AS runtime" in content
     
-    def test_ctxrc_config_valid(self):
+    def test_ctxrc_config_valid(self) -> None:
         """Test that .ctxrc.hetzner.yaml is valid configuration."""
         config_path = Path(".ctxrc.hetzner.yaml")
         assert config_path.exists(), ".ctxrc.hetzner.yaml must exist"
@@ -53,7 +54,7 @@ class TestDeploymentConfiguration:
 class TestDeploymentScripts:
     """Test deployment scripts functionality."""
     
-    def test_deploy_script_executable(self):
+    def test_deploy_script_executable(self) -> None:
         """Test that deploy.sh is executable and has proper shebang."""
         deploy_path = Path("deploy/hetzner/deploy.sh")
         assert deploy_path.exists(), "deploy/hetzner/deploy.sh must exist"
@@ -63,7 +64,7 @@ class TestDeploymentScripts:
         
         assert first_line.startswith("#!/"), "deploy.sh must have shebang"
     
-    def test_monitoring_script_executable(self):
+    def test_monitoring_script_executable(self) -> None:
         """Test that monitoring script exists and is executable."""
         monitor_path = Path("monitoring/hardware-monitor.sh")
         assert monitor_path.exists(), "monitoring/hardware-monitor.sh must exist"
@@ -73,7 +74,7 @@ class TestDeploymentScripts:
         
         assert first_line.startswith("#!/"), "hardware-monitor.sh must have shebang"
     
-    def test_backup_script_executable(self):
+    def test_backup_script_executable(self) -> None:
         """Test that backup script exists and is executable."""
         backup_path = Path("backup/raid1-backup.sh")
         assert backup_path.exists(), "backup/raid1-backup.sh must exist"
@@ -87,7 +88,7 @@ class TestDeploymentScripts:
 class TestDockerBuild:
     """Test Docker build functionality."""
     
-    def test_docker_build_syntax(self):
+    def test_docker_build_syntax(self) -> None:
         """Test that Dockerfile.hetzner builds without syntax errors."""
         try:
             result = subprocess.run([
@@ -128,7 +129,7 @@ class TestDockerBuild:
 class TestEnvironmentVariables:
     """Test environment variable configuration."""
     
-    def test_required_env_vars_documented(self):
+    def test_required_env_vars_documented(self) -> None:
         """Test that required environment variables are documented."""
         dockerfile_path = Path("Dockerfile.hetzner")
         with open(dockerfile_path) as f:

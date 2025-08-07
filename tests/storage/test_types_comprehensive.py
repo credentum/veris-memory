@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import pytest
+
 from storage.types import (  # noqa: E402
     JSON,
     CollectionName,

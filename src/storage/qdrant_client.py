@@ -299,7 +299,7 @@ class VectorDBInitializer:
 
         try:
             from qdrant_client.models import PointStruct
-            
+
             self.client.upsert(
                 collection_name=collection_name,
                 points=[

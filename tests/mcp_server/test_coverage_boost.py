@@ -10,6 +10,7 @@ import os
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+
 from mcp_server.server import (
     call_tool,
     cleanup_storage_clients,
@@ -20,7 +21,6 @@ from mcp_server.server import (
     list_tools,
     read_resource,
 )
-
 from src.mcp_server import server
 
 

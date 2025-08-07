@@ -280,7 +280,11 @@ class TestMCPServerIntegration:
             mock_qdrant.client = Mock()
             mock_qdrant.client.search = Mock(
                 return_value=[
-                    Mock(id="ctx_1", score=0.95, payload={"content": {"title": "Test"}, "type": "design"})
+                    Mock(
+                        id="ctx_1",
+                        score=0.95,
+                        payload={"content": {"title": "Test"}, "type": "design"},
+                    )
                 ]
             )
 

@@ -404,10 +404,11 @@ class Neo4jInitializer:
             # Validate labels with strict security rules
             if labels:
                 import re
+
                 # Only allow alphanumeric characters, underscore, and hyphen
                 # Must start with a letter, no consecutive special chars
-                label_pattern = re.compile(r'^[a-zA-Z][a-zA-Z0-9_-]*$')
-                
+                label_pattern = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
+
                 validated_labels = []
                 for label in labels:
                     if not isinstance(label, str):
@@ -415,11 +416,15 @@ class Neo4jInitializer:
                     if not (1 <= len(label) <= 50):  # Reasonable length limits
                         raise ValueError(f"Label length must be 1-50 characters, got {len(label)}")
                     if not label_pattern.match(label):
-                        raise ValueError(f"Invalid label format: '{label}'. Must start with letter and contain only letters, numbers, _ or -")
-                    if '__' in label or '--' in label:  # No consecutive special chars
-                        raise ValueError(f"Invalid label format: '{label}'. No consecutive special characters allowed")
+                        raise ValueError(
+                            f"Invalid label format: '{label}'. Must start with letter and contain only letters, numbers, _ or -"
+                        )
+                    if "__" in label or "--" in label:  # No consecutive special chars
+                        raise ValueError(
+                            f"Invalid label format: '{label}'. No consecutive special characters allowed"
+                        )
                     validated_labels.append(label)
-                
+
                 labels_str = ":".join(validated_labels)
             else:
                 labels_str = "Node"
@@ -506,7 +511,7 @@ class Neo4jInitializer:
             end_id = int(end_node)
         except (ValueError, TypeError) as e:
             raise ValueError(f"Invalid node ID format - Must be numeric strings: {e}")
-        
+
         # Validate relationship type
         if not relationship_type or not isinstance(relationship_type, str):
             raise ValueError("Relationship type must be a non-empty string")

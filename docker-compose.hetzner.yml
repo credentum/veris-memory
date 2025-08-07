@@ -50,7 +50,7 @@ services:
 
   # Vector Database (Qdrant) - High-performance configuration
   qdrant:
-    image: qdrant/qdrant:v1.12.1 # Latest stable for Ubuntu 24.04
+    image: qdrant/qdrant:v1.12.1@sha256:d774e7bb65744454984c6021637a0da89271f30df15e48601a9fafc926d26b1f
     ports:
       - "127.0.0.1:6333:6333" # HTTP API (Tailscale only)
       - "127.0.0.1:6334:6334" # gRPC port (Tailscale only)

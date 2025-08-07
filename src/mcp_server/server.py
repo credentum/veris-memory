@@ -934,8 +934,8 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                         LIMIT $limit
                         """
                     query_result = neo4j_client.query(
-                        cypher_query, 
-                        parameters={"type": context_type, "query": query, "limit": limit}
+                        cypher_query,
+                        parameters={"type": context_type, "query": query, "limit": limit},
                     )
 
                     for record in query_result:
@@ -977,15 +977,15 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         if include_reasoning_path and enhanced_results:
             # Simple reasoning path implementation - can be enhanced with full GraphRAG integration
             for result in enhanced_results:
-                result["reasoning_path"] = (
-                    f"Found via {result.get('source', 'unknown')} search with {max_hops}-hop traversal"
-                )
+                result[
+                    "reasoning_path"
+                ] = f"Found via {result.get('source', 'unknown')} search with {max_hops}-hop traversal"
 
         # Add community detection placeholder - will be implemented in community detection tool
         if enable_community_detection:
-            graphrag_metadata["community_info"] = (
-                "Community detection available via detect_communities tool"
-            )
+            graphrag_metadata[
+                "community_info"
+            ] = "Community detection available via detect_communities tool"
 
         return {
             "success": True,
