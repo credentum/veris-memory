@@ -17,6 +17,12 @@ import yaml
 from neo4j import Driver, GraphDatabase
 from neo4j.exceptions import AuthError, ServiceUnavailable
 
+# Import types for protocol compliance
+try:
+    from .types import JSON, NodeID, QueryResult
+except ImportError:
+    from types import JSON, NodeID, QueryResult
+
 # Import configuration error handling
 try:
     from ..core.config_error import ConfigFileNotFoundError, ConfigParseError
@@ -377,6 +383,157 @@ class Neo4jInitializer:
         """Close the driver connection"""
         if self.driver:
             self.driver.close()
+
+    def create_node(self, labels: List[str], properties: JSON) -> NodeID:
+        """Create a graph node.
+
+        Args:
+            labels: List of node labels
+            properties: Node properties as JSON
+
+        Returns:
+            NodeID: The ID of the created node
+
+        Raises:
+            RuntimeError: If not connected to Neo4j or creation fails
+        """
+        if not self.driver:
+            raise RuntimeError("Not connected to Neo4j")
+
+        try:
+            # Validate labels with strict security rules
+            if labels:
+                import re
+                # Only allow alphanumeric characters, underscore, and hyphen
+                # Must start with a letter, no consecutive special chars
+                label_pattern = re.compile(r'^[a-zA-Z][a-zA-Z0-9_-]*$')
+                
+                validated_labels = []
+                for label in labels:
+                    if not isinstance(label, str):
+                        raise ValueError(f"Label must be string, got {type(label).__name__}")
+                    if not (1 <= len(label) <= 50):  # Reasonable length limits
+                        raise ValueError(f"Label length must be 1-50 characters, got {len(label)}")
+                    if not label_pattern.match(label):
+                        raise ValueError(f"Invalid label format: '{label}'. Must start with letter and contain only letters, numbers, _ or -")
+                    if '__' in label or '--' in label:  # No consecutive special chars
+                        raise ValueError(f"Invalid label format: '{label}'. No consecutive special characters allowed")
+                    validated_labels.append(label)
+                
+                labels_str = ":".join(validated_labels)
+            else:
+                labels_str = "Node"
+
+            # Create the node - labels must be validated but cannot be parameterized in Cypher
+            with self.driver.session(database=self.database) as session:
+                result = session.run(
+                    f"CREATE (n:{labels_str}) SET n = $properties RETURN id(n) as node_id",
+                    properties=properties or {},
+                )
+                record = result.single()
+                if record:
+                    return str(record["node_id"])
+                else:
+                    raise RuntimeError("Failed to create node - no result returned")
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to create node: {e}")
+
+    def query(self, cypher: str, parameters: Optional[JSON] = None) -> QueryResult:
+        """Execute a Cypher query.
+
+        Args:
+            cypher: Cypher query string
+            parameters: Query parameters
+
+        Returns:
+            QueryResult: Query results as a list of dictionaries
+
+        Raises:
+            RuntimeError: If not connected to Neo4j or query fails
+        """
+        if not self.driver:
+            raise RuntimeError("Not connected to Neo4j")
+
+        try:
+            with self.driver.session(database=self.database) as session:
+                result = session.run(cypher, parameters or {})
+                records = []
+                for record in result:
+                    # Convert neo4j record to dictionary
+                    record_dict = {}
+                    for key in record.keys():
+                        value = record[key]
+                        # Handle Neo4j types that need conversion
+                        if hasattr(value, "__dict__"):
+                            # Convert neo4j objects to dictionaries
+                            record_dict[key] = dict(value)
+                        else:
+                            record_dict[key] = value
+                    records.append(record_dict)
+                return records
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to execute query: {e}")
+
+    def create_relationship(
+        self,
+        start_node: NodeID,
+        end_node: NodeID,
+        relationship_type: str,
+        properties: Optional[JSON] = None,
+    ) -> str:
+        """Create a relationship between nodes.
+
+        Args:
+            start_node: ID of the start node
+            end_node: ID of the end node
+            relationship_type: Type of relationship
+            properties: Optional relationship properties
+
+        Returns:
+            str: The ID of the created relationship
+
+        Raises:
+            RuntimeError: If not connected to Neo4j or creation fails
+        """
+        if not self.driver:
+            raise RuntimeError("Not connected to Neo4j")
+
+        # Validate node IDs
+        try:
+            start_id = int(start_node)
+            end_id = int(end_node)
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid node ID format - Must be numeric strings: {e}")
+        
+        # Validate relationship type
+        if not relationship_type or not isinstance(relationship_type, str):
+            raise ValueError("Relationship type must be a non-empty string")
+
+        try:
+            with self.driver.session(database=self.database) as session:
+                result = session.run(
+                    """
+                    MATCH (a), (b)
+                    WHERE id(a) = $start_id AND id(b) = $end_id
+                    CREATE (a)-[r:TYPE]->(b)
+                    SET r = $properties, r.type = $rel_type
+                    RETURN id(r) as rel_id
+                    """,
+                    start_id=start_id,
+                    end_id=end_id,
+                    rel_type=relationship_type,
+                    properties=properties or {},
+                )
+                record = result.single()
+                if record:
+                    return str(record["rel_id"])
+                else:
+                    raise RuntimeError("Failed to create relationship - nodes may not exist")
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to create relationship: {e}")
 
 
 @click.command()

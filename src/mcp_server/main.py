@@ -9,11 +9,13 @@ It provides tools for storing, retrieving, and querying context data using both
 vector embeddings and graph relationships.
 """
 
+import asyncio
 import json
 import logging
 import os
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -36,10 +38,20 @@ except ImportError as e:
     SentenceTransformer = type(None)
 
 # Fail-fast on missing embeddings if strict mode enabled
-if not SENTENCE_TRANSFORMERS_AVAILABLE and os.getenv("STRICT_EMBEDDINGS", "false").lower() == "true":
-    raise RuntimeError("Embeddings unavailable: sentence-transformers not installed and STRICT_EMBEDDINGS=true")
+if (
+    not SENTENCE_TRANSFORMERS_AVAILABLE
+    and os.getenv("STRICT_EMBEDDINGS", "false").lower() == "true"
+):
+    raise RuntimeError(
+        "Embeddings unavailable: sentence-transformers not installed and STRICT_EMBEDDINGS=true"
+    )
 
 from ..core.config import Config
+
+# Health check constants
+HEALTH_CHECK_GRACE_PERIOD_DEFAULT = 60
+HEALTH_CHECK_MAX_RETRIES_DEFAULT = 3
+HEALTH_CHECK_RETRY_DELAY_DEFAULT = 5.0
 from ..core.query_validator import validate_cypher_query
 
 # Import storage components
@@ -57,11 +69,13 @@ except ImportError as e:
     from ..storage.neo4j_client import Neo4jInitializer as Neo4jClient
 
 try:
-    from ..storage.qdrant_client import VectorDBInitializer
     from qdrant_client import QdrantClient as QdrantClientLib
+
+    from ..storage.qdrant_client import VectorDBInitializer
 except ImportError as e:
     logger.warning(f"Failed to import Qdrant components: {e}")
     from ..storage.qdrant_client import VectorDBInitializer
+
     QdrantClientLib = None
 from ..validators.config_validator import validate_all_configs
 
@@ -166,21 +180,22 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
         "EMBEDDING_FALLBACK_ERROR: Hash-based embeddings are semantically meaningless. "
         "Install sentence-transformers for MCP protocol compliance."
     )
-    
+
     # For MCP protocol compliance, we should fail rather than provide meaningless embeddings
-    if os.getenv('STRICT_EMBEDDINGS', 'false').lower() == 'true':
+    if os.getenv("STRICT_EMBEDDINGS", "false").lower() == "true":
         raise ValueError(
             "Semantic embeddings unavailable and STRICT_EMBEDDINGS=true. "
             "Install sentence-transformers package for proper MCP protocol support."
         )
-    
+
     # Legacy hash-based fallback (deprecated, breaks semantic search)
     import hashlib
+
     hash_obj = hashlib.sha256(text_to_embed.encode())
     hash_bytes = hash_obj.digest()
 
-    # Use configurable embedding dimensions
-    embedding_dim = int(os.getenv('EMBEDDING_DIMENSIONS', '384'))  # Make configurable via env var
+    # Use standardized embedding dimensions from Config
+    embedding_dim = Config.EMBEDDING_DIMENSIONS
     embedding = []
 
     for i in range(embedding_dim):
@@ -193,22 +208,23 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
 
 app = FastAPI(
     title="Context Store MCP Server",
-    description="Model Context Protocol server for context management", 
+    description="Model Context Protocol server for context management",
     version="1.0.0",
     debug=False,  # Disable debug mode for production security
 )
+
 
 # Global exception handler for production security with request tracking
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Sanitize all unhandled exceptions for production security with structured logging."""
-    import uuid
     import time
-    
+    import uuid
+
     # Generate request ID for tracking
     request_id = str(uuid.uuid4())[:8]
     timestamp = time.time()
-    
+
     # Structured logging with context (but sanitized response)
     logger.error(
         "Unhandled exception in request",
@@ -219,20 +235,17 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
             "url": str(request.url),
             "client_host": request.client.host if request.client else "unknown",
             "exception_type": type(exc).__name__,
-            "exception_message": str(exc)
+            "exception_message": str(exc),
         },
-        exc_info=True
+        exc_info=True,
     )
-    
+
     # Return sanitized error with request ID for debugging
     return JSONResponse(
         status_code=500,
-        content={
-            "error": "internal",
-            "request_id": request_id,
-            "timestamp": timestamp
-        }
+        content={"error": "internal", "request_id": request_id, "timestamp": timestamp},
     )
+
 
 # Global storage clients
 neo4j_client = None
@@ -288,7 +301,9 @@ async def startup_event() -> None:
         else:
             try:
                 neo4j_client = Neo4jClient()
-                neo4j_client.connect(username=os.getenv("NEO4J_USER", "neo4j"), password=neo4j_password)
+                neo4j_client.connect(
+                    username=os.getenv("NEO4J_USER", "neo4j"), password=neo4j_password
+                )
                 print("✅ Neo4j connected successfully")
             except Exception as neo4j_error:
                 print(f"⚠️ Neo4j unavailable: {neo4j_error}")
@@ -334,7 +349,7 @@ async def shutdown_event() -> None:
 async def root() -> Dict[str, Any]:
     """
     Root endpoint providing agent discovery information.
-    
+
     Returns comprehensive API information including available endpoints,
     MCP protocol details, and agent integration instructions.
     """
@@ -345,112 +360,251 @@ async def root() -> Dict[str, Any]:
         "protocol": {
             "name": "Model Context Protocol (MCP)",
             "version": "1.0",
-            "spec": "https://spec.modelcontextprotocol.io/specification/"
+            "spec": "https://spec.modelcontextprotocol.io/specification/",
         },
         "endpoints": {
             "health": {
                 "path": "/health",
                 "method": "GET",
-                "description": "System health check with service status"
+                "description": "System health check with service status",
             },
             "status": {
-                "path": "/status", 
+                "path": "/status",
                 "method": "GET",
-                "description": "Comprehensive status with tools and dependencies"
+                "description": "Comprehensive status with tools and dependencies",
             },
             "readiness": {
                 "path": "/tools/verify_readiness",
-                "method": "POST", 
-                "description": "Agent readiness verification and diagnostics"
-            }
+                "method": "POST",
+                "description": "Agent readiness verification and diagnostics",
+            },
         },
         "capabilities": {
             "schema": "agent-first-schema-protocol",
             "tools": [
                 "store_context",
                 "retrieve_context",
-                "query_graph", 
+                "query_graph",
                 "update_scratchpad",
-                "get_agent_state"
+                "get_agent_state",
             ],
             "storage": {
                 "vector": "Qdrant (high-dimensional semantic search)",
-                "graph": "Neo4j (relationship and knowledge graphs)", 
+                "graph": "Neo4j (relationship and knowledge graphs)",
                 "kv": "Redis (fast key-value caching)",
-                "analytics": "DuckDB (structured data analysis)"
-            }
+                "analytics": "DuckDB (structured data analysis)",
+            },
         },
         "integration": {
             "mcp_client": {
                 "url": "https://veris-memory.fly.dev",
                 "connection": "HTTP/HTTPS",
                 "authentication": "None (public)",
-                "rate_limits": "60 requests/minute"
+                "rate_limits": "60 requests/minute",
             },
             "agent_usage": {
                 "step1": "GET /status to verify system health",
                 "step2": "POST /tools/verify_readiness for diagnostics",
-                "step3": "Use MCP tools via standard protocol calls"
-            }
+                "step3": "Use MCP tools via standard protocol calls",
+            },
         },
         "documentation": {
             "repository": "https://github.com/credentum/veris-memory",
             "organization": "https://github.com/credentum",
-            "contact": "Issues and PRs welcome"
+            "contact": "Issues and PRs welcome",
         },
         "deployment": {
             "platform": "Fly.io",
             "region": "iad (US East)",
             "resources": "8GB memory, 4 performance CPUs",
-            "uptime_target": "99.9%"
-        }
+            "uptime_target": "99.9%",
+        },
     }
+
+
+# Global startup time tracking
+_server_startup_time = time.time()
+
+
+async def _check_service_with_retries(
+    service_name: str, check_func, max_retries: Optional[int] = None, retry_delay: Optional[float] = None
+) -> Tuple[str, str]:
+    """Check a service with retry logic and detailed error reporting.
+    
+    Args:
+        service_name: Name of the service being checked
+        check_func: Function to call for health check
+        max_retries: Maximum number of retry attempts (default from env HEALTH_CHECK_MAX_RETRIES)
+        retry_delay: Delay between retries in seconds (default from env HEALTH_CHECK_RETRY_DELAY)
+
+    Returns:
+        tuple: (status, error_message)
+        status: "healthy", "initializing", "unhealthy"
+    """
+    # Use environment variables for configuration with defaults
+    if max_retries is None:
+        max_retries = int(os.getenv("HEALTH_CHECK_MAX_RETRIES", str(HEALTH_CHECK_MAX_RETRIES_DEFAULT)))
+    if retry_delay is None:
+        retry_delay = float(os.getenv("HEALTH_CHECK_RETRY_DELAY", str(HEALTH_CHECK_RETRY_DELAY_DEFAULT)))
+        
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, check_func)
+            logger.info(f"{service_name} health check successful on attempt {attempt + 1}")
+            return "healthy", ""
+        except (ConnectionRefusedError, OSError) as e:
+            # Network-level connection errors
+            last_error = f"Connection error: {e}"
+            logger.warning(
+                f"{service_name} connection refused on attempt {attempt + 1}/{max_retries}: {e}"
+            )
+        except TimeoutError as e:
+            # Timeout errors
+            last_error = f"Timeout error: {e}"
+            logger.warning(
+                f"{service_name} timeout on attempt {attempt + 1}/{max_retries}: {e}"
+            )
+        except ImportError as e:
+            # Missing dependencies - don't retry these
+            last_error = f"Missing dependency: {e}"
+            logger.error(f"{service_name} missing dependency: {e}")
+            return "unhealthy", last_error
+        except Exception as e:
+            # Generic errors
+            last_error = f"Service error: {e}"
+            logger.warning(
+                f"{service_name} health check failed on attempt {attempt + 1}/{max_retries}: {e}"
+            )
+
+        if attempt < max_retries - 1:  # Don't sleep on the last attempt
+            await asyncio.sleep(retry_delay)
+
+    # All retries failed
+    error_msg = f"Failed after {max_retries} attempts. Last error: {last_error}"
+    logger.error(f"{service_name} health check failed: {error_msg}")
+    return "unhealthy", error_msg
+
+
+def _is_in_startup_grace_period(grace_period_seconds: int = None) -> bool:
+    """Check if we're still in the startup grace period.
+    
+    Args:
+        grace_period_seconds: Grace period duration (default from env HEALTH_CHECK_GRACE_PERIOD)
+    """
+    if grace_period_seconds is None:
+        grace_period_seconds = int(os.getenv("HEALTH_CHECK_GRACE_PERIOD", str(HEALTH_CHECK_GRACE_PERIOD_DEFAULT)))
+    
+    return (time.time() - _server_startup_time) < grace_period_seconds
 
 
 @app.get("/health")
 async def health() -> Dict[str, Any]:
     """
-    Health check endpoint.
+    Enhanced health check endpoint with grace periods and retry logic.
 
     Returns the health status of the server and its dependencies.
+    Implements 60-second grace period and 3-retry mechanism as per issue #1759.
     """
+    startup_elapsed = time.time() - _server_startup_time
+    in_grace_period = _is_in_startup_grace_period()
+
     health_status = {
         "status": "healthy",
         "services": {"neo4j": "unknown", "qdrant": "unknown", "redis": "unknown"},
+        "startup_time": _server_startup_time,
+        "uptime_seconds": int(startup_elapsed),
+        "grace_period_active": in_grace_period,
     }
 
-    # Check Neo4j
+    # During grace period, services might still be initializing
+    if in_grace_period:
+        logger.info(f"Health check during grace period ({int(startup_elapsed)}s elapsed)")
+
+    # Check Neo4j with retries
     if neo4j_client:
         try:
-            neo4j_client.verify_connectivity()
-            health_status["services"]["neo4j"] = "healthy"
-        except (ConnectionError, TimeoutError, Exception) as e:
-            health_status["services"]["neo4j"] = "unhealthy"
-            health_status["status"] = "degraded"
-            print(f"Neo4j health check failed: {e}")
 
-    # Check Qdrant
+            def neo4j_check():
+                # Simple connectivity test using a basic query
+                return neo4j_client.query("RETURN 1 as test")
+
+            status, error = await _check_service_with_retries("Neo4j", neo4j_check)
+
+            if status == "healthy":
+                health_status["services"]["neo4j"] = "healthy"
+            elif in_grace_period and status == "unhealthy":
+                health_status["services"]["neo4j"] = "initializing"
+                health_status["status"] = "initializing"
+            else:
+                health_status["services"]["neo4j"] = "unhealthy"
+                health_status["status"] = "degraded"
+                health_status["neo4j_error"] = error
+        except Exception as e:
+            health_status["services"]["neo4j"] = "initializing" if in_grace_period else "unhealthy"
+            health_status["status"] = "initializing" if in_grace_period else "degraded"
+            logger.error(f"Neo4j health check exception: {e}")
+
+    # Check Qdrant with retries
     if qdrant_client:
         try:
-            qdrant_client.get_collections()
-            health_status["services"]["qdrant"] = "healthy"
-        except (ConnectionError, TimeoutError, Exception) as e:
-            health_status["services"]["qdrant"] = "unhealthy"
-            health_status["status"] = "degraded"
-            print(f"Qdrant health check failed: {e}")
 
-    # Check Redis/KV Store
+            def qdrant_check():
+                return qdrant_client.get_collections()
+
+            status, error = await _check_service_with_retries("Qdrant", qdrant_check)
+
+            if status == "healthy":
+                health_status["services"]["qdrant"] = "healthy"
+            elif in_grace_period and status == "unhealthy":
+                health_status["services"]["qdrant"] = "initializing"
+                health_status["status"] = "initializing"
+            else:
+                health_status["services"]["qdrant"] = "unhealthy"
+                health_status["status"] = "degraded"
+                health_status["qdrant_error"] = error
+        except Exception as e:
+            health_status["services"]["qdrant"] = "initializing" if in_grace_period else "unhealthy"
+            health_status["status"] = "initializing" if in_grace_period else "degraded"
+            logger.error(f"Qdrant health check exception: {e}")
+
+    # Check Redis with retries (Redis usually starts fast)
     if kv_store:
         try:
-            # Check if Redis connection is available
-            if kv_store.redis.redis_client:
-                kv_store.redis.redis_client.ping()
-            health_status["services"]["redis"] = "healthy"
-        except (ConnectionError, TimeoutError, Exception) as e:
+
+            def redis_check():
+                if kv_store.redis.redis_client:
+                    return kv_store.redis.redis_client.ping()
+                return True
+
+            status, error = await _check_service_with_retries(
+                "Redis", redis_check, max_retries=2, retry_delay=2.0
+            )
+
+            if status == "healthy":
+                health_status["services"]["redis"] = "healthy"
+            else:
+                health_status["services"]["redis"] = "unhealthy"
+                health_status["status"] = "degraded"
+                health_status["redis_error"] = error
+        except Exception as e:
             health_status["services"]["redis"] = "unhealthy"
             health_status["status"] = "degraded"
-            print(f"Redis health check failed: {e}")
+            logger.error(f"Redis health check exception: {e}")
 
+    # Final status determination
+    all_services = list(health_status["services"].values())
+    if all(s == "healthy" for s in all_services):
+        health_status["status"] = "healthy"
+    elif any(s == "initializing" for s in all_services) and in_grace_period:
+        health_status["status"] = "initializing"
+    else:
+        health_status["status"] = "degraded"
+
+    logger.info(
+        f"Health check result: {health_status['status']} - Services: {health_status['services']}"
+    )
     return health_status
 
 
@@ -458,13 +612,13 @@ async def health() -> Dict[str, Any]:
 async def status() -> Dict[str, Any]:
     """
     Enhanced status endpoint for agent orchestration.
-    
+
     Returns comprehensive system information including Veris Memory identity,
     available tools, version information, and dependency health.
     """
     # Get health status
     health_status = await health()
-    
+
     return {
         "label": "◎ Veris Memory",
         "version": "0.9.0",
@@ -472,15 +626,15 @@ async def status() -> Dict[str, Any]:
         "deps": {
             "qdrant": "ok" if health_status["services"]["qdrant"] == "healthy" else "error",
             "neo4j": "ok" if health_status["services"]["neo4j"] == "healthy" else "error",
-            "redis": "ok" if health_status["services"]["redis"] == "healthy" else "error"
+            "redis": "ok" if health_status["services"]["redis"] == "healthy" else "error",
         },
         "tools": [
             "store_context",
-            "retrieve_context", 
+            "retrieve_context",
             "query_graph",
             "update_scratchpad",
-            "get_agent_state"
-        ]
+            "get_agent_state",
+        ],
     }
 
 
@@ -488,29 +642,33 @@ async def status() -> Dict[str, Any]:
 async def verify_readiness() -> Dict[str, Any]:
     """
     Agent readiness verification endpoint.
-    
+
     Provides diagnostic information for agents to verify system readiness,
     including tool availability, schema versions, and resource quotas.
     """
     try:
         # Get current status
         status_info = await status()
-        
+
         # Check tool availability
         tools_available = len(status_info["tools"])
-        
+
         # Get index sizes if possible
         index_info = {}
         if qdrant_client:
             try:
                 collections = qdrant_client.get_collections()
-                if hasattr(collections, 'collections'):
+                if hasattr(collections, "collections"):
                     for collection in collections.collections:
                         if collection.name == "context_store":
-                            index_info["vector_count"] = collection.vectors_count if hasattr(collection, 'vectors_count') else "unknown"
+                            index_info["vector_count"] = (
+                                collection.vectors_count
+                                if hasattr(collection, "vectors_count")
+                                else "unknown"
+                            )
             except Exception:
                 index_info["vector_count"] = "unavailable"
-        
+
         if neo4j_client:
             try:
                 # Try to get node count
@@ -519,10 +677,10 @@ async def verify_readiness() -> Dict[str, Any]:
                     index_info["graph_nodes"] = result[0].get("node_count", "unknown")
             except Exception:
                 index_info["graph_nodes"] = "unavailable"
-        
+
         # Schema version from agent schema
         schema_version = "0.9.0"  # From agent-schema.json
-        
+
         readiness_score = 0
         if status_info["agent_ready"]:
             readiness_score += 40  # Base readiness
@@ -531,7 +689,7 @@ async def verify_readiness() -> Dict[str, Any]:
         if index_info:
             readiness_score += 20  # Indexes accessible
         readiness_score += 10  # Schema compatibility
-        
+
         return {
             "ready": status_info["agent_ready"],
             "readiness_score": min(readiness_score, 100),
@@ -543,16 +701,24 @@ async def verify_readiness() -> Dict[str, Any]:
             "dependencies": status_info["dependencies"],
             "usage_quotas": {
                 "vector_operations": "unlimited",
-                "graph_queries": "unlimited", 
+                "graph_queries": "unlimited",
                 "kv_operations": "unlimited",
-                "note": "Quotas depend on underlying database limits"
+                "note": "Quotas depend on underlying database limits",
             },
             "recommended_actions": [
-                "Verify all dependencies are healthy" if not status_info["agent_ready"] else "System ready for agent operations",
-                f"Tools available: {tools_available}/5" if tools_available < 5 else "All MCP tools operational"
-            ]
+                (
+                    "Verify all dependencies are healthy"
+                    if not status_info["agent_ready"]
+                    else "System ready for agent operations"
+                ),
+                (
+                    f"Tools available: {tools_available}/5"
+                    if tools_available < 5
+                    else "All MCP tools operational"
+                ),
+            ],
         }
-        
+
     except Exception as e:
         return {
             "ready": False,
@@ -560,8 +726,8 @@ async def verify_readiness() -> Dict[str, Any]:
             "error": str(e),
             "recommended_actions": [
                 "Check system logs for detailed error information",
-                "Verify all dependencies are running and accessible"
-            ]
+                "Verify all dependencies are running and accessible",
+            ],
         }
 
 
@@ -648,30 +814,32 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
 
             query_hash = hashlib.sha256(request.query.encode()).digest()
             query_vector = []
-            embedding_dim = int(os.getenv('EMBEDDING_DIMENSIONS', '384'))  # Use configurable dimensions
+            embedding_dim = Config.EMBEDDING_DIMENSIONS
             for i in range(embedding_dim):
                 byte_idx = i % len(query_hash)
                 query_vector.append(float(query_hash[byte_idx]) / 255.0)
 
             try:
                 # Get collection name from config (default: context_store)
-                collection_name = os.getenv('QDRANT_COLLECTION', 'context_store')
-                
+                collection_name = os.getenv("QDRANT_COLLECTION", "context_store")
+
                 vector_results = qdrant_client.search(
                     collection_name=collection_name,
                     query_vector=query_vector,
                     limit=request.limit,
                 )
-                
+
                 # Convert results to proper format
                 for result in vector_results:
-                    results.append({
-                        "id": result.id,
-                        "content": result.payload,
-                        "score": result.score,
-                        "source": "vector"
-                    })
-                    
+                    results.append(
+                        {
+                            "id": result.id,
+                            "content": result.payload,
+                            "score": result.score,
+                            "source": "vector",
+                        }
+                    )
+
             except Exception as e:
                 logger.warning(f"Vector search failed: {e}")
                 # Continue with other search modes

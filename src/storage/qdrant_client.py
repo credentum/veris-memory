@@ -87,8 +87,9 @@ class VectorDBInitializer:
             click.echo(f"Error: {config_path} not found", err=True)
             sys.exit(1)
         except yaml.YAMLError as e:
-            click.echo(f"Error parsing {config_path}: {e}", err=True)
-            sys.exit(1)
+            error_msg = f"Error parsing {config_path}: {e}"
+            click.echo(error_msg, err=True)
+            raise ConfigParseError(config_path, error_msg)
 
     def connect(self) -> bool:
         """Connect to Qdrant instance"""
@@ -266,6 +267,146 @@ class VectorDBInitializer:
         except Exception as e:
             click.echo(f"✗ Failed to test point operations: {e}", err=True)
             return False
+
+    def store_vector(
+        self, vector_id: str, embedding: list, metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Store a vector in the Qdrant collection.
+
+        Args:
+            vector_id: Unique identifier for the vector
+            embedding: The vector embedding
+            metadata: Optional metadata to store with the vector
+
+        Returns:
+            str: The vector ID that was stored
+
+        Raises:
+            RuntimeError: If not connected or storage fails
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Qdrant")
+
+        collection_name = self.config.get("qdrant", {}).get("collection_name", "project_context")
+
+        # Validate inputs
+        if not vector_id or not isinstance(vector_id, str):
+            raise ValueError("vector_id must be a non-empty string")
+        if not embedding or not isinstance(embedding, list):
+            raise ValueError("embedding must be a non-empty list")
+        if not all(isinstance(x, (int, float)) for x in embedding):
+            raise ValueError("embedding must contain only numeric values")
+
+        try:
+            from qdrant_client.models import PointStruct
+            
+            self.client.upsert(
+                collection_name=collection_name,
+                points=[
+                    PointStruct(
+                        id=vector_id,
+                        vector=embedding,
+                        payload=metadata or {},
+                    )
+                ],
+            )
+            return vector_id
+        except ConnectionError as e:
+            raise RuntimeError(f"Qdrant connection error: {e}")
+        except TimeoutError as e:
+            raise RuntimeError(f"Qdrant timeout error: {e}")
+        except ValueError as e:
+            # Re-raise validation errors
+            raise
+        except ImportError as e:
+            raise RuntimeError(f"Missing Qdrant dependencies: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to store vector: {e}")
+
+    def search(
+        self, query_vector: list, limit: int = 10, filter_dict: Optional[Dict[str, Any]] = None
+    ) -> list:
+        """Search for similar vectors in the collection.
+
+        Args:
+            query_vector: The query vector to search for
+            limit: Maximum number of results to return
+            filter_dict: Optional filter conditions
+
+        Returns:
+            list: Search results with scores and metadata
+
+        Raises:
+            RuntimeError: If not connected or search fails
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Qdrant")
+
+        collection_name = self.config.get("qdrant", {}).get("collection_name", "project_context")
+
+        # Validate inputs
+        if not query_vector or not isinstance(query_vector, list):
+            raise ValueError("query_vector must be a non-empty list")
+        if not all(isinstance(x, (int, float)) for x in query_vector):
+            raise ValueError("query_vector must contain only numeric values")
+        if not isinstance(limit, int) or limit <= 0:
+            raise ValueError("limit must be a positive integer")
+        if limit > 1000:  # Reasonable upper bound
+            raise ValueError("limit cannot exceed 1000")
+        if filter_dict is not None and not isinstance(filter_dict, dict):
+            raise ValueError("filter_dict must be a dictionary or None")
+
+        try:
+            results = self.client.search(
+                collection_name=collection_name,
+                query_vector=query_vector,
+                limit=limit,
+                query_filter=filter_dict,
+            )
+
+            # Convert results to a more usable format
+            search_results = []
+            for result in results:
+                search_results.append(
+                    {
+                        "id": result.id,
+                        "score": result.score,
+                        "payload": result.payload or {},
+                    }
+                )
+
+            return search_results
+        except ConnectionError as e:
+            raise RuntimeError(f"Qdrant connection error during search: {e}")
+        except TimeoutError as e:
+            raise RuntimeError(f"Qdrant timeout error during search: {e}")
+        except ValueError as e:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            raise RuntimeError(f"Failed to search vectors: {e}")
+
+    def get_collections(self):
+        """Get information about available collections.
+
+        Returns:
+            Qdrant collections object
+
+        Raises:
+            RuntimeError: If not connected or operation fails
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Qdrant")
+
+        try:
+            return self.client.get_collections()
+        except Exception as e:
+            raise RuntimeError(f"Failed to get collections: {e}")
+
+    def close(self) -> None:
+        """Close the client connection (no-op for Qdrant client)."""
+        # Qdrant client doesn't require explicit closing
+        pass
 
 
 @click.command()
