@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7.2.5-alpine@sha256:6aaf3f5e6bc8a592fbfe2cccf19eb36d27c39d12dab4f4b01556b7449e7b1f44
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - /raid1/docker-data/redis:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 8gb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5.15-community@sha256:69c579facb7acab1e98f28952b91144c89e469a081804a5dafebd6c3030433b8
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - /raid1/docker-data/neo4j/data:/data
+      - /raid1/docker-data/neo4j/logs:/logs
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
+      - NEO4J_server_memory_heap_initial__size=20G
+      - NEO4J_server_memory_heap_max__size=20G
+      - NEO4J_server_memory_pagecache_size=16G
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.1@sha256:d774e7bb65744454984c6021637a0da89271f30df15e48601a9fafc926d26b1f
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - /raid1/docker-data/qdrant:/qdrant/storage
+    restart: unless-stopped
