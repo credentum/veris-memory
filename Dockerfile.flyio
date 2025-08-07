@@ -152,8 +152,9 @@ RUN adduser --uid 1001 --disabled-password app \
     && chown -R 1001:1001 /var/lib/neo4j 2>/dev/null || true \
     && chmod -R 755 /var/lib/neo4j 2>/dev/null || true
 
-# Expose ports
-EXPOSE 8000 6333 6334 7474 7687 6379
+# Expose ports - Primary service port first for Fly.io
+EXPOSE 8000
+EXPOSE 6333 6334 7474 7687 6379
 
 # Environment variables
 ENV QDRANT_URL=http://localhost:6333
