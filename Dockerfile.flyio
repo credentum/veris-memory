@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Fly.io deployment
 # Stage 1: Build dependencies and download binaries
-# Updated to Ubuntu 24.04 for GLIBC 2.38 compatibility with Qdrant v1.14.0
-FROM ubuntu:24.04 AS builder
+# Using Ubuntu 22.04 with compatible Qdrant v1.10.1 (GLIBC 2.35 compatible)
+FROM ubuntu:22.04@sha256:965fbcae990b0467ed5657caceaec165018ef44a4d2d46c7cdea80a9dff0d1ea AS builder
 
 # Prevent interactive prompts during apt install
 ENV DEBIAN_FRONTEND=noninteractive
@@ -14,9 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gpg \
     ca-certificates \
     # Python build dependencies
-    python3.12 \
+    python3.11 \
     python3-pip \
-    python3.12-venv \
+    python3.11-venv \
     # Build tools for Python packages (minimal)
     build-essential \
     python3.11-dev \
@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create Python virtual environment
-RUN python3.12 -m venv /opt/venv
+RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy and install Python requirements in builder stage (production only, no dev deps)
@@ -36,8 +36,9 @@ RUN pip install --no-cache-dir --upgrade pip \
     && find /opt/venv -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 # Build args for configurable Qdrant version and checksum
-ARG QDRANT_VERSION=1.14.0
-ARG QDRANT_SHA256=28e344971b38fc4682b8a7bf4952be6bb46f6f6604b0630a79db897164d2cc12
+# Using v1.9.7 which is compatible with GLIBC 2.35 (Ubuntu 22.04)
+ARG QDRANT_VERSION=1.9.7
+ARG QDRANT_SHA256=057dc933e4c35df4c874c799694cbd98e7231730bc0870a156396613a90bf1b3
 
 # Download and verify Qdrant binary
 RUN QDRANT_URL="https://github.com/qdrant/qdrant/releases/download/v${QDRANT_VERSION}/qdrant-x86_64-unknown-linux-gnu.tar.gz" \
@@ -55,9 +56,9 @@ RUN QDRANT_URL="https://github.com/qdrant/qdrant/releases/download/v${QDRANT_VER
     && mv qdrant /usr/local/bin/ \
     && rm qdrant.tar.gz
 
-# Stage 2: Runtime image
-# Updated to Ubuntu 24.04 for GLIBC 2.38 compatibility with Qdrant v1.14.0
-FROM ubuntu:24.04 AS runtime
+# Stage 2: Runtime image  
+# Using Ubuntu 22.04 with compatible Qdrant v1.10.1 (GLIBC 2.35 compatible)
+FROM ubuntu:22.04@sha256:965fbcae990b0467ed5657caceaec165018ef44a4d2d46c7cdea80a9dff0d1ea AS runtime
 
 # Prevent interactive prompts during apt install
 ENV DEBIAN_FRONTEND=noninteractive
@@ -67,8 +68,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Install only runtime dependencies (minimize size)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Python runtime (minimal)
-    python3.12 \
-    python3.12-venv \
+    python3.11 \
+    python3.11-venv \
     # Java for Neo4j (JRE 21 required for latest Neo4j)
     openjdk-21-jre-headless \
     # Essential utilities only
