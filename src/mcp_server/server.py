@@ -667,20 +667,16 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                     "collection_name", "project_context"
                 )
 
-                # Store the vector using Qdrant client
-                qdrant_client.client.upsert(
-                    collection_name=collection_name,
-                    points=[
-                        PointStruct(
-                            id=context_id,
-                            vector=embedding,
-                            payload={
-                                "content": content,
-                                "type": context_type,
-                                "metadata": metadata,
-                            },
-                        )
-                    ],
+                # Store the vector using VectorDBInitializer.store_vector method
+                vector_metadata = {
+                    "content": content,
+                    "type": context_type,
+                    "metadata": metadata,
+                }
+                qdrant_client.store_vector(
+                    vector_id=context_id,
+                    embedding=embedding,
+                    metadata=vector_metadata,
                 )
                 vector_id = context_id
                 logger.info(f"Stored vector with ID: {vector_id}")
@@ -880,20 +876,22 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                     "collection_name", "project_context"
                 )
 
-                vector_results = qdrant_client.client.search(
-                    collection_name=collection_name,
+                # Use VectorDBInitializer.search method instead of direct client access
+                vector_results = qdrant_client.search(
                     query_vector=query_vector,
                     limit=limit,
+                    filter_dict=None,  # Can be enhanced later with type filtering
                 )
 
-                # Convert Qdrant results to our format
-                for hit in vector_results:
+                # Convert VectorDBInitializer results to our format
+                # vector_results is already in the correct format from VectorDBInitializer.search
+                for result in vector_results:
                     results.append(
                         {
-                            "id": hit.id,
-                            "score": hit.score,
+                            "id": result["id"],
+                            "score": result["score"],
                             "source": "vector",
-                            "payload": hit.payload,
+                            "payload": result["payload"],
                         }
                     )
 
@@ -935,9 +933,12 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                                n.metadata as metadata, n.created_at as created_at
                         LIMIT $limit
                         """
-                    result = session.run(cypher_query, type=context_type, query=query, limit=limit)
+                    query_result = neo4j_client.query(
+                        cypher_query, 
+                        parameters={"type": context_type, "query": query, "limit": limit}
+                    )
 
-                    for record in result:
+                    for record in query_result:
                         try:
                             content = json.loads(record["content"]) if record["content"] else {}
                             metadata = json.loads(record["metadata"]) if record["metadata"] else {}
@@ -1081,23 +1082,8 @@ async def query_graph_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
             return {"success": False, "error": "Graph database not available"}
 
         try:
-            with neo4j_client.driver.session(database=neo4j_client.database) as session:
-                result = session.run(query, parameters)
-                results = []
-                for record in result:
-                    # Convert Neo4j record to dictionary
-                    record_dict = {}
-                    for key in record.keys():
-                        value = record[key]
-                        # Handle Neo4j types that aren't JSON serializable
-                        if hasattr(value, "__dict__"):
-                            # Convert Neo4j nodes/relationships to dict
-                            record_dict[key] = (
-                                dict(value) if hasattr(value, "items") else str(value)
-                            )
-                        else:
-                            record_dict[key] = value
-                    results.append(record_dict)
+            # Use Neo4jInitializer.query method which handles record conversion
+            results = neo4j_client.query(query, parameters)
         except Exception as e:
             logger.error(f"Graph query execution failed: {e}")
             return {"success": False, "error": str(e)}
@@ -1451,21 +1437,20 @@ async def get_health_status() -> Dict[str, Any]:
         "services": {"neo4j": "unknown", "qdrant": "unknown", "redis": "unknown"},
     }
 
-    # Check Neo4j
+    # Check Neo4j using Neo4jInitializer.query method
     if neo4j_client and neo4j_client.driver:
         try:
-            with neo4j_client.driver.session() as session:
-                session.run("RETURN 1").single()
+            neo4j_client.query("RETURN 1")
             health_status["services"]["neo4j"] = "healthy"
         except Exception as e:
             health_status["services"]["neo4j"] = "unhealthy"
             health_status["status"] = "degraded"
             logger.warning(f"Neo4j health check failed: {e}")
 
-    # Check Qdrant
+    # Check Qdrant using VectorDBInitializer.get_collections method
     if qdrant_client and qdrant_client.client:
         try:
-            qdrant_client.client.get_collections()
+            qdrant_client.get_collections()
             health_status["services"]["qdrant"] = "healthy"
         except Exception as e:
             health_status["services"]["qdrant"] = "unhealthy"
