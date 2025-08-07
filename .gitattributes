@@ -1,20 +1,28 @@
-# Collapse source directories in GitHub view to highlight README
-src/* linguist-documentation
-schemas/* linguist-documentation
-contracts/* linguist-documentation
-docker/* linguist-documentation
-tests/* linguist-documentation
-*.json linguist-documentation
-*.yaml linguist-documentation
-*.yml linguist-documentation
-package-lock.json linguist-generated
+# ─────────────────────────────
+#  GitHub UI - folder collapsing
+#  Mark bulk folders as vendored so the
+#  README stays front-and-center.
+# ─────────────────────────────
 
-# Mark configuration files as documentation to reduce clutter
-.ctxrc.yaml linguist-documentation
-supervisord.conf linguist-documentation
-fly.toml linguist-documentation
+# Source & implementation
+src/**         linguist-vendored
+schemas/**     linguist-vendored
+contracts/**   linguist-vendored
+docker/**      linguist-vendored
+tests/**       linguist-vendored
 
-# Mark build and deployment files appropriately  
-Dockerfile* linguist-generated
-*.sh linguist-generated
+# Large data / config files
+*.json         linguist-vendored
+*.yaml         linguist-vendored
+*.yml          linguist-vendored
+
+# Single-file configs
+.ctxrc.yaml    linguist-vendored
+supervisord.conf linguist-vendored
+fly.toml       linguist-vendored
+
+# Build & deployment artefacts
+Dockerfile*    linguist-generated
+*.sh           linguist-generated
 requirements.txt linguist-generated
+package-lock.json linguist-generated
