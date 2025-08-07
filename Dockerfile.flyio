@@ -1,6 +1,7 @@
 # Multi-stage Dockerfile for Fly.io deployment
 # Stage 1: Build dependencies and download binaries
-FROM ubuntu:22.04@sha256:965fbcae990b0467ed5657caceaec165018ef44a4d2d46c7cdea80a9dff0d1ea AS builder
+# Updated to Ubuntu 24.04 for GLIBC 2.38 compatibility with Qdrant v1.14.0
+FROM ubuntu:24.04 AS builder
 
 # Prevent interactive prompts during apt install
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,9 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gpg \
     ca-certificates \
     # Python build dependencies
-    python3.11 \
+    python3.12 \
     python3-pip \
-    python3.11-venv \
+    python3.12-venv \
     # Build tools for Python packages (minimal)
     build-essential \
     python3.11-dev \
@@ -23,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create Python virtual environment
-RUN python3.11 -m venv /opt/venv
+RUN python3.12 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy and install Python requirements in builder stage (production only, no dev deps)
@@ -55,7 +56,8 @@ RUN QDRANT_URL="https://github.com/qdrant/qdrant/releases/download/v${QDRANT_VER
     && rm qdrant.tar.gz
 
 # Stage 2: Runtime image
-FROM ubuntu:22.04@sha256:965fbcae990b0467ed5657caceaec165018ef44a4d2d46c7cdea80a9dff0d1ea AS runtime
+# Updated to Ubuntu 24.04 for GLIBC 2.38 compatibility with Qdrant v1.14.0
+FROM ubuntu:24.04 AS runtime
 
 # Prevent interactive prompts during apt install
 ENV DEBIAN_FRONTEND=noninteractive
@@ -65,8 +67,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Install only runtime dependencies (minimize size)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Python runtime (minimal)
-    python3.11 \
-    python3.11-venv \
+    python3.12 \
+    python3.12-venv \
     # Java for Neo4j (JRE 21 required for latest Neo4j)
     openjdk-21-jre-headless \
     # Essential utilities only
