@@ -1,0 +1,154 @@
+name: Hetzner Context Store Monitoring
+
+on:
+  schedule:
+    # Run health checks every 30 minutes
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      check_type:
+        description: 'Type of monitoring check'
+        required: true
+        default: 'health'
+        type: choice
+        options:
+        - health
+        - full
+        - security
+
+jobs:
+  monitor-hetzner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup SSH key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner_key
+        chmod 600 ~/.ssh/hetzner_key
+        ssh-keyscan -H 135.181.4.118 >> ~/.ssh/known_hosts
+        
+        # Test SSH connection
+        ssh -i ~/.ssh/hetzner_key -o ConnectTimeout=10 root@135.181.4.118 "echo 'SSH connection successful'"
+    
+    - name: Run Health Check
+      if: ${{ github.event.inputs.check_type == 'health' || github.event.inputs.check_type == '' }}
+      run: |
+        echo "🏥 Running Hetzner Context Store Health Check"
+        
+        # Check service health via SSH
+        ssh -i ~/.ssh/hetzner_key root@135.181.4.118 << 'EOF'
+        echo "=== SERVICE HEALTH CHECK ==="
+        echo "Time: $(date)"
+        
+        # Check Redis
+        echo -n "Redis: "
+        if echo "PING" | nc -w 2 localhost 6379 | grep -q PONG; then
+          echo "✅ OK"
+          redis_ok=1
+        else
+          echo "❌ FAIL"
+          redis_ok=0
+        fi
+        
+        # Check Neo4j
+        echo -n "Neo4j: "
+        if timeout 3 bash -c "</dev/tcp/localhost/7474" 2>/dev/null; then
+          echo "✅ OK"
+          neo4j_ok=1
+        else
+          echo "❌ FAIL"
+          neo4j_ok=0
+        fi
+        
+        # Check Qdrant
+        echo -n "Qdrant: "
+        if curl -s -m 3 http://localhost:6333/ | grep -q "qdrant"; then
+          echo "✅ OK"
+          qdrant_ok=1
+        else
+          echo "❌ FAIL"
+          qdrant_ok=0
+        fi
+        
+        echo ""
+        echo "=== CONTAINER STATUS ==="
+        docker ps --format "{{.Names}}: {{.Status}}"
+        
+        echo ""
+        echo "=== SYSTEM RESOURCES ==="
+        echo "Memory: $(free -h | grep Mem | awk '{print $3 "/" $2}')"
+        echo "Disk: $(df -h /raid1 | tail -1 | awk '{print $3 "/" $2 " (" $5 " used)"}')"
+        echo "Load: $(cat /proc/loadavg | cut -d' ' -f1-3)"
+        
+        # Exit with error if any service is down
+        if [ $redis_ok -eq 1 ] && [ $neo4j_ok -eq 1 ] && [ $qdrant_ok -eq 1 ]; then
+          echo ""
+          echo "✅ OVERALL HEALTH: EXCELLENT"
+          exit 0
+        else
+          echo ""
+          echo "❌ OVERALL HEALTH: DEGRADED"
+          exit 1
+        fi
+        EOF
+    
+    - name: Run Full Monitoring
+      if: ${{ github.event.inputs.check_type == 'full' }}
+      run: |
+        echo "📊 Running Full Hetzner Monitoring"
+        
+        ssh -i ~/.ssh/hetzner_key root@135.181.4.118 << 'EOF'
+        cd /opt/context-store
+        if [ -f hetzner-setup/validate-deployment.sh ]; then
+          echo "Running comprehensive validation..."
+          ./hetzner-setup/validate-deployment.sh
+        else
+          echo "Validation script not found, running basic checks..."
+          docker ps
+          free -h
+          df -h
+        fi
+        EOF
+    
+    - name: Run Security Check
+      if: ${{ github.event.inputs.check_type == 'security' }}
+      run: |
+        echo "🔒 Running Security Monitoring"
+        
+        ssh -i ~/.ssh/hetzner_key root@135.181.4.118 << 'EOF'
+        echo "=== SECURITY STATUS ==="
+        echo "Time: $(date)"
+        
+        echo ""
+        echo "Firewall Status: $(ufw status | grep Status | cut -d: -f2)"
+        echo "fail2ban Status: $(systemctl is-active fail2ban)"
+        
+        echo ""
+        echo "=== EXTERNAL PORTS ==="
+        ss -tlnp | grep -v "127.0.0.1" | grep LISTEN
+        
+        echo ""
+        echo "=== CONTAINER PRIVILEGES ==="
+        for container in $(docker ps --format "{{.Names}}"); do
+          echo -n "$container: "
+          if docker inspect "$container" | grep -q '"Privileged": true'; then
+            echo "❌ PRIVILEGED"
+          else
+            echo "✅ UNPRIVILEGED"
+          fi
+        done
+        
+        echo ""
+        echo "=== RECENT AUTH ATTEMPTS ==="
+        grep "authentication failure\|Failed password" /var/log/auth.log | tail -5 || echo "No recent failures"
+        EOF
+    
+    - name: Cleanup SSH key
+      if: always()
+      run: |
+        rm -f ~/.ssh/hetzner_key
