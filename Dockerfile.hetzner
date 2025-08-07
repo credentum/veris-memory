@@ -1,0 +1,196 @@
+# Multi-stage Dockerfile for Hetzner dedicated server deployment
+# Optimized for Ubuntu 24.04, 64GB RAM, 6-core AMD Ryzen 5 5600X
+# Stage 1: Build dependencies and download binaries
+FROM ubuntu:24.04@sha256:b359f1067efa76f37863778f7b6d0e8d911e3ee8efa807ad01fbf5dc1ef9006b AS builder
+
+# Prevent interactive prompts during apt install
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Essential build tools
+    wget \
+    curl \
+    gpg \
+    ca-certificates \
+    # Python build dependencies
+    python3.12 \
+    python3-pip \
+    python3.12-venv \
+    # Build tools for Python packages
+    build-essential \
+    python3.12-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Create Python virtual environment
+RUN python3.12 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy and install Python requirements
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip cache purge \
+    && find /opt/venv -name "*.pyc" -delete \
+    && find /opt/venv -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+
+# Build args for configurable Qdrant version
+ARG QDRANT_VERSION=1.12.1
+ARG QDRANT_SHA256=65eae36198850e63a1f09d61e788a701b3d8627a3967b47cac50020a7a2f7495
+
+# Download and verify Qdrant binary with checksum validation
+RUN QDRANT_URL="https://github.com/qdrant/qdrant/releases/download/v${QDRANT_VERSION}/qdrant-x86_64-unknown-linux-gnu.tar.gz" \
+    && EXPECTED_SHA256="${QDRANT_SHA256}" \
+    && wget "${QDRANT_URL}" -O qdrant.tar.gz \
+    && echo "Verifying Qdrant binary checksum..." \
+    && ACTUAL_SHA256=$(sha256sum qdrant.tar.gz | cut -d' ' -f1) \
+    && echo "Expected: ${EXPECTED_SHA256}" \
+    && echo "Actual:   ${ACTUAL_SHA256}" \
+    && if [ "${ACTUAL_SHA256}" != "${EXPECTED_SHA256}" ]; then \
+        echo "ERROR: Checksum verification failed! Aborting build for security." && exit 1; \
+    fi \
+    && echo "Checksum verification passed" \
+    && tar xzf qdrant.tar.gz \
+    && mv qdrant /usr/local/bin/ \
+    && rm qdrant.tar.gz
+
+# Stage 2: Runtime image optimized for Hetzner hardware
+FROM ubuntu:24.04@sha256:b359f1067efa76f37863778f7b6d0e8d911e3ee8efa807ad01fbf5dc1ef9006b AS runtime
+
+# Prevent interactive prompts during apt install
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Install runtime dependencies including Tailscale
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Python runtime
+    python3.12 \
+    python3.12-venv \
+    # Java for Neo4j (JRE 21 required)
+    openjdk-21-jre-headless \
+    # Essential utilities
+    curl \
+    supervisor \
+    netcat-openbsd \
+    procps \
+    # Redis server
+    redis-server \
+    # Neo4j requirements
+    wget \
+    gpg \
+    ca-certificates \
+    # Tailscale dependencies
+    iptables \
+    # Hardware monitoring
+    lm-sensors \
+    smartmontools \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Install Tailscale
+RUN curl -fsSL https://tailscale.com/install.sh | sh
+
+# Copy Python virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy Qdrant binary from builder
+COPY --from=builder /usr/local/bin/qdrant /usr/local/bin/qdrant
+
+# Install Neo4j with proper GPG verification
+RUN mkdir -p /etc/apt/keyrings \
+    && wget -O - https://debian.neo4j.com/neotechnology.gpg.key | gpg --dearmor -o /etc/apt/keyrings/neo4j.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/neo4j.gpg] https://debian.neo4j.com stable latest" > /etc/apt/sources.list.d/neo4j.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends neo4j \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Create application directory
+WORKDIR /app
+
+# Create data directories with RAID1 integration
+RUN mkdir -p /app/data/qdrant /app/data/neo4j /app/data/redis /app/data/logs \
+    && mkdir -p /var/lib/neo4j/data /var/lib/neo4j/logs \
+    && mkdir -p /raid1/docker-data/qdrant /raid1/docker-data/neo4j /raid1/docker-data/redis
+
+# Copy Python application
+COPY src/ ./src/
+COPY schemas/ ./schemas/
+COPY contracts/ ./contracts/
+
+# Copy configuration files
+COPY .ctxrc.yaml /app/.ctxrc.yaml
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY start-services.sh /app/start-services.sh
+RUN chmod +x /app/start-services.sh
+
+# Copy monitoring, backup, and deployment scripts
+COPY monitoring/ /app/monitoring/
+COPY deploy/hetzner/ /app/deploy/
+COPY backup/ /app/backup/
+RUN chmod +x /app/monitoring/*.sh /app/deploy/*.sh /app/backup/*.sh
+
+# Configure Redis for high-memory environment (8GB allocation)
+RUN mkdir -p /app/config \
+    && echo "bind 127.0.0.1" > /app/config/redis.conf \
+    && echo "port 6379" >> /app/config/redis.conf \
+    && echo "dir /raid1/docker-data/redis" >> /app/config/redis.conf \
+    && echo "maxmemory 8gb" >> /app/config/redis.conf \
+    && echo "maxmemory-policy allkeys-lru" >> /app/config/redis.conf \
+    && echo "daemonize no" >> /app/config/redis.conf \
+    && echo "save 900 1" >> /app/config/redis.conf \
+    && echo "save 300 10" >> /app/config/redis.conf \
+    && echo "save 60 10000" >> /app/config/redis.conf
+
+# Configure Neo4j for high-memory environment (20GB heap)
+ENV NEO4J_HOME=/var/lib/neo4j
+RUN mkdir -p /var/lib/neo4j/conf /etc/neo4j \
+    && echo "server.default_listen_address=0.0.0.0" > /var/lib/neo4j/conf/neo4j.conf \
+    && echo "server.bolt.listen_address=0.0.0.0:7687" >> /var/lib/neo4j/conf/neo4j.conf \
+    && echo "server.http.listen_address=0.0.0.0:7474" >> /var/lib/neo4j/conf/neo4j.conf \
+    && echo "server.directories.data=/raid1/docker-data/neo4j" >> /var/lib/neo4j/conf/neo4j.conf \
+    && echo "server.directories.logs=/app/data/logs" >> /var/lib/neo4j/conf/neo4j.conf \
+    && echo "server.memory.heap.initial_size=20g" >> /var/lib/neo4j/conf/neo4j.conf \
+    && echo "server.memory.heap.max_size=20g" >> /var/lib/neo4j/conf/neo4j.conf \
+    && echo "server.memory.pagecache.size=16g" >> /var/lib/neo4j/conf/neo4j.conf \
+    && echo "server.jvm.additional=-XX:+UseG1GC" >> /var/lib/neo4j/conf/neo4j.conf \
+    && echo "server.jvm.additional=-XX:+UnlockExperimentalVMOptions" >> /var/lib/neo4j/conf/neo4j.conf \
+    && echo "server.jvm.additional=-XX:+UseTransparentHugePages" >> /var/lib/neo4j/conf/neo4j.conf \
+    && cp /var/lib/neo4j/conf/neo4j.conf /etc/neo4j/neo4j.conf
+
+# Create app user and set permissions
+RUN adduser --uid 1001 --disabled-password app \
+    && chown -R 1001:1001 /var/lib/neo4j /app \
+    && chmod -R 755 /var/lib/neo4j
+
+# Expose ports (internal only - Tailscale provides secure access)
+EXPOSE 8000 6333 6334 7474 7687 6379
+
+# Environment variables optimized for Hetzner hardware
+ENV QDRANT_URL=http://localhost:6333
+ENV NEO4J_URI=bolt://localhost:7687
+ENV NEO4J_USER=neo4j
+ENV REDIS_URL=redis://localhost:6379
+ENV MCP_SERVER_PORT=8000
+ENV LOG_LEVEL=info
+ENV HARDWARE_PROFILE=hetzner-dedicated
+ENV MEMORY_PROFILE=64gb
+ENV CPU_PROFILE=6core-ryzen5600x
+ENV STORAGE_PROFILE=raid1-nvme
+
+# Tailscale environment variables (will be provided at runtime)
+ENV TAILSCALE_AUTHKEY=""
+ENV TAILSCALE_HOSTNAME=""
+
+# Health check with enhanced monitoring
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
+    CMD curl -f http://localhost:8000/health && /app/monitoring/hardware-health.sh || exit 1
+
+# Switch to non-root user
+USER app
+
+# Start all services with Tailscale integration
+CMD ["/app/start-services.sh"]
