@@ -34,6 +34,7 @@ try:
     from ..storage.kv_store import ContextKV
     from ..storage.neo4j_client import Neo4jInitializer
     from ..storage.qdrant_client import VectorDBInitializer
+    from ..storage.reranker import get_reranker
     from ..validators.config_validator import validate_all_configs
 except ImportError:
     # Fallback for different import contexts
@@ -49,6 +50,7 @@ except ImportError:
     from storage.kv_store import ContextKV
     from storage.neo4j_client import Neo4jInitializer
     from storage.qdrant_client import VectorDBInitializer
+    from storage.reranker import get_reranker
     from validators.config_validator import validate_all_configs
 
 # Configure logging
@@ -987,6 +989,26 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "community_info"
             ] = "Community detection available via detect_communities tool"
 
+        # Apply reranking to improve precision
+        reranker_config = qdrant_client.config.get("reranker", {}) if qdrant_client else {}
+        reranker = get_reranker(reranker_config)
+        if reranker.enabled and enhanced_results:
+            logger.info(f"Applying reranker to {len(enhanced_results)} results")
+            reranked_results = reranker.rerank(query, enhanced_results)
+            
+            # Add reranker metadata
+            graphrag_metadata["reranker"] = {
+                "enabled": True,
+                "model": reranker.model_name,
+                "original_count": len(enhanced_results),
+                "reranked_count": len(reranked_results),
+                "top_k": reranker.top_k,
+                "return_k": reranker.return_k
+            }
+            enhanced_results = reranked_results
+        else:
+            graphrag_metadata["reranker"] = {"enabled": False}
+
         return {
             "success": True,
             "results": enhanced_results,
@@ -994,7 +1016,7 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
             "search_mode_used": search_mode,
             "retrieval_mode_used": effective_mode,
             "graphrag_metadata": graphrag_metadata,
-            "message": f"Found {len(results)} matching contexts using GraphRAG-enhanced search",
+            "message": f"Found {len(enhanced_results)} matching contexts using GraphRAG-enhanced {'reranked ' if reranker.enabled else ''}search",
         }
 
     except Exception as e:
