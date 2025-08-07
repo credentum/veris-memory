@@ -14,6 +14,32 @@ embedding:
   max_retries: 3
   timeout: 30
 
+# Reranker configuration for improved precision
+reranker:
+  enabled: true
+  model: cross-encoder/ms-marco-MiniLM-L-6-v2
+  top_k: 20          # Number of results to rerank
+  return_k: 5        # Number of results to return after reranking
+  score_threshold: -1000.0  # Minimum score threshold (very permissive)
+
+# Hybrid retrieval configuration (dense + lexical + graph)
+hybrid_retrieval:
+  enabled: true
+  alpha: 0.6         # Dense vector weight
+  beta: 0.35         # Lexical/BM25 weight  
+  gamma: 0.05        # Graph relationship boost weight
+  normalization: min_max  # Score normalization method
+
+# Advanced chunking configuration
+chunking:
+  target_tokens: 700      # Target chunk size (600-800 range)
+  overlap_tokens: 80      # Overlap between chunks
+  min_chunk_tokens: 100   # Minimum viable chunk size
+  max_chunk_tokens: 1000  # Maximum chunk size
+  inject_metadata: true   # Include doc title/headers in chunks
+  strip_boilerplate: true # Remove TOC/navigation content
+  preserve_structure: true # Maintain document structure
+
 # Storage configuration
 storage:
   backend: multi
@@ -40,6 +66,14 @@ qdrant:
   connection_pool:
     min_size: 2
     max_size: 10
+  # Optimized HNSW parameters for better precision
+  hnsw:
+    m: 32                    # Number of connections per node (recommended: 32+)
+    ef_construct: 256        # Size of candidate set during construction
+  search:
+    ef_search: 256           # Size of candidate set during search (recommended: 256+)
+    distance: cosine         # Distance metric (cosine for semantic similarity)
+    enable_payload_index: true  # Enable full-text search on payload
 
 neo4j:
   uri: bolt://localhost:7687
