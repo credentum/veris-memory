@@ -623,6 +623,12 @@ async def status() -> Dict[str, Any]:
         "label": "◎ Veris Memory",
         "version": "0.9.0",
         "protocol": "MCP-1.0",
+        "agent_ready": health_status["status"] == "healthy",
+        "dependencies": {
+            "qdrant": "ok" if health_status["services"]["qdrant"] == "healthy" else "error",
+            "neo4j": "ok" if health_status["services"]["neo4j"] == "healthy" else "error",
+            "redis": "ok" if health_status["services"]["redis"] == "healthy" else "error",
+        },
         "deps": {
             "qdrant": "ok" if health_status["services"]["qdrant"] == "healthy" else "error",
             "neo4j": "ok" if health_status["services"]["neo4j"] == "healthy" else "error",
