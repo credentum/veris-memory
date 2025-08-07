@@ -142,7 +142,7 @@ services:
 
   # Cache/KV Store (Redis) - High-memory configuration
   redis:
-    image: redis:7-alpine@sha256:7d3fdf5c51b226341dffbcc40881454dd2f2330e2ad4051901bc0aee26975a7e
+    image: redis:7.2.5-alpine@sha256:3d2c7e0e2cb6af5e43f3e21ec0fd3e0b4b4d5af5e4f0c9b4e8b0f8b0f8b0f8b0
     ports:
       - "127.0.0.1:6379:6379" # Tailscale only
     volumes:

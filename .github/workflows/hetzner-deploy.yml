@@ -45,10 +45,10 @@ jobs:
             cd context-store
             cp .env.hetzner .env
             
-            # Update environment variables
-            sed -i "s/NEO4J_PASSWORD=.*/NEO4J_PASSWORD=${{ secrets.NEO4J_PASSWORD }}/" .env
-            sed -i "s/TAILSCALE_AUTHKEY=.*/TAILSCALE_AUTHKEY=${{ secrets.TAILSCALE_AUTHKEY }}/" .env
-            sed -i "s/TAILSCALE_HOSTNAME=.*/TAILSCALE_HOSTNAME=veris-memory-hetzner/" .env
+            # Update environment variables using secure file approach
+            export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
+            export TAILSCALE_AUTHKEY='${{ secrets.TAILSCALE_AUTHKEY }}'
+            export TAILSCALE_HOSTNAME='veris-memory-hetzner'
             
             # Stop existing services
             echo "🛑 Stopping existing services..."

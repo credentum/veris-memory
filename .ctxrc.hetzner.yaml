@@ -123,6 +123,27 @@ mcp:
     - query_graph
     - update_scratchpad
     - get_agent_state
+  # MCP tool contracts for Hetzner deployment
+  tool_contracts:
+    store_context:
+      max_payload_size: 10MB  # Increased for high-memory system
+      batch_size: 500  # Increased batch processing
+      timeout: 60s
+    retrieve_context:
+      max_results: 1000  # Increased for better search results
+      timeout: 60s  # Extended timeout for complex queries
+      include_metadata: true
+    query_graph:
+      max_depth: 10  # Increased graph traversal depth
+      timeout: 120s  # Extended for complex graph queries
+      max_nodes: 10000
+    update_scratchpad:
+      max_size: 50MB  # Increased scratchpad capacity
+      compression: true
+    get_agent_state:
+      include_metrics: true  # Enable hardware metrics
+      include_performance: true  # Enable performance data
+      include_health: true
   cors:
     enabled: true
     origins:
