@@ -24,6 +24,20 @@ pip install duckdb sentence-transformers scikit-learn
 echo "🔐 Setting up secure credentials..."
 ./scripts/setup-secure-credentials.sh
 
+# Get the Neo4j password for docker-compose consistency
+NEO4J_PASSWORD=$(sudo cat /opt/context-store/credentials/neo4j_password)
+echo "🔗 Synchronizing Neo4j password with Docker containers..."
+
+# If docker-compose is already running with different password, restart with correct one
+if docker ps | grep -q neo4j; then
+    echo "⚠️  Neo4j container running with potentially different password - restarting..."
+    export NEO4J_PASSWORD="$NEO4J_PASSWORD"
+    docker-compose -f docker-compose.simple.yml down neo4j || true
+    docker-compose -f docker-compose.simple.yml up -d neo4j
+    echo "⏳ Waiting for Neo4j to restart with new password..."
+    sleep 15
+fi
+
 # Install systemd service
 echo "🔧 Installing systemd service..."
 sudo cp systemd/context-store.service /etc/systemd/system/

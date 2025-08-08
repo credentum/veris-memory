@@ -245,6 +245,7 @@ class VectorDBInitializer:
                         },
                     )
                 ],
+                wait=True,  # Ensure immediate availability for retrieval
             )
 
             # Search for it
@@ -309,6 +310,7 @@ class VectorDBInitializer:
                         payload=metadata or {},
                     )
                 ],
+                wait=True,  # Ensure immediate availability for retrieval
             )
             return vector_id
         except ConnectionError as e:

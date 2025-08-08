@@ -1,0 +1,108 @@
+{
+  "status": "FAILED",
+  "timestamp": 1754679771.1910179,
+  "summary": {
+    "passed": 8,
+    "failed": 8,
+    "success_rate": 50.0,
+    "t102_fixed": false
+  },
+  "tests": [
+    {
+      "test": "Text extraction: empty_payload",
+      "passed": true,
+      "message": "extracted 0 chars",
+      "timestamp": 1754679768.905788
+    },
+    {
+      "test": "Text extraction: null_content",
+      "passed": true,
+      "message": "extracted 17 chars",
+      "timestamp": 1754679768.9058013
+    },
+    {
+      "test": "Text extraction: empty_string",
+      "passed": true,
+      "message": "extracted 0 chars",
+      "timestamp": 1754679768.905805
+    },
+    {
+      "test": "Text extraction: whitespace_only",
+      "passed": true,
+      "message": "extracted 0 chars",
+      "timestamp": 1754679768.905807
+    },
+    {
+      "test": "Text extraction: minimal_valid",
+      "passed": true,
+      "message": "extracted 1 chars",
+      "timestamp": 1754679768.9058094
+    },
+    {
+      "test": "Text extraction: nested_complex",
+      "passed": true,
+      "message": "extracted 69 chars",
+      "timestamp": 1754679768.9058154
+    },
+    {
+      "test": "Text extraction: mcp_tool_result",
+      "passed": true,
+      "message": "extracted 68 chars",
+      "timestamp": 1754679768.9058194
+    },
+    {
+      "test": "Text extraction: large_content",
+      "passed": true,
+      "message": "extracted 1699 chars",
+      "timestamp": 1754679768.9058225
+    },
+    {
+      "test": "T-102 fix: minimal_content",
+      "passed": false,
+      "message": "ALL ZEROS BUG DETECTED!",
+      "timestamp": 1754679768.9561248
+    },
+    {
+      "test": "T-102 fix: empty_content_mixed",
+      "passed": false,
+      "message": "ALL ZEROS BUG DETECTED!",
+      "timestamp": 1754679768.9755073
+    },
+    {
+      "test": "T-102 fix: identical_content",
+      "passed": false,
+      "message": "ALL ZEROS BUG DETECTED!",
+      "timestamp": 1754679768.9934623
+    },
+    {
+      "test": "T-102 fix: special_characters",
+      "passed": false,
+      "message": "ALL ZEROS BUG DETECTED!",
+      "timestamp": 1754679769.0197382
+    },
+    {
+      "test": "T-102 fix: unicode_content",
+      "passed": false,
+      "message": "ALL ZEROS BUG DETECTED!",
+      "timestamp": 1754679769.0358894
+    },
+    {
+      "test": "Performance: small_5_docs",
+      "passed": false,
+      "message": "24.7ms (target: <2000ms), 5 results",
+      "timestamp": 1754679769.0606399
+    },
+    {
+      "test": "Performance: medium_10_docs",
+      "passed": false,
+      "message": "216.8ms (target: <3000ms), 10 results",
+      "timestamp": 1754679769.277411
+    },
+    {
+      "test": "Performance: large_20_docs",
+      "passed": false,
+      "message": "1913.6ms (target: <5000ms), 20 results",
+      "timestamp": 1754679771.1909964
+    }
+  ]
+}

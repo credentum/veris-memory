@@ -346,6 +346,7 @@ class HashDiffEmbedder:
                 self.client.upsert(
                     collection_name=collection_name,
                     points=[PointStruct(id=vector_id, vector=embedding, payload=payload)],
+                    wait=True,  # Ensure immediate availability for retrieval
                 )
 
             # Update cache

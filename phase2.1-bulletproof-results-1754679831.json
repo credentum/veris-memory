@@ -1,0 +1,143 @@
+{
+  "suite_id": "phase-2.1-bulletproof",
+  "timestamp": "2025-08-08T19:03:51.595461",
+  "status": "DEGRADED",
+  "execution_time_s": 0.0856778621673584,
+  "results_summary": {
+    "total_tests": 3,
+    "passed": 2,
+    "partial": 0,
+    "failed": 1
+  },
+  "key_metrics": {
+    "t102r_precision_at_1": 1.0,
+    "t106r_precision_at_1": 0.95,
+    "text_extraction_success_rate": 0.8888888888888888
+  },
+  "bulletproof_fixes": {
+    "text_extraction_hardened": true,
+    "fail_safes_implemented": true,
+    "metrics_and_logging": true,
+    "debug_endpoints": true
+  },
+  "acceptance_criteria": {
+    "no_all_zero_scores": true,
+    "t102r_improvement": true,
+    "t106r_threshold": true
+  },
+  "test_results": [
+    {
+      "test_name": "text_extraction_robustness",
+      "success_rate": 0.8888888888888888,
+      "total_tests": 9,
+      "successful": 8,
+      "results": [
+        {
+          "name": "empty_dict",
+          "success": false,
+          "extracted_len": 0,
+          "clamped_len": 0,
+          "preview": "(empty)"
+        },
+        {
+          "name": "null_content",
+          "success": true,
+          "extracted_len": 17,
+          "clamped_len": 17,
+          "preview": "{'content': None}"
+        },
+        {
+          "name": "nested_empty",
+          "success": true,
+          "extracted_len": 15,
+          "clamped_len": 15,
+          "preview": "{'content': {}}"
+        },
+        {
+          "name": "direct_text",
+          "success": true,
+          "extracted_len": 17,
+          "clamped_len": 17,
+          "preview": "Direct text works"
+        },
+        {
+          "name": "nested_text",
+          "success": true,
+          "extracted_len": 17,
+          "clamped_len": 17,
+          "preview": "Nested text works"
+        },
+        {
+          "name": "string_content",
+          "success": true,
+          "extracted_len": 20,
+          "clamped_len": 20,
+          "preview": "String content works"
+        },
+        {
+          "name": "tool_array",
+          "success": true,
+          "extracted_len": 16,
+          "clamped_len": 16,
+          "preview": "Tool array works"
+        },
+        {
+          "name": "mcp_style",
+          "success": true,
+          "extracted_len": 15,
+          "clamped_len": 15,
+          "preview": "MCP style works"
+        },
+        {
+          "name": "fallback_body",
+          "success": true,
+          "extracted_len": 19,
+          "clamped_len": 19,
+          "preview": "Body fallback works"
+        }
+      ]
+    },
+    {
+      "test_name": "T-102R",
+      "status": "PASS",
+      "metrics": {
+        "precision_at_1": 1.0,
+        "gold_position": 1,
+        "all_zeros_bug": false,
+        "score_range": 18.590535640716553,
+        "scores_descending": true,
+        "latency_ms": 85.30211448669434
+      },
+      "improvement_vs_baseline": 1.0,
+      "reranker_stats": {
+        "enabled": true,
+        "model_name": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "model_loaded": true,
+        "request_count": 1,
+        "debug_mode": true,
+        "auto_disable_threshold": 5,
+        "metrics": {
+          "counters": {
+            "reranker_invocations": 1
+          },
+          "avg_latency_ms": 85.28614044189453
+        }
+      }
+    },
+    {
+      "test_name": "T-106R",
+      "status": "PASS",
+      "metrics": {
+        "precision_at_1": 0.95,
+        "single_query_baseline": 1.0,
+        "mqe_precision": 0.92,
+        "improvement": -0.07999999999999996
+      },
+      "components": {
+        "mq_expansion": true,
+        "field_boosts": true,
+        "reranker_boost": true
+      }
+    }
+  ]
+}

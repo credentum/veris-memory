@@ -246,8 +246,28 @@ chmod +x "$INSTALL_DIR/load-credentials.py"
 
 echo "✅ Credential setup complete!"
 echo ""
+
+# Generate .env file with proper systemd syntax
+echo "📝 Creating systemd-compatible .env file..."
+
+NEO4J_PASS=$(sudo cat "$NEO4J_PASSWORD_FILE")
+cat > "$INSTALL_DIR/.env" << EOF
+# Context Store Environment Variables - systemd compatible
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=${NEO4J_PASS}
+REDIS_PASSWORD=
+CONTEXT_STORE_SECRET_KEY=$(openssl rand -base64 32)
+MCP_SERVER_HOST=127.0.0.1
+MCP_SERVER_PORT=8000
+EOF
+
+chmod 644 "$INSTALL_DIR/.env"
+chown "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_DIR/.env"
+echo "✅ Created systemd-compatible .env file"
+
+echo ""
 echo "🔧 Next Steps:"
-echo "   1. Update your NEO4J instance with the password shown above"
+echo "   1. Update your Docker Compose NEO4J_PASSWORD to: ${NEO4J_PASS}"
 echo "   2. Restart the context-store service: sudo systemctl restart context-store"
 echo "   3. Verify connection: sudo journalctl -u context-store -f"
 echo ""

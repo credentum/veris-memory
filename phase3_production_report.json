@@ -1,0 +1,85 @@
+{
+  "suite_id": "veris-phase-3",
+  "target": "http://135.181.4.118:8000",
+  "execution_time": {
+    "start": 1754681258.4951766,
+    "duration_seconds": 44.285162925720215
+  },
+  "summary": {
+    "total_tests": 5,
+    "passed_tests": 0,
+    "success_rate": 0.0,
+    "overall_passed": false
+  },
+  "test_results": {
+    "S-301": {
+      "passed": false,
+      "metrics": {
+        "total_requests": 1080,
+        "p95_latency_ms": 176.8627166748047,
+        "error_rate": 1.0,
+        "duration_seconds": 30,
+        "concurrent_clients": 10
+      },
+      "criteria": {
+        "p95_latency_ok": true,
+        "error_rate_ok": false
+      }
+    },
+    "S-302": {
+      "passed": false,
+      "metrics": {
+        "precision_at_1": 0.0,
+        "ndcg_at_5": 0.0,
+        "mrr_at_10": 0.0,
+        "queries_tested": 5
+      },
+      "criteria": {
+        "p1_ok": false,
+        "ndcg_ok": false,
+        "mrr_ok": false
+      }
+    },
+    "S-303": {
+      "passed": false,
+      "metrics": {
+        "results_count": 0,
+        "write_forbidden": true,
+        "graph_accessible": false
+      },
+      "criteria": {
+        "results_ok": false,
+        "write_restriction_ok": true
+      }
+    },
+    "S-304": {
+      "passed": false,
+      "metrics": {
+        "error_rate": 1.0,
+        "precision_at_1_drop": 0.01,
+        "latency_delta_ms": -0.12001991271972656,
+        "reranker_on_latency": 175.64373016357422,
+        "reranker_off_latency": 175.5237102508545
+      },
+      "criteria": {
+        "error_rate_ok": false,
+        "p1_drop_ok": true,
+        "latency_delta_ok": true
+      }
+    },
+    "S-305": {
+      "passed": false,
+      "metrics": {
+        "recovery_rate": 0.0,
+        "data_loss": true,
+        "metric_drift_pct": 1.0,
+        "items_stored": 10,
+        "items_recovered": 0
+      },
+      "criteria": {
+        "no_data_loss": false,
+        "metric_drift_ok": true
+      }
+    }
+  }
+}

@@ -1,3 +1,14 @@
+# Context Store Infrastructure Services
+# 
+# IMPORTANT: Neo4j Password Synchronization
+# This docker-compose file uses ${NEO4J_PASSWORD} environment variable.
+# Make sure to set NEO4J_PASSWORD before starting:
+# 
+#   export NEO4J_PASSWORD=$(sudo cat /opt/context-store/credentials/neo4j_password)
+#   docker-compose -f docker-compose.simple.yml up -d
+#
+# Or source the .env file that's created by setup-secure-credentials.sh
+
 version: "3.8"
 
 services:
@@ -26,7 +37,7 @@ services:
       - /raid1/docker-data/neo4j/data:/data
       - /raid1/docker-data/neo4j/logs:/logs
     environment:
-      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-your_secure_neo4j_password_here}
       - NEO4J_server_memory_heap_initial__size=20G
       - NEO4J_server_memory_heap_max__size=20G
       - NEO4J_server_memory_pagecache_size=16G
