@@ -1,0 +1,49 @@
+[Unit]
+Description=Veris Memory Context Store MCP Server
+After=docker.service
+Requires=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+User=context-store
+Group=context-store
+WorkingDirectory=/opt/context-store
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/context-store/logs /opt/context-store/data /tmp
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+
+# Load environment from secure files
+EnvironmentFile=-/opt/context-store/.env
+EnvironmentFile=-/opt/context-store/.env.local
+
+# Public configuration
+Environment=QDRANT_URL=http://localhost:6333
+Environment=NEO4J_URI=bolt://localhost:7687
+Environment=NEO4J_USER=neo4j
+Environment=REDIS_URL=redis://localhost:6379
+Environment=MCP_SERVER_PORT=8000
+Environment=LOG_LEVEL=info
+
+# Use systemd credentials for sensitive data
+LoadCredential=neo4j_password:/opt/context-store/credentials/neo4j_password
+
+ExecStart=/opt/context-store/venv/bin/python -m src.mcp_server.main
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=context-store
+
+[Install]
+WantedBy=multi-user.target

@@ -27,9 +27,9 @@ services:
     networks:
       - context-store-network
 
-  # Vector Database (Qdrant) - Using v1.9.7 (GLIBC 2.35 compatible)
+  # Vector Database (Qdrant) - Using v1.9.6 (GLIBC 2.35 compatible)
   qdrant:
-    image: qdrant/qdrant:v1.9.7
+    image: qdrant/qdrant@sha256:d63acd24c397c45b730d16baa032a9fa7da9e8e1c7e5349bc35ef1bdac4d54e3
     ports:
       - "6333:6333"
       - "6334:6334" # gRPC port

@@ -90,6 +90,74 @@
         "minimum": 0.0,
         "maximum": 1.0,
         "default": 0.7
+      },
+      "retrieval_mode": {
+        "type": "string",
+        "description": "Retrieval strategy to use",
+        "enum": ["vector", "lexical", "hybrid"],
+        "default": "hybrid"
+      },
+      "enable_reranker": {
+        "type": "boolean",
+        "description": "Whether to apply cross-encoder reranking for better precision",
+        "default": true
+      },
+      "rerank_top_k": {
+        "type": "integer", 
+        "description": "Number of candidates to rerank (affects latency vs quality tradeoff)",
+        "minimum": 5,
+        "maximum": 50,
+        "default": 20
+      },
+      "max_hops": {
+        "type": "integer",
+        "description": "Maximum relationship traversal depth for GraphRAG",
+        "minimum": 0,
+        "maximum": 3,
+        "default": 1
+      },
+      "relationship_types": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["depends_on", "references", "implements", "extends", "uses", "contains", "related_to"]
+        },
+        "description": "Types of relationships to traverse in GraphRAG",
+        "default": ["references", "related_to"]
+      },
+      "include_reasoning_path": {
+        "type": "boolean",
+        "description": "Include the reasoning path showing how results were derived",
+        "default": false
+      },
+      "enable_community_detection": {
+        "type": "boolean",
+        "description": "Use community detection for better context clustering",
+        "default": false
+      },
+      "multi_query_expansion": {
+        "type": "boolean",
+        "description": "Generate query paraphrases for better recall on varied phrasings",
+        "default": false
+      },
+      "field_boosts": {
+        "type": "object",
+        "description": "Boost factors for different content fields",
+        "properties": {
+          "title": {
+            "type": "number",
+            "minimum": 1.0,
+            "maximum": 3.0,
+            "default": 1.2
+          },
+          "headings": {
+            "type": "number", 
+            "minimum": 1.0,
+            "maximum": 2.0,
+            "default": 1.1
+          }
+        },
+        "default": {"title": 1.2, "headings": 1.1}
       }
     },
     "required": ["query"]
@@ -163,6 +231,62 @@
               "type": "string"
             },
             "description": "List of filters that were applied"
+          }
+        }
+      },
+      "reranker_metadata": {
+        "type": "object",
+        "description": "Information about reranking if applied",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether reranking was applied"
+          },
+          "model": {
+            "type": "string",
+            "description": "Reranker model used"
+          },
+          "candidates_processed": {
+            "type": "integer",
+            "description": "Number of candidates reranked"
+          },
+          "score_range": {
+            "type": "object",
+            "properties": {
+              "min": {"type": "number"},
+              "max": {"type": "number"}
+            },
+            "description": "Range of reranking scores"
+          }
+        }
+      },
+      "graphrag_metadata": {
+        "type": "object",
+        "description": "GraphRAG traversal information",
+        "properties": {
+          "hops_traversed": {
+            "type": "integer",
+            "description": "Number of relationship hops traversed"
+          },
+          "relationships_followed": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Types of relationships that were followed"
+          },
+          "community_clusters": {
+            "type": "integer",
+            "description": "Number of community clusters identified"
+          },
+          "reasoning_paths": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {"type": "array", "items": {"type": "string"}},
+                "confidence": {"type": "number"}
+              }
+            },
+            "description": "Reasoning paths for how results were derived (if requested)"
           }
         }
       },
