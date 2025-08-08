@@ -2,27 +2,27 @@
   "suite_id": "veris-phase-3-corrected",
   "target": "http://135.181.4.118:8000",
   "execution_time": {
-    "start": 1754681426.411336,
-    "duration_seconds": 55.9696261882782
+    "start": 1754684843.9815166,
+    "duration_seconds": 52.98219037055969
   },
   "summary": {
     "total_tests": 5,
-    "passed_tests": 2,
-    "success_rate": 0.4,
-    "acceptable": false
+    "passed_tests": 3,
+    "success_rate": 0.6,
+    "acceptable": true
   },
   "test_results": {
     "S-301": {
-      "passed": false,
+      "passed": true,
       "metrics": {
-        "total_requests": 184,
-        "p95_latency_ms": 1214.768409729004,
+        "total_requests": 387,
+        "p95_latency_ms": 192.69466400146484,
         "error_rate": 0.0,
         "duration_seconds": 30,
         "concurrent_clients": 5
       },
       "criteria": {
-        "p95_latency_ok": false,
+        "p95_latency_ok": true,
         "error_rate_ok": true
       }
     },
@@ -58,7 +58,7 @@
       "passed": true,
       "metrics": {
         "error_rate": 0.0,
-        "avg_latency_ms": 183.83746147155762,
+        "avg_latency_ms": 182.4540615081787,
         "success_rate": 1.0,
         "total_requests": 10
       },
