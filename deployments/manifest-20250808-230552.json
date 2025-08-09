@@ -1,0 +1,103 @@
+{
+  "service": "veris-memory",
+  "env": "prod-hetzner",
+  "timestamp": "2025-08-08T23:05:52.671338+00:00",
+  "git": {
+    "repo": "credentum/agent-context-template",
+    "commit": "7211631",
+    "branch": "main",
+    "context_store_path": "context-store/"
+  },
+  "images": {
+    "mcp_server": "REPLACE_WITH_ACTUAL_DIGEST",
+    "qdrant": "qdrant/qdrant@sha256:d63acd24c397c45b730d16baa032a9fa7da9e8e1c7e5349bc35ef1bdac4d54e3",
+    "redis": "REPLACE_WITH_ACTUAL_DIGEST",
+    "neo4j": "REPLACE_WITH_ACTUAL_DIGEST"
+  },
+  "config": {
+    "production_locked_config.yaml_sha256": "REPLACE_WITH_ACTUAL",
+    "ctxrc_yaml_sha256": "REPLACE_WITH_ACTUAL",
+    "ef_search": 256,
+    "hnsw_m": 32,
+    "top_k_dense": 20,
+    "hybrid_scoring": {
+      "alpha": 0.7,
+      "beta": 0.3,
+      "enabled": true
+    },
+    "reranker": {
+      "enabled": true,
+      "model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "top_k": 20,
+      "return_k": 5,
+      "score_threshold": -1000.0
+    },
+    "chunking": {
+      "target_tokens": 700,
+      "overlap_tokens": 80,
+      "min_chunk_tokens": 100,
+      "max_chunk_tokens": 1000
+    },
+    "qdrant_wait_writes": true,
+    "namespace_policy": "enforced",
+    "neo4j_readonly": {
+      "enabled": true,
+      "username": "veris_ro"
+    },
+    "production_locked_config_yaml_sha256": "40afe050c5cf880c4b456086650c732ea244a6202e28a88b63746829282f0544",
+    "_ctxrc_yaml_sha256": "a9f70a5389424b3d0e8fe33e2d18b71f813ba2924f8516dec83ef5c06096c3a9",
+    "docker_compose_yml_sha256": "fa1eaa0eb687e42502e9ff184ca6178b7d1d2d659e0a5c45ae6e1824b75a7527"
+  },
+  "storage_schema": {
+    "qdrant": {
+      "collection": "context_store",
+      "vector_dim": 1536,
+      "distance": "Cosine",
+      "payload_indexes": [
+        "text"
+      ],
+      "hnsw_ef_search": 256,
+      "hnsw_m": 32
+    },
+    "neo4j": {
+      "ro_user": "veris_ro",
+      "auth": "ok",
+      "database": "neo4j"
+    },
+    "redis": {
+      "database": 0,
+      "connection_pool": {
+        "min_size": 2,
+        "max_size": 20
+      }
+    }
+  },
+  "slo": {
+    "p95_latency_ms": 300,
+    "error_rate_pct": 0.5,
+    "recovery_top1_pct": 95,
+    "index_freshness_s": 1
+  },
+  "phase_41_components": {
+    "neo4j_readonly": "implemented",
+    "lexical_boost_shadow": "implemented",
+    "filter_miss_audit": "implemented",
+    "content_polish_guardrails": "implemented",
+    "smoke_test_suite": "implemented"
+  },
+  "smoke_report_path": "/tmp/veris_smoke_report.json",
+  "phase_41_metrics": {
+    "filter_impact_rate": 0.28,
+    "recovery_delta": 0.2633333333333333,
+    "queries_analyzed": 50,
+    "lexical_alpha": 0.7,
+    "lexical_beta": 0.3,
+    "ndcg_improvement_rate": 0.8
+  },
+  "smoke_test_results": {
+    "timestamp": "2025-08-08T23:05:52.671721+00:00",
+    "overall_status": "pass",
+    "p95_latency_ms": 234,
+    "slo_compliance": true
+  }
+}

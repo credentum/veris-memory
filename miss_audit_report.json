@@ -1,0 +1,302 @@
+{
+  "audit_summary": {
+    "total_misses": 18,
+    "reason_breakdown": {
+      "NO_CANDIDATES": 11,
+      "EMPTY_TEXT": 1,
+      "LOW_SCORE": 1,
+      "LEX_ONLY_QUERY": 5
+    },
+    "timestamp": "2025-08-08 20:37:50"
+  },
+  "detailed_misses": [
+    {
+      "query": "machine learning best practices",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.NO_CANDIDATES",
+      "timestamp": "2025-08-08 20:37:45",
+      "additional_context": {
+        "audit_phase": "baseline",
+        "error": null
+      }
+    },
+    {
+      "query": "API design patterns",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.NO_CANDIDATES",
+      "timestamp": "2025-08-08 20:37:45",
+      "additional_context": {
+        "audit_phase": "baseline",
+        "error": null
+      }
+    },
+    {
+      "query": "database optimization techniques",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.NO_CANDIDATES",
+      "timestamp": "2025-08-08 20:37:45",
+      "additional_context": {
+        "audit_phase": "baseline",
+        "error": null
+      }
+    },
+    {
+      "query": "microservices architecture",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.NO_CANDIDATES",
+      "timestamp": "2025-08-08 20:37:45",
+      "additional_context": {
+        "audit_phase": "baseline",
+        "error": null
+      }
+    },
+    {
+      "query": "performance tuning guide",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.NO_CANDIDATES",
+      "timestamp": "2025-08-08 20:37:45",
+      "additional_context": {
+        "audit_phase": "baseline",
+        "error": null
+      }
+    },
+    {
+      "query": "context store deployment",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.NO_CANDIDATES",
+      "timestamp": "2025-08-08 20:37:46",
+      "additional_context": {
+        "audit_phase": "baseline",
+        "error": null
+      }
+    },
+    {
+      "query": "vector search implementation",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.NO_CANDIDATES",
+      "timestamp": "2025-08-08 20:37:46",
+      "additional_context": {
+        "audit_phase": "baseline",
+        "error": null
+      }
+    },
+    {
+      "query": "graph database connectivity",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.NO_CANDIDATES",
+      "timestamp": "2025-08-08 20:37:46",
+      "additional_context": {
+        "audit_phase": "baseline",
+        "error": null
+      }
+    },
+    {
+      "query": "Redis memory optimization",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.NO_CANDIDATES",
+      "timestamp": "2025-08-08 20:37:46",
+      "additional_context": {
+        "audit_phase": "baseline",
+        "error": null
+      }
+    },
+    {
+      "query": "Docker container security",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.NO_CANDIDATES",
+      "timestamp": "2025-08-08 20:37:46",
+      "additional_context": {
+        "audit_phase": "baseline",
+        "error": null
+      }
+    },
+    {
+      "query": "empty document",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.EMPTY_TEXT",
+      "timestamp": "2025-08-08 20:37:48",
+      "additional_context": {
+        "probe_type": "content_quality"
+      }
+    },
+    {
+      "query": "short text snippet",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.LOW_SCORE",
+      "timestamp": "2025-08-08 20:37:49",
+      "additional_context": {
+        "probe_type": "content_quality"
+      }
+    },
+    {
+      "query": "very specific technical term",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.NO_CANDIDATES",
+      "timestamp": "2025-08-08 20:37:49",
+      "additional_context": {
+        "probe_type": "content_quality"
+      }
+    },
+    {
+      "query": "exact phrase match test",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.LEX_ONLY_QUERY",
+      "timestamp": "2025-08-08 20:37:49",
+      "additional_context": {
+        "lexical_query": true
+      }
+    },
+    {
+      "query": "specific identifier ABC123",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.LEX_ONLY_QUERY",
+      "timestamp": "2025-08-08 20:37:49",
+      "additional_context": {
+        "lexical_query": true
+      }
+    },
+    {
+      "query": "quoted 'exact match' query",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.LEX_ONLY_QUERY",
+      "timestamp": "2025-08-08 20:37:49",
+      "additional_context": {
+        "lexical_query": true
+      }
+    },
+    {
+      "query": "boolean AND OR logic",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.LEX_ONLY_QUERY",
+      "timestamp": "2025-08-08 20:37:50",
+      "additional_context": {
+        "lexical_query": true
+      }
+    },
+    {
+      "query": "wildcard * search patterns",
+      "namespace": null,
+      "filters": {},
+      "top_k_dense": 20,
+      "dense_top1": null,
+      "dense_top2": null,
+      "text_len": 0,
+      "rerank_invoked": false,
+      "reason_code": "ReasonCode.LEX_ONLY_QUERY",
+      "timestamp": "2025-08-08 20:37:50",
+      "additional_context": {
+        "lexical_query": true
+      }
+    }
+  ],
+  "recommendations": [
+    "Increase top_k_dense from 20 to 50",
+    "Increase ef_search from 256 to 512",
+    "Enable reranker gating with margin 0.05",
+    "Fix filter/namespace consistency",
+    "Implement lexical fallback for exact matches",
+    "Add content quality validation on ingest"
+  ]
+}

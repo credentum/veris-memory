@@ -1,0 +1,16 @@
+{
+  "implementation": "lexical_boost_shadow",
+  "parameters": {
+    "alpha": 0.7,
+    "beta": 0.3
+  },
+  "ndcg_analysis": {
+    "avg_delta": 0.002055884628519955,
+    "std_delta": 0.0017851570208366504,
+    "positive_deltas": 4,
+    "total_queries": 5,
+    "improvement_rate": 0.8
+  },
+  "timestamp": 1754691364.1842873,
+  "demo_mode": true
+}

@@ -1,0 +1,1318 @@
+{
+  "success": true,
+  "summary": {
+    "total_queries": 50,
+    "avg_recovery_delta": 0.2633333333333333,
+    "max_recovery_delta": 2.0,
+    "min_recovery_delta": 0.0,
+    "queries_with_filter_issues": 14,
+    "filter_impact_rate": 0.28
+  },
+  "reason_code_histogram": {
+    "NO_CANDIDATES": 0,
+    "FILTER_MISMATCH": 13,
+    "EMPTY_TEXT": 0,
+    "LOW_SCORE": 0,
+    "NAMESPACE_MISMATCH": 1,
+    "PAGINATION_MISS": 0,
+    "UNKNOWN": 0
+  },
+  "audit_results": [
+    {
+      "query": "API design patterns",
+      "filters_on_results": 3,
+      "filters_off_results": 3,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.05364418029785156,
+        "filters_off_time_ms": 0.030755996704101562
+      },
+      "debug_info": {
+        "expected_type": "design",
+        "expected_namespace": "type_design",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "design",
+          "namespace": "type_design"
+        },
+        "top_results_on": [
+          "d1",
+          "d3",
+          "d5"
+        ],
+        "top_results_off": [
+          "d1",
+          "d3",
+          "d5"
+        ]
+      }
+    },
+    {
+      "query": "microservices architecture",
+      "filters_on_results": 3,
+      "filters_off_results": 4,
+      "recovery_delta": 0.5,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.03504753112792969,
+        "filters_off_time_ms": 0.023603439331054688
+      },
+      "debug_info": {
+        "expected_type": "design",
+        "expected_namespace": "type_design",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "design",
+          "namespace": "type_design"
+        },
+        "top_results_on": [
+          "d2",
+          "d1",
+          "d4"
+        ],
+        "top_results_off": [
+          "d2",
+          "d1",
+          "d4"
+        ]
+      }
+    },
+    {
+      "query": "database schema design",
+      "filters_on_results": 3,
+      "filters_off_results": 4,
+      "recovery_delta": 1.0,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.04076957702636719,
+        "filters_off_time_ms": 0.029087066650390625
+      },
+      "debug_info": {
+        "expected_type": "design",
+        "expected_namespace": "type_design",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "design",
+          "namespace": "type_design"
+        },
+        "top_results_on": [
+          "d3",
+          "d1",
+          "d5"
+        ],
+        "top_results_off": [
+          "d3",
+          "d1",
+          "d5"
+        ]
+      }
+    },
+    {
+      "query": "user interface mockups",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.03790855407714844,
+        "filters_off_time_ms": 0.028848648071289062
+      },
+      "debug_info": {
+        "expected_type": "design",
+        "expected_namespace": "type_design",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "design",
+          "namespace": "type_design"
+        },
+        "top_results_on": [
+          "d5"
+        ],
+        "top_results_off": [
+          "d5"
+        ]
+      }
+    },
+    {
+      "query": "system architecture",
+      "filters_on_results": 3,
+      "filters_off_results": 5,
+      "recovery_delta": 0.6666666666666667,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.03314018249511719,
+        "filters_off_time_ms": 0.025987625122070312
+      },
+      "debug_info": {
+        "expected_type": "design",
+        "expected_namespace": "type_design",
+        "expected_min_results": 3,
+        "filters_applied": {
+          "type": "design",
+          "namespace": "type_design"
+        },
+        "top_results_on": [
+          "d4",
+          "d1",
+          "d2"
+        ],
+        "top_results_off": [
+          "d4",
+          "d1",
+          "d2"
+        ]
+      }
+    },
+    {
+      "query": "REST API specification",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.039577484130859375,
+        "filters_off_time_ms": 0.027179718017578125
+      },
+      "debug_info": {
+        "expected_type": "design",
+        "expected_namespace": "type_design",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "design",
+          "namespace": "type_design"
+        },
+        "top_results_on": [
+          "d1"
+        ],
+        "top_results_off": [
+          "d1"
+        ]
+      }
+    },
+    {
+      "query": "component architecture",
+      "filters_on_results": 4,
+      "filters_off_results": 5,
+      "recovery_delta": 1.0,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.035762786865234375,
+        "filters_off_time_ms": 0.027179718017578125
+      },
+      "debug_info": {
+        "expected_type": "design",
+        "expected_namespace": "type_design",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "design",
+          "namespace": "type_design"
+        },
+        "top_results_on": [
+          "d4",
+          "d5",
+          "d1"
+        ],
+        "top_results_off": [
+          "d4",
+          "d5",
+          "d1"
+        ]
+      }
+    },
+    {
+      "query": "security architecture",
+      "filters_on_results": 3,
+      "filters_off_results": 5,
+      "recovery_delta": 2.0,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.03457069396972656,
+        "filters_off_time_ms": 0.024318695068359375
+      },
+      "debug_info": {
+        "expected_type": "design",
+        "expected_namespace": "type_design",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "design",
+          "namespace": "type_design"
+        },
+        "top_results_on": [
+          "d4",
+          "d1",
+          "d2"
+        ],
+        "top_results_off": [
+          "d4",
+          "g4",
+          "d1"
+        ]
+      }
+    },
+    {
+      "query": "technology choice decision",
+      "filters_on_results": 4,
+      "filters_off_results": 4,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.037670135498046875,
+        "filters_off_time_ms": 0.027179718017578125
+      },
+      "debug_info": {
+        "expected_type": "decision",
+        "expected_namespace": "type_decision",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "decision",
+          "namespace": "type_decision"
+        },
+        "top_results_on": [
+          "dec1",
+          "dec2",
+          "dec4"
+        ],
+        "top_results_off": [
+          "dec1",
+          "dec2",
+          "dec4"
+        ]
+      }
+    },
+    {
+      "query": "framework selection",
+      "filters_on_results": 2,
+      "filters_off_results": 2,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.03147125244140625,
+        "filters_off_time_ms": 0.022411346435546875
+      },
+      "debug_info": {
+        "expected_type": "decision",
+        "expected_namespace": "type_decision",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "decision",
+          "namespace": "type_decision"
+        },
+        "top_results_on": [
+          "dec1",
+          "dec3"
+        ],
+        "top_results_off": [
+          "dec1",
+          "dec3"
+        ]
+      }
+    },
+    {
+      "query": "deployment strategy",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.030517578125,
+        "filters_off_time_ms": 0.022411346435546875
+      },
+      "debug_info": {
+        "expected_type": "decision",
+        "expected_namespace": "type_decision",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "decision",
+          "namespace": "type_decision"
+        },
+        "top_results_on": [
+          "dec2"
+        ],
+        "top_results_off": [
+          "dec2"
+        ]
+      }
+    },
+    {
+      "query": "database selection",
+      "filters_on_results": 1,
+      "filters_off_results": 2,
+      "recovery_delta": 1.0,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.030517578125,
+        "filters_off_time_ms": 0.022172927856445312
+      },
+      "debug_info": {
+        "expected_type": "decision",
+        "expected_namespace": "type_decision",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "decision",
+          "namespace": "type_decision"
+        },
+        "top_results_on": [
+          "dec3"
+        ],
+        "top_results_off": [
+          "dec3",
+          "d3"
+        ]
+      }
+    },
+    {
+      "query": "architecture decision record",
+      "filters_on_results": 4,
+      "filters_off_results": 5,
+      "recovery_delta": 0.5,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.03790855407714844,
+        "filters_off_time_ms": 0.029325485229492188
+      },
+      "debug_info": {
+        "expected_type": "decision",
+        "expected_namespace": "type_decision",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "decision",
+          "namespace": "type_decision"
+        },
+        "top_results_on": [
+          "dec4",
+          "dec1",
+          "dec2"
+        ],
+        "top_results_off": [
+          "dec4",
+          "d4",
+          "dec1"
+        ]
+      }
+    },
+    {
+      "query": "vendor evaluation",
+      "filters_on_results": 0,
+      "filters_off_results": 0,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.05698204040527344,
+        "filters_off_time_ms": 0.021696090698242188
+      },
+      "debug_info": {
+        "expected_type": "decision",
+        "expected_namespace": "type_decision",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "decision",
+          "namespace": "type_decision"
+        },
+        "top_results_on": [],
+        "top_results_off": []
+      }
+    },
+    {
+      "query": "tool selection",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.031232833862304688,
+        "filters_off_time_ms": 0.02193450927734375
+      },
+      "debug_info": {
+        "expected_type": "decision",
+        "expected_namespace": "type_decision",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "decision",
+          "namespace": "type_decision"
+        },
+        "top_results_on": [
+          "dec3"
+        ],
+        "top_results_off": [
+          "dec3"
+        ]
+      }
+    },
+    {
+      "query": "platform choice",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.030279159545898438,
+        "filters_off_time_ms": 0.020742416381835938
+      },
+      "debug_info": {
+        "expected_type": "decision",
+        "expected_namespace": "type_decision",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "decision",
+          "namespace": "type_decision"
+        },
+        "top_results_on": [
+          "dec1"
+        ],
+        "top_results_off": [
+          "dec1"
+        ]
+      }
+    },
+    {
+      "query": "error investigation",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.03218650817871094,
+        "filters_off_time_ms": 0.023603439331054688
+      },
+      "debug_info": {
+        "expected_type": "trace",
+        "expected_namespace": "type_trace",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "trace",
+          "namespace": "type_trace"
+        },
+        "top_results_on": [
+          "t1"
+        ],
+        "top_results_off": [
+          "t1"
+        ]
+      }
+    },
+    {
+      "query": "performance bottleneck",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.04267692565917969,
+        "filters_off_time_ms": 0.015020370483398438
+      },
+      "debug_info": {
+        "expected_type": "trace",
+        "expected_namespace": "type_trace",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "trace",
+          "namespace": "type_trace"
+        },
+        "top_results_on": [
+          "t2"
+        ],
+        "top_results_off": [
+          "t2"
+        ]
+      }
+    },
+    {
+      "query": "bug reproduction steps",
+      "filters_on_results": 2,
+      "filters_off_results": 2,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.04124641418457031,
+        "filters_off_time_ms": 0.0209808349609375
+      },
+      "debug_info": {
+        "expected_type": "trace",
+        "expected_namespace": "type_trace",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "trace",
+          "namespace": "type_trace"
+        },
+        "top_results_on": [
+          "t1",
+          "t3"
+        ],
+        "top_results_off": [
+          "t1",
+          "t3"
+        ]
+      }
+    },
+    {
+      "query": "debugging session",
+      "filters_on_results": 1,
+      "filters_off_results": 2,
+      "recovery_delta": 1.0,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.03504753112792969,
+        "filters_off_time_ms": 0.02002716064453125
+      },
+      "debug_info": {
+        "expected_type": "trace",
+        "expected_namespace": "type_trace",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "trace",
+          "namespace": "type_trace"
+        },
+        "top_results_on": [
+          "t1"
+        ],
+        "top_results_off": [
+          "t1",
+          "s2"
+        ]
+      }
+    },
+    {
+      "query": "root cause analysis",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.0400543212890625,
+        "filters_off_time_ms": 0.015497207641601562
+      },
+      "debug_info": {
+        "expected_type": "trace",
+        "expected_namespace": "type_trace",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "trace",
+          "namespace": "type_trace"
+        },
+        "top_results_on": [
+          "t2"
+        ],
+        "top_results_off": [
+          "t2"
+        ]
+      }
+    },
+    {
+      "query": "incident response",
+      "filters_on_results": 0,
+      "filters_off_results": 0,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.0324249267578125,
+        "filters_off_time_ms": 0.020265579223632812
+      },
+      "debug_info": {
+        "expected_type": "trace",
+        "expected_namespace": "type_trace",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "trace",
+          "namespace": "type_trace"
+        },
+        "top_results_on": [],
+        "top_results_off": []
+      }
+    },
+    {
+      "query": "system monitoring",
+      "filters_on_results": 1,
+      "filters_off_results": 2,
+      "recovery_delta": 0.5,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.034332275390625,
+        "filters_off_time_ms": 0.02002716064453125
+      },
+      "debug_info": {
+        "expected_type": "trace",
+        "expected_namespace": "type_trace",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "trace",
+          "namespace": "type_trace"
+        },
+        "top_results_on": [
+          "t4"
+        ],
+        "top_results_off": [
+          "t4",
+          "d4"
+        ]
+      }
+    },
+    {
+      "query": "log analysis",
+      "filters_on_results": 1,
+      "filters_off_results": 3,
+      "recovery_delta": 2.0,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.03409385681152344,
+        "filters_off_time_ms": 0.026941299438476562
+      },
+      "debug_info": {
+        "expected_type": "trace",
+        "expected_namespace": "type_trace",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "trace",
+          "namespace": "type_trace"
+        },
+        "top_results_on": [
+          "t2"
+        ],
+        "top_results_off": [
+          "t2",
+          "s2",
+          "dec1"
+        ]
+      }
+    },
+    {
+      "query": "sprint planning",
+      "filters_on_results": 2,
+      "filters_off_results": 2,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.03528594970703125,
+        "filters_off_time_ms": 0.0247955322265625
+      },
+      "debug_info": {
+        "expected_type": "sprint",
+        "expected_namespace": "type_sprint",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "sprint",
+          "namespace": "type_sprint"
+        },
+        "top_results_on": [
+          "s1",
+          "s3"
+        ],
+        "top_results_off": [
+          "s1",
+          "s3"
+        ]
+      }
+    },
+    {
+      "query": "backlog refinement",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.03218650817871094,
+        "filters_off_time_ms": 0.0209808349609375
+      },
+      "debug_info": {
+        "expected_type": "sprint",
+        "expected_namespace": "type_sprint",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "sprint",
+          "namespace": "type_sprint"
+        },
+        "top_results_on": [
+          "s2"
+        ],
+        "top_results_off": [
+          "s2"
+        ]
+      }
+    },
+    {
+      "query": "user story estimation",
+      "filters_on_results": 0,
+      "filters_off_results": 1,
+      "recovery_delta": 1.0,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.035762786865234375,
+        "filters_off_time_ms": 0.02956390380859375
+      },
+      "debug_info": {
+        "expected_type": "sprint",
+        "expected_namespace": "type_sprint",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "sprint",
+          "namespace": "type_sprint"
+        },
+        "top_results_on": [],
+        "top_results_off": [
+          "d5"
+        ]
+      }
+    },
+    {
+      "query": "retrospective meeting",
+      "filters_on_results": 2,
+      "filters_off_results": 2,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.03647804260253906,
+        "filters_off_time_ms": 0.01621246337890625
+      },
+      "debug_info": {
+        "expected_type": "sprint",
+        "expected_namespace": "type_sprint",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "sprint",
+          "namespace": "type_sprint"
+        },
+        "top_results_on": [
+          "s1",
+          "s3"
+        ],
+        "top_results_off": [
+          "s1",
+          "s3"
+        ]
+      }
+    },
+    {
+      "query": "sprint review",
+      "filters_on_results": 2,
+      "filters_off_results": 2,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.034809112548828125,
+        "filters_off_time_ms": 0.0209808349609375
+      },
+      "debug_info": {
+        "expected_type": "sprint",
+        "expected_namespace": "type_sprint",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "sprint",
+          "namespace": "type_sprint"
+        },
+        "top_results_on": [
+          "s1",
+          "s3"
+        ],
+        "top_results_off": [
+          "s1",
+          "s3"
+        ]
+      }
+    },
+    {
+      "query": "daily standup",
+      "filters_on_results": 0,
+      "filters_off_results": 0,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.031948089599609375,
+        "filters_off_time_ms": 0.022172927856445312
+      },
+      "debug_info": {
+        "expected_type": "sprint",
+        "expected_namespace": "type_sprint",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "type": "sprint",
+          "namespace": "type_sprint"
+        },
+        "top_results_on": [],
+        "top_results_off": []
+      }
+    },
+    {
+      "query": "velocity tracking",
+      "filters_on_results": 0,
+      "filters_off_results": 0,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.03170967102050781,
+        "filters_off_time_ms": 0.022172927856445312
+      },
+      "debug_info": {
+        "expected_type": "sprint",
+        "expected_namespace": "type_sprint",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "sprint",
+          "namespace": "type_sprint"
+        },
+        "top_results_on": [],
+        "top_results_off": []
+      }
+    },
+    {
+      "query": "milestone planning",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.031232833862304688,
+        "filters_off_time_ms": 0.021457672119140625
+      },
+      "debug_info": {
+        "expected_type": "sprint",
+        "expected_namespace": "type_sprint",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "type": "sprint",
+          "namespace": "type_sprint"
+        },
+        "top_results_on": [
+          "s1"
+        ],
+        "top_results_off": [
+          "s1"
+        ]
+      }
+    },
+    {
+      "query": "machine learning",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.026702880859375,
+        "filters_off_time_ms": 0.021219253540039062
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": "default",
+        "expected_min_results": 3,
+        "filters_applied": {
+          "namespace": "default"
+        },
+        "top_results_on": [
+          "g1"
+        ],
+        "top_results_off": [
+          "g1"
+        ]
+      }
+    },
+    {
+      "query": "data processing",
+      "filters_on_results": 1,
+      "filters_off_results": 3,
+      "recovery_delta": 1.0,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.027418136596679688,
+        "filters_off_time_ms": 0.023126602172851562
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": "default",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "namespace": "default"
+        },
+        "top_results_on": [
+          "g2"
+        ],
+        "top_results_off": [
+          "g2",
+          "d3",
+          "dec3"
+        ]
+      }
+    },
+    {
+      "query": "cloud infrastructure",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.027894973754882812,
+        "filters_off_time_ms": 0.020742416381835938
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": "default",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "namespace": "default"
+        },
+        "top_results_on": [
+          "g3"
+        ],
+        "top_results_off": [
+          "g3"
+        ]
+      }
+    },
+    {
+      "query": "security practices",
+      "filters_on_results": 1,
+      "filters_off_results": 2,
+      "recovery_delta": 0.5,
+      "miss_reason": "FILTER_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.027179718017578125,
+        "filters_off_time_ms": 0.022172927856445312
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": "default",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "namespace": "default"
+        },
+        "top_results_on": [
+          "g4"
+        ],
+        "top_results_off": [
+          "g4",
+          "d2"
+        ]
+      }
+    },
+    {
+      "query": "testing strategies",
+      "filters_on_results": 0,
+      "filters_off_results": 0,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.026464462280273438,
+        "filters_off_time_ms": 0.02193450927734375
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": "default",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "namespace": "default"
+        },
+        "top_results_on": [],
+        "top_results_off": []
+      }
+    },
+    {
+      "query": "code review",
+      "filters_on_results": 0,
+      "filters_off_results": 0,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.027179718017578125,
+        "filters_off_time_ms": 0.020503997802734375
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": "default",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "namespace": "default"
+        },
+        "top_results_on": [],
+        "top_results_off": []
+      }
+    },
+    {
+      "query": "documentation",
+      "filters_on_results": 0,
+      "filters_off_results": 1,
+      "recovery_delta": 0.5,
+      "miss_reason": "NAMESPACE_MISMATCH",
+      "performance": {
+        "filters_on_time_ms": 0.022172927856445312,
+        "filters_off_time_ms": 0.017642974853515625
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": "default",
+        "expected_min_results": 2,
+        "filters_applied": {
+          "namespace": "default"
+        },
+        "top_results_on": [],
+        "top_results_off": [
+          "d4"
+        ]
+      }
+    },
+    {
+      "query": "team collaboration",
+      "filters_on_results": 0,
+      "filters_off_results": 0,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.027418136596679688,
+        "filters_off_time_ms": 0.020265579223632812
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": "default",
+        "expected_min_results": 1,
+        "filters_applied": {
+          "namespace": "default"
+        },
+        "top_results_on": [],
+        "top_results_off": []
+      }
+    },
+    {
+      "query": "",
+      "filters_on_results": 0,
+      "filters_off_results": 0,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.0007152557373046875,
+        "filters_off_time_ms": 0.0007152557373046875
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": "default",
+        "expected_min_results": 0,
+        "filters_applied": {
+          "namespace": "default"
+        },
+        "top_results_on": [],
+        "top_results_off": []
+      }
+    },
+    {
+      "query": "a",
+      "filters_on_results": 5,
+      "filters_off_results": 5,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.027418136596679688,
+        "filters_off_time_ms": 0.03528594970703125
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": "default",
+        "expected_min_results": 0,
+        "filters_applied": {
+          "namespace": "default"
+        },
+        "top_results_on": [
+          "g1",
+          "g2",
+          "g3"
+        ],
+        "top_results_off": [
+          "d1",
+          "d3",
+          "d4"
+        ]
+      }
+    },
+    {
+      "query": "very specific unique term xyz123",
+      "filters_on_results": 0,
+      "filters_off_results": 0,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.04029273986816406,
+        "filters_off_time_ms": 0.031948089599609375
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": "default",
+        "expected_min_results": 0,
+        "filters_applied": {
+          "namespace": "default"
+        },
+        "top_results_on": [],
+        "top_results_off": []
+      }
+    },
+    {
+      "query": "common word the",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.03218650817871094,
+        "filters_off_time_ms": 0.026464462280273438
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": "default",
+        "expected_min_results": 3,
+        "filters_applied": {
+          "namespace": "default"
+        },
+        "top_results_on": [
+          "e2"
+        ],
+        "top_results_off": [
+          "e2"
+        ]
+      }
+    },
+    {
+      "query": "API testing strategy",
+      "filters_on_results": 2,
+      "filters_off_results": 2,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.03170967102050781,
+        "filters_off_time_ms": 0.027894973754882812
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": null,
+        "expected_min_results": 2,
+        "filters_applied": {},
+        "top_results_on": [
+          "d1",
+          "dec2"
+        ],
+        "top_results_off": [
+          "d1",
+          "dec2"
+        ]
+      }
+    },
+    {
+      "query": "database performance optimization",
+      "filters_on_results": 3,
+      "filters_off_results": 3,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.0514984130859375,
+        "filters_off_time_ms": 0.029802322387695312
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": null,
+        "expected_min_results": 2,
+        "filters_applied": {},
+        "top_results_on": [
+          "d3",
+          "dec3",
+          "t2"
+        ],
+        "top_results_off": [
+          "d3",
+          "dec3",
+          "t2"
+        ]
+      }
+    },
+    {
+      "query": "deployment automation",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.030755996704101562,
+        "filters_off_time_ms": 0.023603439331054688
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": null,
+        "expected_min_results": 2,
+        "filters_applied": {},
+        "top_results_on": [
+          "dec2"
+        ],
+        "top_results_off": [
+          "dec2"
+        ]
+      }
+    },
+    {
+      "query": "error handling patterns",
+      "filters_on_results": 2,
+      "filters_off_results": 2,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.03170967102050781,
+        "filters_off_time_ms": 0.027179718017578125
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": null,
+        "expected_min_results": 2,
+        "filters_applied": {},
+        "top_results_on": [
+          "t1",
+          "d1"
+        ],
+        "top_results_off": [
+          "t1",
+          "d1"
+        ]
+      }
+    },
+    {
+      "query": "monitoring and alerting",
+      "filters_on_results": 3,
+      "filters_off_results": 3,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.031948089599609375,
+        "filters_off_time_ms": 0.027894973754882812
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": null,
+        "expected_min_results": 2,
+        "filters_applied": {},
+        "top_results_on": [
+          "t3",
+          "t4",
+          "e2"
+        ],
+        "top_results_off": [
+          "t3",
+          "t4",
+          "e2"
+        ]
+      }
+    },
+    {
+      "query": "security implementation",
+      "filters_on_results": 1,
+      "filters_off_results": 1,
+      "recovery_delta": 0.0,
+      "miss_reason": null,
+      "performance": {
+        "filters_on_time_ms": 0.026702880859375,
+        "filters_off_time_ms": 0.021696090698242188
+      },
+      "debug_info": {
+        "expected_type": null,
+        "expected_namespace": null,
+        "expected_min_results": 2,
+        "filters_applied": {},
+        "top_results_on": [
+          "g4"
+        ],
+        "top_results_off": [
+          "g4"
+        ]
+      }
+    }
+  ]
+}

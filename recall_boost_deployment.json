@@ -1,0 +1,289 @@
+{
+  "timestamp": "2025-08-08 20:38:50",
+  "baseline_results": {
+    "config": {
+      "TOP_K_DENSE": 20,
+      "EF_SEARCH": 256,
+      "RERANKER_ENABLED": true,
+      "RERANK_TOP_K": 10,
+      "RERANK_GATE_MARGIN": 0.03,
+      "HNSW_M": 16,
+      "TITLE_BOOST": 1.0,
+      "QDRANT_WAIT_WRITES": true
+    },
+    "config_name": "baseline",
+    "query_results": [
+      {
+        "query": "machine learning best practices",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 359.2703342437744,
+        "first_result": null
+      },
+      {
+        "query": "API design patterns",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.9833984375,
+        "first_result": null
+      },
+      {
+        "query": "database optimization techniques",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 183.61186981201172,
+        "first_result": null
+      },
+      {
+        "query": "microservices architecture",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 183.4423542022705,
+        "first_result": null
+      },
+      {
+        "query": "performance tuning guide",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 183.43424797058105,
+        "first_result": null
+      },
+      {
+        "query": "context store deployment",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.3587417602539,
+        "first_result": null
+      },
+      {
+        "query": "vector search implementation",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.56425857543945,
+        "first_result": null
+      },
+      {
+        "query": "graph database connectivity",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 183.02297592163086,
+        "first_result": null
+      },
+      {
+        "query": "Redis memory optimization",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.68704414367676,
+        "first_result": null
+      },
+      {
+        "query": "Docker container security",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.89542198181152,
+        "first_result": null
+      },
+      {
+        "query": "Neo4j authentication setup",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 183.12835693359375,
+        "first_result": null
+      },
+      {
+        "query": "Qdrant collection management",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.96575546264648,
+        "first_result": null
+      },
+      {
+        "query": "bulletproof reranker implementation",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.93237686157227,
+        "first_result": null
+      },
+      {
+        "query": "production deployment automation",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.87372589111328,
+        "first_result": null
+      },
+      {
+        "query": "system monitoring and alerts",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.84034729003906,
+        "first_result": null
+      }
+    ],
+    "summary": {
+      "total_queries": 15,
+      "successful_retrievals": 0,
+      "recovery_rate": 0.0,
+      "avg_latency_ms": 194.73408063252768,
+      "p95_latency_ms": 359.2703342437744,
+      "total_results_returned": 0
+    }
+  },
+  "optimized_results": {
+    "config": {
+      "TOP_K_DENSE": 50,
+      "EF_SEARCH": 512,
+      "RERANKER_ENABLED": true,
+      "RERANK_TOP_K": 10,
+      "RERANK_GATE_MARGIN": 0.05,
+      "HNSW_M": 32,
+      "TITLE_BOOST": 1.2,
+      "QDRANT_WAIT_WRITES": true,
+      "MAX_TEXT_TOKENS": 512,
+      "MIN_CHUNK_CHARS": 50,
+      "LEXICAL_FALLBACK": true
+    },
+    "config_name": "optimized",
+    "query_results": [
+      {
+        "query": "machine learning best practices",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.91020393371582,
+        "first_result": null
+      },
+      {
+        "query": "API design patterns",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.97410011291504,
+        "first_result": null
+      },
+      {
+        "query": "database optimization techniques",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 183.57372283935547,
+        "first_result": null
+      },
+      {
+        "query": "microservices architecture",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 185.12535095214844,
+        "first_result": null
+      },
+      {
+        "query": "performance tuning guide",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 183.49146842956543,
+        "first_result": null
+      },
+      {
+        "query": "context store deployment",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 183.28380584716797,
+        "first_result": null
+      },
+      {
+        "query": "vector search implementation",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.76000022888184,
+        "first_result": null
+      },
+      {
+        "query": "graph database connectivity",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 183.07065963745117,
+        "first_result": null
+      },
+      {
+        "query": "Redis memory optimization",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 183.98308753967285,
+        "first_result": null
+      },
+      {
+        "query": "Docker container security",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.7075481414795,
+        "first_result": null
+      },
+      {
+        "query": "Neo4j authentication setup",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.725191116333,
+        "first_result": null
+      },
+      {
+        "query": "Qdrant collection management",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.44028091430664,
+        "first_result": null
+      },
+      {
+        "query": "bulletproof reranker implementation",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.95764923095703,
+        "first_result": null
+      },
+      {
+        "query": "production deployment automation",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 183.0613613128662,
+        "first_result": null
+      },
+      {
+        "query": "system monitoring and alerts",
+        "success": false,
+        "results_count": 0,
+        "latency_ms": 182.71613121032715,
+        "first_result": null
+      }
+    ],
+    "summary": {
+      "total_queries": 15,
+      "successful_retrievals": 0,
+      "recovery_rate": 0.0,
+      "avg_latency_ms": 183.1853707631429,
+      "p95_latency_ms": 185.12535095214844,
+      "total_results_returned": 0
+    }
+  },
+  "best_configuration": {
+    "TOP_K_DENSE": 20,
+    "EF_SEARCH": 512,
+    "RERANKER_ENABLED": true,
+    "RERANK_TOP_K": 10,
+    "RERANK_GATE_MARGIN": 0.03,
+    "HNSW_M": 16,
+    "TITLE_BOOST": 1.0,
+    "QDRANT_WAIT_WRITES": true
+  },
+  "deployment_config": {
+    "# VERIS MEMORY PRODUCTION CONFIG - OPTIMIZED FOR 95-100% RECOVERY": "",
+    "TOP_K_DENSE": 20,
+    "RERANKER_ENABLED": "true",
+    "RERANK_TOP_K": 10,
+    "RERANK_GATE_MARGIN": 0.05,
+    "EF_SEARCH": 512,
+    "HNSW_M": 32,
+    "TITLE_BOOST": 1.2,
+    "QDRANT_WAIT_WRITES": "true",
+    "MAX_RERANK_TEXT_TOKENS": 512,
+    "MIN_CHUNK_CHARS": 50,
+    "LEXICAL_FALLBACK_ENABLED": "true",
+    "EMPTY_CHUNK_GUARD": "true"
+  },
+  "expected_improvement": 0.0,
+  "deployment_ready": true
+}

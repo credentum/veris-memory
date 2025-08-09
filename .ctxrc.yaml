@@ -6,11 +6,11 @@ system:
   environment: production
   debug: false
 
-# Embedding configuration
+# Embedding configuration - ALIGNED WITH PRODUCTION LOCKED CONFIG
 embedding:
-  dimensions: 1536
-  model: text-embedding-ada-002
-  batch_size: 100
+  dimensions: 384
+  model: all-MiniLM-L6-v2
+  batch_size: 50
   max_retries: 3
   timeout: 30
 
@@ -84,6 +84,11 @@ neo4j:
     max_size: 10
     acquisition_timeout: 30
     max_lifetime: 3600
+  # Read-only credentials for query_graph security
+  readonly:
+    enabled: true
+    username: veris_ro
+    # Password set via NEO4J_RO_PASSWORD environment variable
 
 redis:
   host: localhost

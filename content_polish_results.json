@@ -1,0 +1,258 @@
+{
+  "implementation": "content_polish_guardrails",
+  "results": {
+    "success": true,
+    "original_chunk_count": 16,
+    "kept_chunks": [
+      "Content Quality Guardrails Implementation Guide",
+      "This is a comprehensive guide to implementing content quality guardrails in a context store system. ...",
+      "# Overview and Architecture",
+      "## Quality Check Implementation",
+      "### Token Length Management",
+      "The quality analysis process begins with basic structural validation. Empty chunks and whitespace-on...",
+      "Configuration Parameters",
+      "This is an extremely long chunk that exceeds the reranker token limit and needs to be clamped to ens...",
+      "Configuration parameters play a crucial role in fine-tuning the quality guardrails. The minimum chun...",
+      "Technical Implementation Details for Advanced Users",
+      "   Whitespace padded content that should pass quality checks after trimming   "
+    ],
+    "kept_count": 11,
+    "dropped_count": 6,
+    "retention_rate": 0.6875,
+    "empty_chunk_rate": 0.125,
+    "short_chunk_rate": 0.4375,
+    "quality_metrics": {
+      "empty_chunk_rate": 0.125,
+      "short_chunk_rate": 0.4375,
+      "avg_chunk_length": 309.0,
+      "title_chunks_preserved": 7
+    },
+    "issue_breakdown": {
+      "EMPTY_CONTENT": 2,
+      "TOO_SHORT": 7,
+      "ONLY_WHITESPACE": 0,
+      "ONLY_PUNCTUATION": 1,
+      "ONLY_STOPWORDS": 2,
+      "TITLE_ONLY_ACCEPTABLE": 6,
+      "RERANKER_TOO_LONG": 1
+    },
+    "dropped_chunks": [
+      {
+        "original": "",
+        "reason": "Empty or whitespace-only content",
+        "issues": [
+          "EMPTY_CONTENT"
+        ]
+      },
+      {
+        "original": "   \n  \t  \n   ",
+        "reason": "Empty or whitespace-only content",
+        "issues": [
+          "EMPTY_CONTENT"
+        ]
+      },
+      {
+        "original": "the and or but with by",
+        "reason": "Low-quality content (punctuation/stopwords only)",
+        "issues": [
+          "ONLY_STOPWORDS"
+        ]
+      },
+      {
+        "original": "!@#$%^&*()",
+        "reason": "Low-quality content (punctuation/stopwords only)",
+        "issues": [
+          "ONLY_PUNCTUATION"
+        ]
+      },
+      {
+        "original": "Short content.",
+        "reason": "Too short (14 < 200 chars)",
+        "issues": [
+          "TOO_SHORT"
+        ]
+      },
+      {
+        "original": "A",
+        "reason": "Low-quality content (punctuation/stopwords only)",
+        "issues": [
+          "ONLY_STOPWORDS"
+        ]
+      }
+    ],
+    "processing_details": [
+      {
+        "original_length": 47,
+        "processed_length": 47,
+        "kept": true,
+        "is_title": true,
+        "issues": [
+          "TOO_SHORT",
+          "TITLE_ONLY_ACCEPTABLE"
+        ],
+        "reason": "Short but acceptable title/heading"
+      },
+      {
+        "original_length": 426,
+        "processed_length": 426,
+        "kept": true,
+        "is_title": false,
+        "issues": [],
+        "reason": "Passed quality checks"
+      },
+      {
+        "original_length": 27,
+        "processed_length": 27,
+        "kept": true,
+        "is_title": true,
+        "issues": [
+          "TOO_SHORT",
+          "TITLE_ONLY_ACCEPTABLE"
+        ],
+        "reason": "Short but acceptable title/heading"
+      },
+      {
+        "original_length": 31,
+        "processed_length": 31,
+        "kept": true,
+        "is_title": true,
+        "issues": [
+          "TOO_SHORT",
+          "TITLE_ONLY_ACCEPTABLE"
+        ],
+        "reason": "Short but acceptable title/heading"
+      },
+      {
+        "original_length": 27,
+        "processed_length": 27,
+        "kept": true,
+        "is_title": true,
+        "issues": [
+          "TOO_SHORT",
+          "TITLE_ONLY_ACCEPTABLE"
+        ],
+        "reason": "Short but acceptable title/heading"
+      },
+      {
+        "original_length": 418,
+        "processed_length": 418,
+        "kept": true,
+        "is_title": false,
+        "issues": [],
+        "reason": "Passed quality checks"
+      },
+      {
+        "original_length": 0,
+        "processed_length": 0,
+        "kept": false,
+        "is_title": false,
+        "issues": [
+          "EMPTY_CONTENT"
+        ],
+        "reason": "Empty or whitespace-only content"
+      },
+      {
+        "original_length": 13,
+        "processed_length": 0,
+        "kept": false,
+        "is_title": false,
+        "issues": [
+          "EMPTY_CONTENT"
+        ],
+        "reason": "Empty or whitespace-only content"
+      },
+      {
+        "original_length": 22,
+        "processed_length": 0,
+        "kept": false,
+        "is_title": false,
+        "issues": [
+          "ONLY_STOPWORDS"
+        ],
+        "reason": "Low-quality content (punctuation/stopwords only)"
+      },
+      {
+        "original_length": 10,
+        "processed_length": 0,
+        "kept": false,
+        "is_title": false,
+        "issues": [
+          "ONLY_PUNCTUATION"
+        ],
+        "reason": "Low-quality content (punctuation/stopwords only)"
+      },
+      {
+        "original_length": 14,
+        "processed_length": 0,
+        "kept": false,
+        "is_title": false,
+        "issues": [
+          "TOO_SHORT"
+        ],
+        "reason": "Too short (14 < 200 chars)"
+      },
+      {
+        "original_length": 24,
+        "processed_length": 24,
+        "kept": true,
+        "is_title": true,
+        "issues": [
+          "TOO_SHORT",
+          "TITLE_ONLY_ACCEPTABLE"
+        ],
+        "reason": "Short but acceptable title/heading"
+      },
+      {
+        "original_length": 2907,
+        "processed_length": 1767,
+        "kept": true,
+        "is_title": false,
+        "issues": [
+          "RERANKER_TOO_LONG"
+        ],
+        "reason": "Clamped to 1767 chars for reranker"
+      },
+      {
+        "original_length": 503,
+        "processed_length": 503,
+        "kept": true,
+        "is_title": false,
+        "issues": [],
+        "reason": "Passed quality checks"
+      },
+      {
+        "original_length": 1,
+        "processed_length": 0,
+        "kept": false,
+        "is_title": true,
+        "issues": [
+          "ONLY_STOPWORDS"
+        ],
+        "reason": "Low-quality content (punctuation/stopwords only)"
+      },
+      {
+        "original_length": 51,
+        "processed_length": 51,
+        "kept": true,
+        "is_title": true,
+        "issues": [
+          "TOO_SHORT",
+          "TITLE_ONLY_ACCEPTABLE"
+        ],
+        "reason": "Short but acceptable title/heading"
+      },
+      {
+        "original_length": 78,
+        "processed_length": 78,
+        "kept": true,
+        "is_title": true,
+        "issues": [
+          "TOO_SHORT",
+          "TITLE_ONLY_ACCEPTABLE"
+        ],
+        "reason": "Short but acceptable title/heading"
+      }
+    ]
+  },
+  "timestamp": 1754691574.3053885
+}

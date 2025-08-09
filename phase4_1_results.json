@@ -1,0 +1,131 @@
+{
+  "suite_config": {
+    "schema_version": "1.0",
+    "suite_id": "veris-phase-4.1",
+    "purpose": "Push recovery to \u226595% and keep p95 \u2264300ms"
+  },
+  "execution_time": "2025-08-08 21:28:56",
+  "summary": {
+    "total_tests": 4,
+    "passed_tests": 2,
+    "pass_rate": 0.5,
+    "ready_for_95_percent": false
+  },
+  "test_results": [
+    {
+      "test_id": "G-1",
+      "name": "Miss Audit vs No-Filter",
+      "passed": true,
+      "metrics": {
+        "with_filters_recovery": 0.0,
+        "without_filters_recovery": 0.0,
+        "recovery_gain_off_filters": 0.0,
+        "queries_tested": 10
+      },
+      "expected": {
+        "recovery_gain_off_filters": "report"
+      },
+      "notes": [
+        "Filter impact: 0.0% recovery difference",
+        "This indicates filter configuration effectiveness"
+      ]
+    },
+    {
+      "test_id": "G-2",
+      "name": "Recall Boost Sweep",
+      "passed": false,
+      "metrics": {
+        "best_recovery": 0.0,
+        "best_config": null,
+        "config_results": [
+          {
+            "config": {
+              "top_k_dense": 20,
+              "ef_search": 256,
+              "name": "baseline"
+            },
+            "recovery": 0.0,
+            "p95_latency_ms": 182.96527862548828,
+            "passes_criteria": false
+          },
+          {
+            "config": {
+              "top_k_dense": 35,
+              "ef_search": 384,
+              "name": "moderate"
+            },
+            "recovery": 0.0,
+            "p95_latency_ms": 183.85767936706543,
+            "passes_criteria": false
+          },
+          {
+            "config": {
+              "top_k_dense": 50,
+              "ef_search": 512,
+              "name": "aggressive"
+            },
+            "recovery": 0.0,
+            "p95_latency_ms": 184.9517822265625,
+            "passes_criteria": false
+          }
+        ],
+        "target_recovery_met": false
+      },
+      "expected": {
+        "best_recovery": ">= 0.95",
+        "p95_latency_ms": "<= 300"
+      },
+      "notes": [
+        "Best configuration: None",
+        "Peak recovery achieved: 0.0%"
+      ]
+    },
+    {
+      "test_id": "G-3",
+      "name": "Lexical Index Check",
+      "passed": false,
+      "metrics": {
+        "lexical_recovery": 0.0,
+        "semantic_recovery": 0.0,
+        "precision_at_1_delta_vs_no_index": 0,
+        "text_index_present": true,
+        "queries_tested": 5
+      },
+      "expected": {
+        "text_index_present": true,
+        "precision_at_1_delta_vs_no_index": ">= 0.03"
+      },
+      "notes": [
+        "Lexical queries: 0.0% success",
+        "Index effectiveness: +0.0% vs semantic"
+      ]
+    },
+    {
+      "test_id": "G-4",
+      "name": "Empty/Short Chunk Guard",
+      "passed": true,
+      "metrics": {
+        "empty_chunk_rate": 0,
+        "short_chunk_rate_lt_200chars": 0.0,
+        "total_chunks_analyzed": 0,
+        "quality_indicators_found": 0
+      },
+      "expected": {
+        "empty_chunk_rate": "== 0",
+        "short_chunk_rate_lt_200chars": "<= 1%"
+      },
+      "notes": [
+        "Content quality: 100.0% chunks adequate length",
+        "Empty chunks: 0.0% (target: 0%)"
+      ]
+    }
+  ],
+  "recommendations": [
+    "Deploy optimized recall parameters if G-2 failed",
+    "Fix filter configuration if G-1 shows high impact",
+    "Enable lexical indexing if G-3 failed",
+    "Add content quality guards if G-4 failed",
+    "Implement safety net for regression prevention",
+    "Monitor P95 latency after optimization deployment"
+  ]
+}

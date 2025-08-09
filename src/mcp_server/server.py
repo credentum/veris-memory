@@ -1100,11 +1100,26 @@ async def query_graph_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
             f"Query validation passed with complexity score: {validation_result.complexity_score}"
         )
 
-        if not neo4j_client or not neo4j_client.driver:
-            return {"success": False, "error": "Graph database not available"}
-
+        # Use read-only client for enhanced security
         try:
-            # Use Neo4jInitializer.query method which handles record conversion
+            from ..storage.neo4j_readonly import get_readonly_client
+            readonly_client = get_readonly_client(config.get_all_config() if config else None)
+            
+            if not readonly_client.connect():
+                # Fallback to main client if read-only client unavailable
+                if not neo4j_client or not neo4j_client.driver:
+                    return {"success": False, "error": "Graph database not available"}
+                logger.warning("Read-only client unavailable, using main client")
+                results = neo4j_client.query(query, parameters)
+            else:
+                # Use secure read-only client
+                logger.info("Using read-only client for graph query")
+                results = readonly_client.query(query, parameters)
+                
+        except ImportError as e:
+            logger.warning(f"Read-only client not available: {e}, using main client")
+            if not neo4j_client or not neo4j_client.driver:
+                return {"success": False, "error": "Graph database not available"}
             results = neo4j_client.query(query, parameters)
         except Exception as e:
             logger.error(f"Graph query execution failed: {e}")

@@ -1,0 +1,78 @@
+{
+  "timestamp": "2025-08-08T23:12:47Z",
+  "validation_results": {
+    "qdrant": {
+      "status": "pass",
+      "collection_exists": true,
+      "vector_dimension": 384,
+      "distance_metric": "Cosine",
+      "hnsw_m": 32,
+      "hnsw_ef_construct": 256,
+      "payload_indexes": [
+        "text"
+      ],
+      "expected_schema": {
+        "collection": "context_store",
+        "vector_config": {
+          "size": 384,
+          "distance": "Cosine"
+        },
+        "hnsw_config": {
+          "m": 32,
+          "ef_construct": 256
+        },
+        "payload_schema": {
+          "text": {
+            "type": "keyword"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "neo4j": {
+      "status": "pass",
+      "ro_user_exists": true,
+      "read_access": true,
+      "write_blocked": true,
+      "connection_test": "pass",
+      "database": "neo4j"
+    },
+    "redis": {
+      "status": "pass",
+      "connection": true,
+      "database": 0,
+      "maxmemory_policy": "allkeys-lru",
+      "persistence": "aof",
+      "connection_pool": {
+        "min_size": 2,
+        "max_size": 20
+      }
+    },
+    "config": {
+      "ctxrc_yaml": {
+        "exists": true,
+        "checks": {
+          "qdrant_vector_dim": true,
+          "hnsw_m_32": true,
+          "ef_search_256": true,
+          "hybrid_alpha": true,
+          "hybrid_beta": true,
+          "neo4j_readonly": true,
+          "reranker_enabled": true
+        },
+        "all_passed": true
+      },
+      "production_config": {
+        "exists": true
+      }
+    }
+  },
+  "overall_status": "pass",
+  "summary": {
+    "total_checks": 3,
+    "passed_checks": 3,
+    "failed_checks": 0
+  }
+}

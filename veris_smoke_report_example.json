@@ -1,0 +1,88 @@
+{
+  "suite_id": "veris-smoke-60s",
+  "run_id": "smoke-2025-08-08T14:02:11Z",
+  "timestamp": "2025-08-08T14:02:11Z",
+  "env": "prod-hetzner",
+  "namespace": "smoke",
+  "summary": {
+    "overall_status": "pass",
+    "p95_latency_ms": 187,
+    "error_rate_pct": 0.0,
+    "recovery_top1_pct": 100,
+    "index_freshness_s": 0.4,
+    "failed_tests": []
+  },
+  "thresholds": {
+    "p95_latency_ms": 300,
+    "error_rate_pct": 0.5,
+    "recovery_top1_pct": 95,
+    "index_freshness_s": 1
+  },
+  "tests": [
+    { 
+      "id": "SM-1", 
+      "name": "Health probe", 
+      "status": "pass", 
+      "latency_ms": 22,
+      "metrics": {"http_status": 200}
+    },
+    { 
+      "id": "SM-2", 
+      "name": "Store → index → count", 
+      "status": "pass", 
+      "latency_ms": 74,
+      "metrics": {"count_increase": 1, "final_count": 1}
+    },
+    { 
+      "id": "SM-3", 
+      "name": "Needle retrieval (semantic)", 
+      "status": "pass", 
+      "latency_ms": 61, 
+      "metrics": { 
+        "precision_at_1": 1.0,
+        "score_top1": 0.94,
+        "score_gap_top1_top2": 0.21,
+        "results_count": 1
+      }
+    },
+    { 
+      "id": "SM-4", 
+      "name": "Paraphrase robustness (MQE-lite)", 
+      "status": "pass", 
+      "latency_ms": 68,
+      "metrics": {
+        "precision_at_1": 1.0,
+        "paraphrases_passed": 2,
+        "total_paraphrases": 2
+      }
+    },
+    { 
+      "id": "SM-5", 
+      "name": "Index freshness", 
+      "status": "pass", 
+      "latency_ms": 35, 
+      "metrics": { 
+        "visible_under_seconds": 0.4,
+        "needle_visible": true
+      }
+    },
+    { 
+      "id": "SM-6", 
+      "name": "SLO spot-check", 
+      "status": "pass", 
+      "latency_ms": 12,
+      "metrics": {
+        "p95_latency_ms": 187,
+        "error_rate_pct": 0.0,
+        "recovery_top1": 100
+      }
+    },
+    { 
+      "id": "SM-7", 
+      "name": "Graph RO sanity (optional)", 
+      "status": "pass", 
+      "latency_ms": 28,
+      "metrics": {"ro_read_ok": true}
+    }
+  ]
+}
