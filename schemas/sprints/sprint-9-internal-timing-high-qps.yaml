@@ -1,0 +1,196 @@
+schema_version: 1.0.0
+document_type: sprint
+id: "sprint-9-internal-timing-high-qps"
+title: "Internal Timing & High-QPS Capacity Sprint"
+status: planning
+created_date: "2025-08-11"
+sprint_number: 9
+start_date: "2025-08-11"
+end_date: "2025-08-12"
+last_modified: "2025-08-11"
+
+objectives:
+  - "Add internal (server-side) timing breakdown to distinguish API, DB, and network latency."
+  - "Extend burn-in load tests to identify performance limits beyond 50 QPS."
+
+phases:
+  - phase: 1
+    name: "Internal Timing Implementation"
+    status: pending
+    priority: high
+    component: metrics
+    description: "Implement server-side timing instrumentation to capture API, DB, and processing latencies separately."
+    tasks:
+      - id: 1
+        title: "Instrument server endpoints for internal timing"
+        description: |
+          Add timing instrumentation to capture internal latency breakdown:
+          - Request start → response send for API layer
+          - DB query duration for Qdrant and Neo4j separately  
+          - Preprocessing/serialization time
+          - Export via X-Internal-Time header
+          ## Acceptance
+          - [ ] Internal timing captured in test responses
+          - [ ] Timing breakdown includes API, DB, and processing components
+          - [ ] Headers exported for client consumption
+        labels: ["instrumentation", "timing", "server-side"]
+        estimate: "2h"
+      - id: 2
+        title: "Integrate timing into metrics export"
+        description: |
+          Update metrics collection to include internal timing fields:
+          - Add p50_internal_ms, p95_internal_ms, p99_internal_ms, max_internal_ms
+          - Preserve source attribution (internal vs e2e)
+          - Maintain backward compatibility with v2.0.0
+          ## Acceptance
+          - [ ] Internal timing metrics appear in JSON reports
+          - [ ] Source attribution maintained
+          - [ ] Backward compatibility preserved
+        labels: ["metrics", "export", "json-schema"]
+        estimate: "1h"
+      - id: 3
+        title: "Update JSON report schema to v2.1.0"
+        description: |
+          Extend metrics schema to include internal timing breakdown:
+          - Version bump to 2.1.0
+          - Add internal timing fields to baseline and cycles
+          - Document schema changes
+          ## Acceptance
+          - [ ] Schema version updated to 2.1.0
+          - [ ] Internal timing fields documented
+          - [ ] Migration guide created
+        labels: ["schema", "versioning", "documentation"]
+        estimate: "1h"
+
+  - phase: 2
+    name: "Extended High-QPS Capacity Testing"
+    status: pending
+    priority: high
+    component: performance
+    description: "Extend load testing to higher QPS levels to identify capacity limits and saturation points."
+    tasks:
+      - id: 4
+        title: "Modify burn-in for high-QPS testing"
+        description: |
+          Update burn-in scripts to support sustained high-load testing:
+          - Target QPS values: 75, 100, 150
+          - Run at each QPS for 60s duration
+          - Record all latency percentiles and error rates
+          ## Acceptance
+          - [ ] High-QPS test modes implemented
+          - [ ] 60s sustained load capability
+          - [ ] Error rate tracking at high load
+        labels: ["load-testing", "high-qps", "burn-in"]
+        estimate: "2h"
+      - id: 5
+        title: "Validate tail latency alerts at high load"
+        description: |
+          Ensure tail latency monitoring remains accurate under high load:
+          - Verify p99 and max capture accuracy
+          - Confirm alert thresholds scale appropriately
+          - Test alert system under stress
+          ## Acceptance
+          - [ ] Tail alerts accurate at high QPS
+          - [ ] No false positives under normal high load
+          - [ ] Alert thresholds appropriately scaled
+        labels: ["tail-latency", "alerts", "validation"]
+        estimate: "1h"
+      - id: 6
+        title: "Identify saturation point"
+        description: |
+          Determine system capacity limits through systematic testing:
+          - Record first QPS tier where error rate > 0.5%
+          - Identify latency drift > 20% threshold
+          - Document degradation patterns
+          ## Acceptance
+          - [ ] Saturation QPS identified
+          - [ ] Error rate threshold documented
+          - [ ] Latency drift patterns recorded
+        labels: ["capacity-planning", "saturation", "limits"]
+        estimate: "1.5h"
+
+  - phase: 3
+    name: "Analysis & Recommendations"
+    status: pending
+    priority: medium
+    component: analysis
+    description: "Analyze internal vs e2e timing patterns and create capacity planning recommendations."
+    tasks:
+      - id: 7
+        title: "Compare internal vs e2e timing breakdown"
+        description: |
+          Analyze timing sources to identify latency bottlenecks:
+          - Highlight where most latency is introduced
+          - Document network vs processing vs DB time share
+          - Create timing breakdown visualizations
+          ## Acceptance
+          - [ ] Internal vs e2e comparison documented
+          - [ ] Latency source breakdown identified
+          - [ ] Bottleneck analysis completed
+        labels: ["analysis", "timing-breakdown", "bottlenecks"]
+        estimate: "1h"
+      - id: 8
+        title: "Generate capacity planning report"
+        description: |
+          Create actionable capacity planning recommendations:
+          - Identify safe sustained QPS for production
+          - Recommend scaling thresholds for alerts and auto-scaling
+          - Document operational guidelines
+          ## Acceptance
+          - [ ] Safe operating QPS documented
+          - [ ] Scaling thresholds recommended
+          - [ ] Operational guidelines created
+        labels: ["capacity-planning", "recommendations", "operations"]
+        estimate: "1h"
+
+team:
+  - role: implementation
+    agent: performance_agent
+    responsibilities:
+      - "Internal timing instrumentation; high-QPS test implementation."
+  - role: analysis
+    agent: metrics_agent
+    responsibilities:
+      - "Timing breakdown analysis; capacity planning recommendations."
+  - role: validation
+    agent: testing_agent
+    responsibilities:
+      - "High-load testing; alert validation; saturation point identification."
+
+success_metrics:
+  - metric: internal_timing_coverage
+    target: 100
+    unit: percent
+    description: "All test reports include internal timing metrics."
+  - metric: high_qps_capability
+    target: 150
+    unit: qps
+    description: "System tested successfully up to 150 QPS."
+  - metric: saturation_point_identified
+    target: 1
+    unit: threshold
+    description: "Clear saturation point documented with error/latency thresholds."
+  - metric: alert_accuracy
+    target: 100
+    unit: percent
+    description: "Zero false positives; all genuine spikes captured."
+
+deliverables:
+  - "Updated metrics schema (v2.1.0) with internal timing"
+  - "Enhanced burn-in scripts supporting QPS > 50"
+  - "Capacity limit findings and safe operating range"
+  - "Updated alert configuration for high-load conditions"
+  - "Sprint 9 comprehensive analysis report"
+
+artifacts:
+  - "scripts/burnin/server_burnin_high_qps.py"
+  - "docs/metrics-v2.1.0.md"
+  - "burnin-results/high-qps-capacity-test.json"
+  - "reports/sprint9-capacity-analysis.md"
+
+config:
+  auto_create_issues: true
+  issue_template: "sprint-task.md"
+  default_labels: ["sprint-9", "internal-timing", "high-qps", "capacity-planning"]
+  milestone: "v0.9.3 capacity"
+  project_board: "Veris – Performance"

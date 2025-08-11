@@ -1,0 +1,332 @@
+# Phase 4.2 Evaluation Configurations
+# Standard evaluation parameters and thresholds for lockdown & eval integrity
+
+# Base evaluation settings
+base_config:
+  k_values: [1, 3, 5, 10]
+  timeout_seconds: 30
+  calculate_ndcg: true
+  calculate_mrr: true
+  max_queries: null  # Use all queries in dataset
+
+# Performance thresholds for stability assessment
+stability_thresholds:
+  max_p1_drift: 0.02          # Maximum P@1 drift from baseline
+  max_ndcg_drift: 0.02        # Maximum NDCG drift from baseline  
+  max_latency_drift_pct: 10   # Maximum latency drift percentage
+  max_error_rate_pct: 0.5     # Maximum error rate percentage
+  stable_cycles_required: 5   # Consecutive stable cycles needed
+
+# Standard evaluation configurations
+evaluations:
+  
+  # Baseline evaluation - clean dataset, standard parameters
+  baseline:
+    name: "baseline"
+    description: "Baseline evaluation with clean dataset"
+    k_values: [1, 3, 5, 10]
+    calculate_ndcg: true
+    calculate_mrr: true
+    test_paraphrase_robustness: false
+    test_narrative_coherence: false
+    test_chunk_drift: false
+    max_queries: 100
+    expected_p1_min: 0.7      # Minimum expected P@1
+    expected_ndcg10_min: 0.65 # Minimum expected NDCG@10
+  
+  # Comprehensive evaluation - all advanced features enabled
+  comprehensive:
+    name: "comprehensive"
+    description: "Full evaluation with all advanced features"
+    k_values: [1, 3, 5, 10]
+    calculate_ndcg: true
+    calculate_mrr: true
+    test_paraphrase_robustness: true
+    test_narrative_coherence: true
+    test_chunk_drift: true
+    max_queries: 500
+    expected_p1_min: 0.65     # Slightly lower due to harder tests
+    expected_ndcg10_min: 0.6
+
+  # Quick evaluation - fast testing for development
+  quick:
+    name: "quick"
+    description: "Fast evaluation for development and CI"
+    k_values: [1, 5]
+    calculate_ndcg: true
+    calculate_mrr: false
+    test_paraphrase_robustness: false
+    test_narrative_coherence: false  
+    test_chunk_drift: false
+    max_queries: 25
+    timeout_seconds: 10
+    expected_p1_min: 0.6
+
+  # Scale testing configurations
+  scale_1x:
+    name: "scale_1x"
+    description: "1x corpus scale baseline"
+    k_values: [1, 3, 5, 10]
+    corpus_scale_factor: 1
+    expected_p1_min: 0.7
+    expected_p95_latency_max_ms: 100
+  
+  scale_2x:
+    name: "scale_2x"  
+    description: "2x corpus scale test"
+    k_values: [1, 3, 5, 10]
+    corpus_scale_factor: 2
+    expected_p1_min: 0.68     # Allow slight degradation
+    expected_p95_latency_max_ms: 150
+  
+  scale_5x:
+    name: "scale_5x"
+    description: "5x corpus scale test"
+    k_values: [1, 3, 5, 10] 
+    corpus_scale_factor: 5
+    expected_p1_min: 0.65
+    expected_p95_latency_max_ms: 300
+  
+  scale_10x:
+    name: "scale_10x"
+    description: "10x corpus scale test"
+    k_values: [1, 3, 5, 10]
+    corpus_scale_factor: 10  
+    expected_p1_min: 0.6      # Allow more degradation at scale
+    expected_p95_latency_max_ms: 500
+
+# Cold vs warm performance testing
+cold_warm_testing:
+  cold_start:
+    name: "cold_start"
+    description: "Cold start performance evaluation"
+    simulate_restart: true
+    warmup_queries: 0
+    expected_latency_multiplier: 2.0  # Allow 2x latency for cold start
+    
+  warm_cache:
+    name: "warm_cache"  
+    description: "Warm cache performance evaluation"
+    simulate_restart: false
+    warmup_queries: 50
+    expected_latency_multiplier: 1.0
+
+# Concurrency and load testing parameters
+concurrency_testing:
+  low_load:
+    name: "low_load"
+    description: "Low load concurrency test"
+    target_qps: 10
+    duration_minutes: 5
+    concurrent_users: 2
+    
+  medium_load:
+    name: "medium_load"
+    description: "Medium load concurrency test"  
+    target_qps: 50
+    duration_minutes: 15
+    concurrent_users: 10
+    
+  high_load:
+    name: "high_load"
+    description: "High load concurrency test"
+    target_qps: 100
+    duration_minutes: 30
+    concurrent_users: 20
+    
+  soak_test:
+    name: "soak_test"
+    description: "Extended soak test with rolling redeploy"
+    target_qps: 25
+    duration_minutes: 60
+    concurrent_users: 5
+    enable_rolling_redeploy: true
+    redeploy_interval_minutes: 15
+
+# Dataset configurations
+datasets:
+  clean_small:
+    name: "clean_small"
+    type: "clean"
+    size: "small"
+    query_count: 50
+    document_count: 500
+    description: "Small clean dataset for quick testing"
+    
+  clean_medium:
+    name: "clean_medium"
+    type: "clean" 
+    size: "medium"
+    query_count: 200
+    document_count: 2000
+    description: "Medium clean dataset for standard evaluation"
+    
+  clean_large:
+    name: "clean_large"
+    type: "clean"
+    size: "large" 
+    query_count: 1000
+    document_count: 10000
+    description: "Large clean dataset for comprehensive evaluation"
+    
+  noisy_dupes:
+    name: "noisy_dupes"
+    type: "noisy"
+    noise_type: "dupes"
+    base_dataset: "clean_medium"
+    duplicate_percentage: 10
+    description: "Dataset with exact duplicates"
+    
+  noisy_near_dupes:
+    name: "noisy_near_dupes"
+    type: "noisy"
+    noise_type: "near_dupes" 
+    base_dataset: "clean_medium"
+    near_duplicate_percentage: 5
+    description: "Dataset with near-duplicates"
+    
+  noisy_long_docs:
+    name: "noisy_long_docs"
+    type: "noisy"
+    noise_type: "long_docs"
+    base_dataset: "clean_medium"
+    long_doc_percentage: 5
+    long_doc_min_words: 5000
+    description: "Dataset with very long documents"
+    
+  noisy_weak_labels:
+    name: "noisy_weak_labels"
+    type: "noisy"
+    noise_type: "weak_labels"
+    base_dataset: "clean_medium"
+    label_noise_percentage: 20
+    description: "Dataset with noisy/weak relevance labels"
+
+# Ablation study configurations
+ablation_studies:
+  retrieval_pipeline:
+    name: "retrieval_pipeline_ablation"
+    description: "Compare different retrieval pipeline configurations"
+    configurations:
+      dense_only:
+        name: "dense_only"
+        dense_weight: 1.0
+        lexical_weight: 0.0
+        enable_rerank: false
+        description: "Dense retrieval only"
+        
+      lexical_only:
+        name: "lexical_only"
+        dense_weight: 0.0
+        lexical_weight: 1.0
+        enable_rerank: false
+        description: "Lexical retrieval only"
+        
+      hybrid_no_rerank:
+        name: "hybrid_no_rerank"
+        dense_weight: 0.7
+        lexical_weight: 0.3
+        enable_rerank: false
+        description: "Hybrid retrieval without reranking"
+        
+      hybrid_with_rerank:
+        name: "hybrid_with_rerank" 
+        dense_weight: 0.7
+        lexical_weight: 0.3
+        enable_rerank: true
+        description: "Full hybrid pipeline with reranking"
+
+  rerank_thresholds:
+    name: "rerank_threshold_ablation"
+    description: "Test different reranking threshold values"
+    configurations:
+      no_gating:
+        rerank_threshold: 0.0
+        description: "Always rerank"
+        
+      conservative_gating:
+        rerank_threshold: 0.05
+        description: "Conservative rerank gating"
+        
+      moderate_gating:
+        rerank_threshold: 0.1
+        description: "Moderate rerank gating"
+        
+      aggressive_gating:
+        rerank_threshold: 0.2
+        description: "Aggressive rerank gating"
+
+# Advanced evaluation scenarios
+advanced_scenarios:
+  
+  paraphrase_robustness:
+    name: "paraphrase_robustness"
+    description: "Test robustness to paraphrased queries"
+    paraphrase_techniques:
+      - "synonym_substitution"
+      - "tense_variation" 
+      - "voice_change"
+      - "word_order_change"
+    similarity_threshold: 0.8
+    expected_robustness_min: 0.9  # 90% consistency
+    
+  narrative_coherence:
+    name: "narrative_coherence"
+    description: "Test multi-chunk narrative retrieval"
+    min_chunks_per_narrative: 3
+    max_chunks_per_narrative: 10
+    expected_coherence_min: 0.7
+    temporal_ordering_weight: 0.2
+    
+  chunk_drift:
+    name: "chunk_drift"
+    description: "Test robustness to chunk boundary variations"
+    token_shift_range: [-100, 100]
+    overlap_adjustment: true
+    expected_stability_min: 0.85
+    
+  hard_negative_mining:
+    name: "hard_negative_mining"
+    description: "Automatic hard negative detection and evaluation"
+    mining_frequency: "nightly"
+    near_miss_threshold: 0.7
+    difficulty_threshold: 0.6
+    expected_improvement_min: 0.05
+
+# Output and reporting configuration
+reporting:
+  output_formats: ["json", "csv", "html"]
+  include_per_query_results: true
+  include_trace_details: true
+  include_performance_breakdown: true
+  
+  visualization:
+    generate_charts: true
+    chart_types: ["line", "bar", "heatmap"]
+    metrics_to_plot: ["p_at_1", "ndcg_at_5", "ndcg_at_10", "mrr"]
+    
+  alerts:
+    enable_email_alerts: false
+    enable_slack_alerts: false
+    threshold_breach_notifications: true
+    
+  storage:
+    retention_days: 90
+    archive_old_results: true
+    compress_archives: true
+
+# Environment-specific configurations
+environments:
+  development:
+    max_queries_override: 25
+    timeout_seconds_override: 10
+    skip_slow_tests: true
+    
+  staging:
+    max_queries_override: 100
+    enable_performance_profiling: true
+    
+  production:
+    max_queries_override: null  # Use full dataset
+    enable_detailed_logging: true
+    alert_on_degradation: true

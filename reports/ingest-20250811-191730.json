@@ -1,0 +1,10 @@
+{
+  "corpus_name": "burnin-sample-1500",
+  "target_size": 1500,
+  "inserted": 1500,
+  "errors": 0,
+  "success_rate": 100.0,
+  "ingest_time_seconds": 0.51,
+  "total_points_after": 1500,
+  "timestamp": "2025-08-11T19:17:30.298057"
+}

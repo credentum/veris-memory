@@ -1,0 +1,145 @@
+{
+  "status": "PASSED",
+  "deployment": {
+    "server": "Hetzner (135.181.4.118)",
+    "location": "/opt/veris-memory"
+  },
+  "configuration": {
+    "dimensions": 384,
+    "distance": "Cosine",
+    "status": "PASS"
+  },
+  "baseline": {
+    "e2e": {
+      "source": "e2e",
+      "p50_ms": 1.0,
+      "p95_ms": 1.2,
+      "p99_ms": 2.0,
+      "max_ms": 2.0,
+      "count": 100
+    },
+    "internal": null,
+    "tail_alerts": {
+      "has_alerts": true,
+      "alerts": [
+        {
+          "type": "p99_spike",
+          "message": "p99 (2.0ms) > 1.5\u00d7 p95 (1.2ms)",
+          "severity": "WARN"
+        }
+      ]
+    }
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "qps": 10,
+      "latency": {
+        "e2e": {
+          "source": "e2e",
+          "p50_ms": 2.1,
+          "p95_ms": 2.4,
+          "p99_ms": 2.7,
+          "max_ms": 2.7,
+          "count": 50
+        },
+        "internal": null
+      },
+      "errors": 0,
+      "status": "PASS",
+      "tail_alerts": {
+        "has_alerts": false,
+        "alerts": []
+      }
+    },
+    {
+      "cycle": 2,
+      "qps": 20,
+      "latency": {
+        "e2e": {
+          "source": "e2e",
+          "p50_ms": 2.1,
+          "p95_ms": 2.3,
+          "p99_ms": 2.3,
+          "max_ms": 2.3,
+          "count": 50
+        },
+        "internal": null
+      },
+      "errors": 0,
+      "status": "PASS",
+      "tail_alerts": {
+        "has_alerts": false,
+        "alerts": []
+      }
+    },
+    {
+      "cycle": 3,
+      "qps": 50,
+      "latency": {
+        "e2e": {
+          "source": "e2e",
+          "p50_ms": 2.0,
+          "p95_ms": 2.2,
+          "p99_ms": 2.2,
+          "max_ms": 2.2,
+          "count": 50
+        },
+        "internal": null
+      },
+      "errors": 0,
+      "status": "PASS",
+      "tail_alerts": {
+        "has_alerts": false,
+        "alerts": []
+      }
+    },
+    {
+      "cycle": 4,
+      "qps": 20,
+      "latency": {
+        "e2e": {
+          "source": "e2e",
+          "p50_ms": 2.0,
+          "p95_ms": 2.2,
+          "p99_ms": 2.3,
+          "max_ms": 2.3,
+          "count": 50
+        },
+        "internal": null
+      },
+      "errors": 0,
+      "status": "PASS",
+      "tail_alerts": {
+        "has_alerts": false,
+        "alerts": []
+      }
+    },
+    {
+      "cycle": 5,
+      "qps": 10,
+      "latency": {
+        "e2e": {
+          "source": "e2e",
+          "p50_ms": 2.1,
+          "p95_ms": 2.3,
+          "p99_ms": 2.3,
+          "max_ms": 2.3,
+          "count": 50
+        },
+        "internal": null
+      },
+      "errors": 0,
+      "status": "PASS",
+      "tail_alerts": {
+        "has_alerts": false,
+        "alerts": []
+      }
+    }
+  ],
+  "stable_cycles": 5,
+  "total_tail_alerts": 0,
+  "timestamp": "2025-08-11T19:17:17.700047",
+  "tag": "burnin-stable-20250811-191717",
+  "metrics_version": "2.0.0"
+}

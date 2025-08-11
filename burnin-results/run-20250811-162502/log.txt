@@ -1,0 +1,7 @@
+[0;32m[16:25:02] 🚀 Veris Memory Burn-In Sprint[0m
+[0;32m[16:25:02] ==============================[0m
+[0;32m[16:25:02] Target: hetzner-server[0m
+[0;32m[16:25:02] Cycles: 5[0m
+[0;32m[16:25:02] Results: /workspaces/agent-context-template/context-store/burnin-results/run-20250811-162502[0m
+[0;32m[16:25:02] 📊 PHASE 1: BASELINE METRICS[0m
+[0;32m[16:25:02] Verifying services (cycle 0)...[0m

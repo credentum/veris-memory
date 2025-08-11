@@ -1,0 +1,57 @@
+{
+  "status": "PASSED",
+  "deployment": {
+    "server": "Hetzner (135.181.4.118)",
+    "location": "/opt/veris-memory"
+  },
+  "configuration": {
+    "dimensions": 384,
+    "distance": "Cosine",
+    "status": "PASS"
+  },
+  "baseline": {
+    "p50_ms": 1.1,
+    "p95_ms": 1.4,
+    "p99_ms": 2.2
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "qps": 10,
+      "p95_ms": 2.4,
+      "errors": 0,
+      "status": "PASS"
+    },
+    {
+      "cycle": 2,
+      "qps": 20,
+      "p95_ms": 2.4,
+      "errors": 0,
+      "status": "PASS"
+    },
+    {
+      "cycle": 3,
+      "qps": 50,
+      "p95_ms": 2.3,
+      "errors": 0,
+      "status": "PASS"
+    },
+    {
+      "cycle": 4,
+      "qps": 20,
+      "p95_ms": 2.4,
+      "errors": 0,
+      "status": "PASS"
+    },
+    {
+      "cycle": 5,
+      "qps": 10,
+      "p95_ms": 2.4,
+      "errors": 0,
+      "status": "PASS"
+    }
+  ],
+  "stable_cycles": 5,
+  "timestamp": "2025-08-11T18:52:29.298136",
+  "tag": "burnin-stable-20250811-185229"
+}

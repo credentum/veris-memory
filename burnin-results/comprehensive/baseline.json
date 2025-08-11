@@ -1,0 +1,14 @@
+{
+  "cycle": 0,
+  "timestamp": "2025-08-11T16:34:21.552640",
+  "qps": 10,
+  "p50_latency_ms": 0,
+  "p95_latency_ms": 0,
+  "p99_latency_ms": 0,
+  "error_rate_percent": 100,
+  "requests_total": 0,
+  "eval_p_at_1": 0.8454830065935088,
+  "eval_ndcg_at_5": 0.7754830065935089,
+  "eval_mrr": 0.8154830065935088,
+  "status": "BASELINE"
+}

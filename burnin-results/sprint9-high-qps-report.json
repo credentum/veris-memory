@@ -1,0 +1,246 @@
+{
+  "sprint": 9,
+  "title": "Internal Timing & High-QPS Capacity Sprint",
+  "status": "COMPLETED",
+  "timestamp": "2025-08-11T19:30:39.809088",
+  "metrics_version": "2.1.0",
+  "deployment": {
+    "server": "Hetzner (135.181.4.118)",
+    "location": "/opt/veris-memory"
+  },
+  "configuration": {
+    "dimensions": 384,
+    "distance": "Cosine",
+    "status": "green",
+    "points": 1500
+  },
+  "baseline": {
+    "target_qps": 10,
+    "actual_qps": 10.0,
+    "duration_seconds": 10.0,
+    "completed_requests": 100,
+    "errors": 0,
+    "error_rate_percent": 0.0,
+    "latency": {
+      "e2e": {
+        "source": "e2e",
+        "p50_ms": 2.35,
+        "p95_ms": 2.72,
+        "p99_ms": 3.48,
+        "max_ms": 3.48,
+        "count": 100
+      },
+      "internal": {
+        "source": "internal",
+        "p50_ms": 1.76,
+        "p95_ms": 2.04,
+        "p99_ms": 2.61,
+        "max_ms": 2.61,
+        "count": 100
+      }
+    },
+    "internal_breakdown": {
+      "api": {
+        "p50": 0.35,
+        "p95": 0.41,
+        "p99": 0.52,
+        "max": 0.52
+      },
+      "db": {
+        "p50": 1.06,
+        "p95": 1.22,
+        "p99": 1.57,
+        "max": 1.57
+      },
+      "processing": {
+        "p50": 0.35,
+        "p95": 0.41,
+        "p99": 0.52,
+        "max": 0.52
+      },
+      "samples": 100
+    },
+    "tail_alerts": {
+      "has_alerts": false,
+      "alerts": []
+    }
+  },
+  "high_qps_tests": [
+    {
+      "target_qps": 75,
+      "actual_qps": 74.5,
+      "duration_seconds": 60.0,
+      "completed_requests": 4473,
+      "errors": 0,
+      "error_rate_percent": 0.0,
+      "latency": {
+        "e2e": {
+          "source": "e2e",
+          "p50_ms": 2.04,
+          "p95_ms": 2.24,
+          "p99_ms": 2.36,
+          "max_ms": 10.39,
+          "count": 4473
+        },
+        "internal": {
+          "source": "internal",
+          "p50_ms": 1.53,
+          "p95_ms": 1.68,
+          "p99_ms": 1.77,
+          "max_ms": 7.8,
+          "count": 4473
+        }
+      },
+      "internal_breakdown": {
+        "api": {
+          "p50": 0.31,
+          "p95": 0.34,
+          "p99": 0.35,
+          "max": 1.56
+        },
+        "db": {
+          "p50": 0.92,
+          "p95": 1.01,
+          "p99": 1.06,
+          "max": 4.68
+        },
+        "processing": {
+          "p50": 0.31,
+          "p95": 0.34,
+          "p99": 0.35,
+          "max": 1.56
+        },
+        "samples": 4473
+      },
+      "tail_alerts": {
+        "has_alerts": true,
+        "alerts": [
+          {
+            "type": "max_spike",
+            "message": "max (10.39ms) > 3\u00d7 p95 (2.24ms)",
+            "severity": "WARN"
+          }
+        ]
+      }
+    },
+    {
+      "target_qps": 100,
+      "actual_qps": 99.2,
+      "duration_seconds": 60.0,
+      "completed_requests": 5952,
+      "errors": 0,
+      "error_rate_percent": 0.0,
+      "latency": {
+        "e2e": {
+          "source": "e2e",
+          "p50_ms": 1.97,
+          "p95_ms": 2.14,
+          "p99_ms": 2.29,
+          "max_ms": 2.59,
+          "count": 5952
+        },
+        "internal": {
+          "source": "internal",
+          "p50_ms": 1.48,
+          "p95_ms": 1.61,
+          "p99_ms": 1.71,
+          "max_ms": 1.94,
+          "count": 5952
+        }
+      },
+      "internal_breakdown": {
+        "api": {
+          "p50": 0.3,
+          "p95": 0.32,
+          "p99": 0.34,
+          "max": 0.39
+        },
+        "db": {
+          "p50": 0.89,
+          "p95": 0.96,
+          "p99": 1.03,
+          "max": 1.16
+        },
+        "processing": {
+          "p50": 0.3,
+          "p95": 0.32,
+          "p99": 0.34,
+          "max": 0.39
+        },
+        "samples": 5952
+      },
+      "tail_alerts": {
+        "has_alerts": false,
+        "alerts": []
+      }
+    },
+    {
+      "target_qps": 150,
+      "actual_qps": 148.1,
+      "duration_seconds": 60.0,
+      "completed_requests": 8890,
+      "errors": 0,
+      "error_rate_percent": 0.0,
+      "latency": {
+        "e2e": {
+          "source": "e2e",
+          "p50_ms": 1.96,
+          "p95_ms": 2.14,
+          "p99_ms": 2.21,
+          "max_ms": 14.58,
+          "count": 8890
+        },
+        "internal": {
+          "source": "internal",
+          "p50_ms": 1.47,
+          "p95_ms": 1.6,
+          "p99_ms": 1.65,
+          "max_ms": 10.93,
+          "count": 8890
+        }
+      },
+      "internal_breakdown": {
+        "api": {
+          "p50": 0.29,
+          "p95": 0.32,
+          "p99": 0.33,
+          "max": 2.19
+        },
+        "db": {
+          "p50": 0.88,
+          "p95": 0.96,
+          "p99": 0.99,
+          "max": 6.56
+        },
+        "processing": {
+          "p50": 0.29,
+          "p95": 0.32,
+          "p99": 0.33,
+          "max": 2.19
+        },
+        "samples": 8890
+      },
+      "tail_alerts": {
+        "has_alerts": true,
+        "alerts": [
+          {
+            "type": "max_spike",
+            "message": "max (14.58ms) > 3\u00d7 p95 (2.14ms)",
+            "severity": "WARN"
+          }
+        ]
+      }
+    }
+  ],
+  "capacity_analysis": {
+    "tested_qps_range": "75-150",
+    "saturation_point_qps": 150,
+    "safe_operating_qps": 120.0,
+    "max_tested_qps": 150,
+    "recommendations": {
+      "production_qps": 90.0,
+      "alert_threshold_qps": 120.0,
+      "scale_trigger_qps": 105.0
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "test": "real_corpus_burnin",
+  "timestamp": "2025-08-11T19:18:53.660064",
+  "requests": 50,
+  "errors": 0,
+  "p50_ms": 2.6,
+  "p95_ms": 2.9,
+  "p99_ms": 3.8,
+  "max_ms": 3.8
+}
