@@ -1,0 +1,43 @@
+{
+  "version": "1.0.0",
+  "created": "2025-08-11",
+  "description": "Long document evaluation dataset to test performance with verbose content",
+  "base_dataset": "eval/clean/eval_dataset.json",
+  "queries": [
+    {
+      "id": "q001",
+      "query": "microservices architecture scalability",
+      "expected_docs": ["d001_long", "d003_long"],
+      "relevance_scores": {"d001_long": 1.0, "d003_long": 0.8}
+    },
+    {
+      "id": "q002",
+      "query": "database connection pooling best practices",
+      "expected_docs": ["d002_long"],
+      "relevance_scores": {"d002_long": 1.0}
+    }
+  ],
+  "documents": [
+    {
+      "id": "d001_long",
+      "title": "Comprehensive Guide to Microservices Design Patterns",
+      "text": "Microservices architecture represents a fundamental shift in how we design, develop, and deploy modern applications. This architectural style improves scalability by decomposing monolithic applications into small, independent services that can be scaled individually based on demand. Each microservice is responsible for a specific business capability and communicates with other services through well-defined APIs, typically REST or messaging protocols. The benefits of microservices include independent deployment cycles, technology diversity, fault isolation, and improved team autonomy. However, this architecture also introduces complexity in areas such as service discovery, distributed tracing, data consistency, and network latency. Organizations adopting microservices must invest in robust DevOps practices, containerization technologies like Docker and Kubernetes, and comprehensive monitoring solutions. The journey from monolith to microservices requires careful planning, starting with identifying bounded contexts, establishing clear service boundaries, and implementing proper API versioning strategies. Success with microservices depends on embracing automation, implementing circuit breakers for resilience, and maintaining strong service contracts. Teams should also consider the operational overhead and ensure they have the necessary skills and tools before embarking on a microservices transformation.",
+      "type": "design",
+      "word_count": 181
+    },
+    {
+      "id": "d002_long",
+      "title": "Database Connection Pooling: A Deep Dive into Best Practices and Implementation",
+      "text": "Connection pooling is an essential technique for optimizing database performance in modern applications. When applications create direct database connections for each request, the overhead of establishing TCP connections, performing authentication, and setting up the session context can significantly impact performance. Connection pooling addresses this by maintaining a cache of database connections that can be reused across multiple requests. Best practices for connection pooling include carefully tuning pool sizes based on application workload and database capacity. The minimum pool size should handle baseline traffic without creating unnecessary connections, while the maximum pool size should prevent overwhelming the database during peak loads. Connection timeout values must balance between preventing connection starvation and avoiding excessive wait times. Monitoring is crucial - track metrics like active connections, idle connections, wait time, and connection creation rate. Different pooling strategies exist: fixed-size pools maintain a constant number of connections, while dynamic pools adjust based on demand. Consider implementing connection validation to detect and remove stale connections, and use connection leak detection to identify code that fails to return connections to the pool. Popular connection pooling libraries include HikariCP for Java, pgBouncer for PostgreSQL, and built-in pooling in most modern ORMs. Remember that connection pooling settings should be adjusted based on the specific database system, as MySQL, PostgreSQL, and Oracle each have different connection handling characteristics.",
+      "type": "implementation",
+      "word_count": 216
+    },
+    {
+      "id": "d003_long",
+      "title": "Scaling Microservices: Strategies, Patterns, and Real-World Considerations",
+      "text": "Horizontal scaling of microservices represents one of the key advantages of this architectural pattern, but it requires careful consideration of multiple factors to implement successfully. Load balancing becomes critical when scaling services horizontally, with options ranging from simple round-robin algorithms to sophisticated approaches that consider service health, response times, and geographic proximity. Service discovery mechanisms enable dynamic scaling by allowing services to find each other without hard-coded endpoints. Popular service discovery solutions include Consul, Eureka, and Kubernetes' built-in service discovery. When scaling microservices, you must address state management - stateless services scale more easily, but stateful services require strategies like session affinity or distributed state stores. Data partitioning becomes important for database-backed services, with techniques like sharding, read replicas, and CQRS patterns helping distribute load. Caching strategies, including distributed caches like Redis or Hazelcast, can significantly reduce database load when scaling. Auto-scaling policies should be carefully tuned, considering metrics like CPU usage, memory consumption, request rate, and custom business metrics. The scaling strategy should also account for downstream dependencies to prevent cascading failures. Implement circuit breakers and bulkheads to isolate failures, and use techniques like graceful degradation to maintain service availability during scaling events. Cost optimization is another crucial consideration - over-provisioning wastes resources while under-provisioning impacts performance.",
+      "type": "design",
+      "word_count": 208
+    }
+  ]
+}

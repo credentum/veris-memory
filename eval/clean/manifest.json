@@ -1,0 +1,32 @@
+{
+  "version": "1.0.0",
+  "created": "2025-08-11T16:55:00Z",
+  "description": "Manifest for gold evaluation dataset with file hashes",
+  "commit": "875b100",
+  "files": {
+    "eval_dataset.json": {
+      "path": "eval/clean/eval_dataset.json",
+      "sha256": "f74249d6c26c3a3600c4aac91ad0a8789e90e4fd28a492a28b18535a7a796043",
+      "size_bytes": 3584,
+      "queries": 5,
+      "documents": 12,
+      "frozen": true
+    }
+  },
+  "metrics": {
+    "model": "all-MiniLM-L6-v2",
+    "dimensions": 384,
+    "distance": "cosine"
+  },
+  "selection_criteria": {
+    "query_diversity": "Covers different technical domains",
+    "relevance_distribution": "Mix of high (1.0), medium (0.6-0.9), and low (0.5) relevance",
+    "document_types": ["design", "implementation", "operations", "infrastructure", "deployment"],
+    "average_text_length": 150
+  },
+  "reproducibility": {
+    "random_seed": 42,
+    "deterministic": true,
+    "validation_split": 0.2
+  }
+}

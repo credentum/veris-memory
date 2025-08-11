@@ -1,0 +1,148 @@
+{
+  "version": "1.0.0",
+  "created": "2025-08-11",
+  "description": "Noisy evaluation dataset with duplicates, near-duplicates, and weak labels",
+  "base_dataset": "eval/clean/eval_dataset.json",
+  "noise_types": ["duplicates", "near_duplicates", "weak_labels", "typos"],
+  "queries": [
+    {
+      "id": "q001",
+      "query": "microservices architecture scalability",
+      "expected_docs": ["d001", "d003", "d007", "d001_dup", "d003_near"],
+      "relevance_scores": {"d001": 1.0, "d003": 0.8, "d007": 0.6, "d001_dup": 1.0, "d003_near": 0.75}
+    },
+    {
+      "id": "q002",
+      "query": "database connection pooling best practices",
+      "expected_docs": ["d002", "d005", "d002_typo"],
+      "relevance_scores": {"d002": 1.0, "d005": 0.7, "d002_typo": 0.95}
+    },
+    {
+      "id": "q002_typo",
+      "query": "databse conection pooling best practises",
+      "expected_docs": ["d002", "d005"],
+      "relevance_scores": {"d002": 0.9, "d005": 0.65},
+      "noise_type": "query_typo"
+    },
+    {
+      "id": "q003",
+      "query": "API rate limiting implementation",
+      "expected_docs": ["d004", "d006", "d008", "d013_weak"],
+      "relevance_scores": {"d004": 1.0, "d006": 0.9, "d008": 0.5, "d013_weak": 0.3}
+    },
+    {
+      "id": "q004",
+      "query": "kubernetes deployment strategies",
+      "expected_docs": ["d009", "d010"],
+      "relevance_scores": {"d009": 1.0, "d010": 0.8}
+    },
+    {
+      "id": "q005",
+      "query": "event-driven architecture patterns",
+      "expected_docs": ["d011", "d012", "d001"],
+      "relevance_scores": {"d011": 1.0, "d012": 0.9, "d001": 0.6}
+    }
+  ],
+  "documents": [
+    {
+      "id": "d001",
+      "title": "Microservices Design Patterns",
+      "text": "Microservices architecture improves scalability by decomposing applications into small, independent services that can be scaled individually.",
+      "type": "design"
+    },
+    {
+      "id": "d001_dup",
+      "title": "Microservices Design Patterns",
+      "text": "Microservices architecture improves scalability by decomposing applications into small, independent services that can be scaled individually.",
+      "type": "design",
+      "noise_type": "exact_duplicate"
+    },
+    {
+      "id": "d002",
+      "title": "Database Connection Management",
+      "text": "Connection pooling is essential for database performance. Best practices include setting appropriate pool sizes and timeout values.",
+      "type": "implementation"
+    },
+    {
+      "id": "d002_typo",
+      "title": "Databse Conection Management",
+      "text": "Conection pooling is esential for database performence. Best practises include seting apropriate pool sizes and timeout values.",
+      "type": "implementation",
+      "noise_type": "typos"
+    },
+    {
+      "id": "d003",
+      "title": "Scaling Microservices",
+      "text": "Horizontal scaling of microservices requires load balancing and service discovery mechanisms.",
+      "type": "design"
+    },
+    {
+      "id": "d003_near",
+      "title": "Microservices Scaling Strategies",
+      "text": "Scaling microservices horizontally needs proper load balancing and service discovery tools to work effectively.",
+      "type": "design",
+      "noise_type": "near_duplicate"
+    },
+    {
+      "id": "d004",
+      "title": "API Rate Limiting Guide",
+      "text": "Implementing rate limiting protects APIs from abuse. Common strategies include token bucket and sliding window algorithms.",
+      "type": "implementation"
+    },
+    {
+      "id": "d005",
+      "title": "Connection Pool Tuning",
+      "text": "Database connection pools should be tuned based on workload. Monitor active connections and adjust pool size accordingly.",
+      "type": "operations"
+    },
+    {
+      "id": "d006",
+      "title": "Rate Limiting Strategies",
+      "text": "API rate limiting can be implemented at various levels: per-user, per-IP, or per-API key.",
+      "type": "design"
+    },
+    {
+      "id": "d007",
+      "title": "Service Mesh for Microservices",
+      "text": "Service mesh provides observability and traffic management for microservices architectures.",
+      "type": "infrastructure"
+    },
+    {
+      "id": "d008",
+      "title": "API Gateway Patterns",
+      "text": "API gateways centralize cross-cutting concerns like authentication, rate limiting, and routing.",
+      "type": "infrastructure"
+    },
+    {
+      "id": "d009",
+      "title": "Kubernetes Blue-Green Deployments",
+      "text": "Blue-green deployment strategy in Kubernetes enables zero-downtime releases by switching between environments.",
+      "type": "deployment"
+    },
+    {
+      "id": "d010",
+      "title": "Rolling Updates in Kubernetes",
+      "text": "Kubernetes rolling updates gradually replace old pods with new ones, ensuring continuous service availability.",
+      "type": "deployment"
+    },
+    {
+      "id": "d011",
+      "title": "Event-Driven Architecture Fundamentals",
+      "text": "Event-driven architecture decouples services through asynchronous message passing, improving scalability and resilience.",
+      "type": "design"
+    },
+    {
+      "id": "d012",
+      "title": "Event Sourcing Patterns",
+      "text": "Event sourcing stores all changes as a sequence of events, enabling audit trails and temporal queries.",
+      "type": "design"
+    },
+    {
+      "id": "d013_weak",
+      "title": "General Software Best Practices",
+      "text": "Software development involves many considerations including performance, security, and maintainability.",
+      "type": "general",
+      "noise_type": "weak_label"
+    }
+  ]
+}

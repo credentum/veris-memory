@@ -1,0 +1,80 @@
+# Makefile for eval and CI tasks
+
+.PHONY: eval-clean eval-noisy eval-long eval-all eval-compare
+
+# Evaluation targets
+eval-clean:
+	@echo "Running clean evaluation set..."
+	@python ops/eval/run_eval.py --dataset clean --seed 42
+
+eval-noisy:
+	@echo "Running noisy evaluation set..."
+	@python ops/eval/run_eval.py --dataset noisy --seed 42
+
+eval-long:
+	@echo "Running long document evaluation set..."
+	@python ops/eval/run_eval.py --dataset long --seed 42
+
+eval-all:
+	@echo "Running all evaluation sets..."
+	@python ops/eval/run_eval.py --dataset all --seed 42
+
+eval-compare:
+	@echo "Running comparison across all datasets..."
+	@python ops/eval/run_eval.py --dataset all --seed 42 --compare
+
+# CI targets
+verify-manifest:
+	@echo "Verifying manifest parity..."
+	@python ops/verify/manifest_verifier.py \
+		--config production_locked_config.yaml \
+		--qdrant-url http://localhost:6333 \
+		--collection context_embeddings \
+		--require-text-index
+
+bootstrap-qdrant:
+	@echo "Bootstrapping Qdrant collection..."
+	@python ops/bootstrap/qdrant_bootstrap.py --ensure-collection
+
+# Test targets
+test-parity:
+	@echo "Testing dimension drift detection..."
+	@python -m pytest tests/test_parity.py -v
+
+test-schema:
+	@echo "Testing ingestion schema validation..."
+	@python -m pytest tests/test_schema.py -v
+
+smoke-ci:
+	@echo "Running smoke tests for CI..."
+	@python ops/smoke/smoke_runner.py
+
+# Docker targets
+docker-prod:
+	@docker-compose -f docker-compose.prod.yml up -d
+
+docker-dev:
+	@docker-compose -f docker-compose.dev.yml up -d
+
+# Help target
+help:
+	@echo "Available targets:"
+	@echo "  Evaluation:"
+	@echo "    eval-clean    - Run clean evaluation dataset"
+	@echo "    eval-noisy    - Run noisy evaluation dataset"
+	@echo "    eval-long     - Run long document evaluation"
+	@echo "    eval-all      - Run all evaluation datasets"
+	@echo "    eval-compare  - Compare results across datasets"
+	@echo ""
+	@echo "  CI/CD:"
+	@echo "    verify-manifest  - Check manifest parity"
+	@echo "    bootstrap-qdrant - Initialize Qdrant collection"
+	@echo ""
+	@echo "  Testing:"
+	@echo "    test-parity   - Test dimension drift detection"
+	@echo "    test-schema   - Test schema validation"
+	@echo "    smoke-ci      - Run smoke tests"
+	@echo ""
+	@echo "  Docker:"
+	@echo "    docker-prod   - Start production stack"
+	@echo "    docker-dev    - Start development stack"

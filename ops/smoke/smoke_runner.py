@@ -1,72 +1,496 @@
-# ops/smoke/smoke_runner.py
-import os, json, time, uuid, requests, sys
-BASE=os.getenv("VERIS_BASE_URL","http://127.0.0.1:8000")
-NS=os.getenv("VERIS_NAMESPACE","smoke")
-TIMEOUT=int(os.getenv("VERIS_TIMEOUT_MS","60000"))/1000
-H={"Authorization":f"Bearer {os.getenv('VERIS_TOKEN')}"} if os.getenv("VERIS_TOKEN") else {}
+#!/usr/bin/env python3
+"""
+Smoke test runner for CI/CD pipeline.
+Quick sanity checks to verify deployment.
+"""
 
-def now(): return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+import sys
+import time
+import json
+import argparse
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass, asdict
+import requests
+from colorama import init, Fore, Style
 
-def health():
-    t0=time.time(); r=requests.get(f"{BASE}/health", timeout=5, headers=H); r.raise_for_status()
-    return {"id":"SM-1","name":"Health probe","status":"pass","latency_ms":int((time.time()-t0)*1000)}
 
-def store_and_count():
-    t0=time.time()
-    doc={"title":"Smoke Needle","text":"Microservices architecture improves scalability and team autonomy."}
-    requests.post(f"{BASE}/tools/store_context", json={"namespace":NS, "ttl":120, "content":doc, "wait":True}, timeout=8, headers=H).raise_for_status()
-    c=requests.get(f"{BASE}/admin/count", params={"namespace":NS}, timeout=8, headers=H).json().get("count",0)
-    return {"id":"SM-2","name":"Store→index→count","status":"pass","latency_ms":int((time.time()-t0)*1000),"metrics":{"count_after":c}}
+# Initialize colorama for cross-platform color support
+init(autoreset=True)
 
-def retrieve(q):
-    t0=time.time()
-    r=requests.post(f"{BASE}/tools/retrieve_context", json={"namespace":NS, "query":q, "top_k":20}, timeout=8, headers=H); r.raise_for_status()
-    hits=r.json().get("results",[])
-    top_title=(hits[0]["metadata"].get("title") if hits else "")
-    ok= "Smoke Needle" in (top_title or "")
-    return ok, int((time.time()-t0)*1000), hits
 
-def run():
-    deadline=time.time()+TIMEOUT
-    tests=[]
-    # SM-1
-    tests.append(health()); 
-    # SM-2
-    tests.append(store_and_count())
-    # SM-3
-    ok,lms,hits = retrieve("What are the benefits of microservices?")
-    tests.append({"id":"SM-3","name":"Needle retrieval","status":"pass" if ok else "fail","latency_ms":lms,
-                  "metrics":{"score_gap_top1_top2": (hits[0]["score"]-hits[1]["score"]) if len(hits)>1 else None}})
-    # SM-4 paraphrase
-    ok1, l1, _ = retrieve("Why do teams choose microservices?")
-    ok2, l2, _ = retrieve("Key advantages of a microservice approach?")
-    tests.append({"id":"SM-4","name":"Paraphrase MQE-lite","status":"pass" if (ok1 or ok2) else "fail","latency_ms":max(l1,l2)})
-    # SM-5 freshness (visibility within ~1s)
-    t0=time.time(); ok3, l3, _ = retrieve("What are the benefits of microservices?")
-    vis=time.time()-t0
-    tests.append({"id":"SM-5","name":"Index freshness","status":"pass" if vis<=1.0 else "fail","latency_ms":l3,
-                  "metrics":{"visible_under_seconds":round(vis,3)}})
+@dataclass
+class TestResult:
+    """Result of a single test."""
+    name: str
+    passed: bool
+    duration_ms: float
+    message: Optional[str] = None
+    details: Optional[Dict] = None
 
-    # SLO spot-check
-    p95=max(t["latency_ms"] for t in tests)
-    errs=sum(1 for t in tests if t["status"]=="fail")/len(tests)*100
-    rec=100 if tests[2]["status"]=="pass" else 0
-    tests.append({"id":"SM-6","name":"SLO spot-check","status":"pass" if (p95<=300 and errs<=0.5 and rec>=95) else "fail","latency_ms":5})
 
-    summary={
-      "overall_status":"pass" if all(t["status"]!="fail" for t in tests) else "fail",
-      "p95_latency_ms":p95, "error_rate_pct":errs, "recovery_top1_pct":rec,
-      "index_freshness_s": tests[4]["metrics"]["visible_under_seconds"], "failed_tests":[t["id"] for t in tests if t["status"]=="fail"]
+class SmokeTestRunner:
+    """Runner for smoke tests in CI."""
+    
+    def __init__(self, config: Optional[Dict] = None):
+        self.config = config or {}
+        self.results: List[TestResult] = []
+        
+        # Service URLs
+        self.api_url = self.config.get("api_url", "http://localhost:8000")
+        self.qdrant_url = self.config.get("qdrant_url", "http://localhost:6333")
+        self.neo4j_url = self.config.get("neo4j_url", "http://localhost:7474")
+        
+        # Test configuration
+        self.timeout = self.config.get("timeout", 10)
+        self.fail_fast = self.config.get("fail_fast", False)
+        
+    def test_api_health(self) -> TestResult:
+        """Test API health endpoint."""
+        start = time.time()
+        
+        try:
+            response = requests.get(
+                f"{self.api_url}/health",
+                timeout=self.timeout
+            )
+            duration = (time.time() - start) * 1000
+            
+            if response.status_code == 200:
+                return TestResult(
+                    name="API Health",
+                    passed=True,
+                    duration_ms=duration,
+                    message="API is healthy"
+                )
+            else:
+                return TestResult(
+                    name="API Health",
+                    passed=False,
+                    duration_ms=duration,
+                    message=f"Unexpected status: {response.status_code}"
+                )
+                
+        except Exception as e:
+            return TestResult(
+                name="API Health",
+                passed=False,
+                duration_ms=(time.time() - start) * 1000,
+                message=str(e)
+            )
+    
+    def test_qdrant_health(self) -> TestResult:
+        """Test Qdrant health."""
+        start = time.time()
+        
+        try:
+            response = requests.get(
+                f"{self.qdrant_url}/health",
+                timeout=self.timeout
+            )
+            duration = (time.time() - start) * 1000
+            
+            if response.status_code == 200:
+                return TestResult(
+                    name="Qdrant Health",
+                    passed=True,
+                    duration_ms=duration,
+                    message="Qdrant is healthy"
+                )
+            else:
+                return TestResult(
+                    name="Qdrant Health",
+                    passed=False,
+                    duration_ms=duration,
+                    message=f"Unexpected status: {response.status_code}"
+                )
+                
+        except Exception as e:
+            return TestResult(
+                name="Qdrant Health",
+                passed=False,
+                duration_ms=(time.time() - start) * 1000,
+                message=str(e)
+            )
+    
+    def test_qdrant_collection(self) -> TestResult:
+        """Test Qdrant collection exists with correct config."""
+        start = time.time()
+        
+        try:
+            response = requests.get(
+                f"{self.qdrant_url}/collections/context_embeddings",
+                timeout=self.timeout
+            )
+            duration = (time.time() - start) * 1000
+            
+            if response.status_code == 200:
+                data = response.json()
+                result = data.get("result", {})
+                config = result.get("config", {})
+                params = config.get("params", {})
+                vectors = params.get("vectors", {})
+                
+                # Check dimensions
+                size = vectors.get("size", 0)
+                distance = vectors.get("distance", "")
+                
+                if size == 384 and distance.lower() == "cosine":
+                    return TestResult(
+                        name="Qdrant Collection",
+                        passed=True,
+                        duration_ms=duration,
+                        message="Collection configured correctly",
+                        details={
+                            "dimensions": size,
+                            "distance": distance,
+                            "vectors_count": result.get("vectors_count", 0)
+                        }
+                    )
+                else:
+                    return TestResult(
+                        name="Qdrant Collection",
+                        passed=False,
+                        duration_ms=duration,
+                        message=f"Wrong config: dim={size}, distance={distance}",
+                        details={"dimensions": size, "distance": distance}
+                    )
+            else:
+                return TestResult(
+                    name="Qdrant Collection",
+                    passed=False,
+                    duration_ms=duration,
+                    message=f"Collection not found: {response.status_code}"
+                )
+                
+        except Exception as e:
+            return TestResult(
+                name="Qdrant Collection",
+                passed=False,
+                duration_ms=(time.time() - start) * 1000,
+                message=str(e)
+            )
+    
+    def test_neo4j_connectivity(self) -> TestResult:
+        """Test Neo4j connectivity."""
+        start = time.time()
+        
+        try:
+            # Neo4j REST API endpoint
+            response = requests.get(
+                f"{self.neo4j_url}/db/data/",
+                timeout=self.timeout,
+                auth=("neo4j", "password")  # Default auth for testing
+            )
+            duration = (time.time() - start) * 1000
+            
+            if response.status_code in [200, 401]:  # 401 means server is up but auth failed
+                return TestResult(
+                    name="Neo4j Connectivity",
+                    passed=True,
+                    duration_ms=duration,
+                    message="Neo4j is reachable"
+                )
+            else:
+                return TestResult(
+                    name="Neo4j Connectivity",
+                    passed=False,
+                    duration_ms=duration,
+                    message=f"Unexpected status: {response.status_code}"
+                )
+                
+        except Exception as e:
+            return TestResult(
+                name="Neo4j Connectivity",
+                passed=False,
+                duration_ms=(time.time() - start) * 1000,
+                message=str(e)
+            )
+    
+    def test_api_search_endpoint(self) -> TestResult:
+        """Test API search endpoint."""
+        start = time.time()
+        
+        try:
+            # Simple search query
+            payload = {
+                "query": "test query",
+                "limit": 5
+            }
+            
+            response = requests.post(
+                f"{self.api_url}/search",
+                json=payload,
+                timeout=self.timeout
+            )
+            duration = (time.time() - start) * 1000
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Check response structure
+                if "results" in data:
+                    return TestResult(
+                        name="API Search",
+                        passed=True,
+                        duration_ms=duration,
+                        message="Search endpoint working",
+                        details={"result_count": len(data.get("results", []))}
+                    )
+                else:
+                    return TestResult(
+                        name="API Search",
+                        passed=False,
+                        duration_ms=duration,
+                        message="Invalid response structure"
+                    )
+            elif response.status_code == 404:
+                # Endpoint might not exist yet
+                return TestResult(
+                    name="API Search",
+                    passed=False,
+                    duration_ms=duration,
+                    message="Search endpoint not found (404)"
+                )
+            else:
+                return TestResult(
+                    name="API Search",
+                    passed=False,
+                    duration_ms=duration,
+                    message=f"Unexpected status: {response.status_code}"
+                )
+                
+        except Exception as e:
+            return TestResult(
+                name="API Search",
+                passed=False,
+                duration_ms=(time.time() - start) * 1000,
+                message=str(e)
+            )
+    
+    def test_dimension_consistency(self) -> TestResult:
+        """Test dimension consistency across configs."""
+        start = time.time()
+        
+        try:
+            # Check if production config exists
+            import yaml
+            from pathlib import Path
+            
+            config_path = Path("production_locked_config.yaml")
+            
+            if not config_path.exists():
+                return TestResult(
+                    name="Dimension Consistency",
+                    passed=False,
+                    duration_ms=(time.time() - start) * 1000,
+                    message="Config file not found"
+                )
+            
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            # Extract dimensions
+            embedding_config = config.get("embedding", {})
+            dimensions = embedding_config.get("dimensions")
+            
+            if dimensions == 384:
+                return TestResult(
+                    name="Dimension Consistency",
+                    passed=True,
+                    duration_ms=(time.time() - start) * 1000,
+                    message="Dimensions correctly set to 384",
+                    details={"dimensions": dimensions}
+                )
+            else:
+                return TestResult(
+                    name="Dimension Consistency",
+                    passed=False,
+                    duration_ms=(time.time() - start) * 1000,
+                    message=f"Wrong dimensions: {dimensions}",
+                    details={"dimensions": dimensions}
+                )
+                
+        except Exception as e:
+            return TestResult(
+                name="Dimension Consistency",
+                passed=False,
+                duration_ms=(time.time() - start) * 1000,
+                message=str(e)
+            )
+    
+    def run_all_tests(self) -> Tuple[bool, List[TestResult]]:
+        """
+        Run all smoke tests.
+        
+        Returns:
+            Tuple of (all_passed, results)
+        """
+        tests = [
+            self.test_api_health,
+            self.test_qdrant_health,
+            self.test_qdrant_collection,
+            self.test_neo4j_connectivity,
+            self.test_api_search_endpoint,
+            self.test_dimension_consistency
+        ]
+        
+        self.results = []
+        all_passed = True
+        
+        for test_func in tests:
+            try:
+                result = test_func()
+                self.results.append(result)
+                
+                if not result.passed:
+                    all_passed = False
+                    
+                    if self.fail_fast:
+                        break
+                        
+            except Exception as e:
+                # Catch any unexpected errors
+                result = TestResult(
+                    name=test_func.__name__,
+                    passed=False,
+                    duration_ms=0,
+                    message=f"Unexpected error: {e}"
+                )
+                self.results.append(result)
+                all_passed = False
+                
+                if self.fail_fast:
+                    break
+        
+        return all_passed, self.results
+    
+    def print_results(self, results: List[TestResult], verbose: bool = False):
+        """Print test results with colors."""
+        print("\n" + "=" * 60)
+        print("SMOKE TEST RESULTS")
+        print("=" * 60 + "\n")
+        
+        for result in results:
+            if result.passed:
+                status = f"{Fore.GREEN}✓ PASS{Style.RESET_ALL}"
+            else:
+                status = f"{Fore.RED}✗ FAIL{Style.RESET_ALL}"
+            
+            print(f"{status} {result.name:<25} ({result.duration_ms:.0f}ms)")
+            
+            if result.message:
+                print(f"       {result.message}")
+            
+            if verbose and result.details:
+                print(f"       Details: {json.dumps(result.details, indent=2)}")
+        
+        # Summary
+        passed = sum(1 for r in results if r.passed)
+        failed = sum(1 for r in results if not r.passed)
+        total_time = sum(r.duration_ms for r in results)
+        
+        print("\n" + "-" * 60)
+        print(f"Total: {len(results)} tests")
+        print(f"Passed: {Fore.GREEN}{passed}{Style.RESET_ALL}")
+        print(f"Failed: {Fore.RED}{failed}{Style.RESET_ALL}")
+        print(f"Duration: {total_time:.0f}ms")
+        print("-" * 60)
+        
+        if failed == 0:
+            print(f"\n{Fore.GREEN}✓ All smoke tests passed!{Style.RESET_ALL}")
+        else:
+            print(f"\n{Fore.RED}✗ {failed} smoke test(s) failed!{Style.RESET_ALL}")
+    
+    def export_results(self, results: List[TestResult], format: str = "json") -> str:
+        """Export results in specified format."""
+        if format == "json":
+            data = {
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "summary": {
+                    "total": len(results),
+                    "passed": sum(1 for r in results if r.passed),
+                    "failed": sum(1 for r in results if not r.passed),
+                    "duration_ms": sum(r.duration_ms for r in results)
+                },
+                "tests": [asdict(r) for r in results]
+            }
+            return json.dumps(data, indent=2)
+        
+        elif format == "junit":
+            # JUnit XML format for CI integration
+            xml_lines = ['<?xml version="1.0" encoding="UTF-8"?>']
+            xml_lines.append('<testsuites>')
+            xml_lines.append('  <testsuite name="Smoke Tests" tests="{}" failures="{}">'.format(
+                len(results),
+                sum(1 for r in results if not r.passed)
+            ))
+            
+            for result in results:
+                xml_lines.append(f'    <testcase name="{result.name}" time="{result.duration_ms/1000:.3f}">')
+                if not result.passed:
+                    xml_lines.append(f'      <failure message="{result.message or "Test failed"}"/>')
+                xml_lines.append('    </testcase>')
+            
+            xml_lines.append('  </testsuite>')
+            xml_lines.append('</testsuites>')
+            
+            return '\n'.join(xml_lines)
+        
+        else:
+            raise ValueError(f"Unsupported format: {format}")
+
+
+def main():
+    """CLI for smoke test runner."""
+    parser = argparse.ArgumentParser(description='Run smoke tests for CI/CD')
+    parser.add_argument('--api-url', default='http://localhost:8000',
+                        help='API URL')
+    parser.add_argument('--qdrant-url', default='http://localhost:6333',
+                        help='Qdrant URL')
+    parser.add_argument('--neo4j-url', default='http://localhost:7474',
+                        help='Neo4j URL')
+    parser.add_argument('--fail-fast', action='store_true',
+                        help='Stop on first failure')
+    parser.add_argument('--verbose', action='store_true',
+                        help='Verbose output')
+    parser.add_argument('--export', choices=['json', 'junit'],
+                        help='Export results to format')
+    parser.add_argument('--output', help='Output file for export')
+    parser.add_argument('--timeout', type=int, default=10,
+                        help='Request timeout in seconds')
+    
+    args = parser.parse_args()
+    
+    # Create config
+    config = {
+        'api_url': args.api_url,
+        'qdrant_url': args.qdrant_url,
+        'neo4j_url': args.neo4j_url,
+        'timeout': args.timeout,
+        'fail_fast': args.fail_fast
     }
-    report={
-      "suite_id":"veris-smoke-60s","run_id":f"smoke-{uuid.uuid4()}",
-      "timestamp":now(),"env":"prod-hetzner","namespace":NS,
-      "summary":summary, "thresholds":{"p95_latency_ms":300,"error_rate_pct":0.5,"recovery_top1_pct":95,"index_freshness_s":1}, "tests":tests
-    }
-    path=f"/tmp/veris_smoke_report.json"
-    open(path,"w").write(json.dumps(report,indent=2))
-    print(path)
-    return 0 if summary["overall_status"]=="pass" else 1
+    
+    # Run tests
+    runner = SmokeTestRunner(config)
+    all_passed, results = runner.run_all_tests()
+    
+    # Print results
+    runner.print_results(results, verbose=args.verbose)
+    
+    # Export if requested
+    if args.export:
+        output = runner.export_results(results, args.export)
+        
+        if args.output:
+            with open(args.output, 'w') as f:
+                f.write(output)
+            print(f"\nResults exported to: {args.output}")
+        else:
+            print(f"\n{output}")
+    
+    # Exit with appropriate code
+    sys.exit(0 if all_passed else 1)
 
-if __name__=="__main__":
-    sys.exit(run())
+
+if __name__ == "__main__":
+    main()

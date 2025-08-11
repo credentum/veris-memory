@@ -1,0 +1,49 @@
+# CODEOWNERS file for agent-context-template
+# These owners will be requested for review when someone opens a pull request.
+
+# Default owners for everything in the repo
+* @credentum/platform-team
+
+# Production configuration files - require senior review
+production_locked_config.yaml @credentum/senior-engineers @credentum/platform-lead
+.ctxrc.yaml @credentum/senior-engineers
+
+# CI/CD workflows - require DevOps review
+.github/workflows/ @credentum/devops @credentum/platform-team
+.github/actions/ @credentum/devops
+
+# Docker and deployment configs - require DevOps review
+Dockerfile* @credentum/devops @credentum/platform-team
+docker-compose*.yml @credentum/devops @credentum/platform-team
+k8s/ @credentum/devops @credentum/sre
+
+# Critical system components - require senior review
+src/health/ @credentum/senior-engineers @credentum/sre
+src/neo4j/ @credentum/database-team @credentum/senior-engineers
+ops/bootstrap/ @credentum/devops @credentum/senior-engineers
+ops/verify/ @credentum/qa-team @credentum/senior-engineers
+
+# Evaluation and testing - require QA review
+eval/ @credentum/qa-team @credentum/ml-team
+tests/ @credentum/qa-team
+ops/eval/ @credentum/qa-team @credentum/ml-team
+ops/smoke/ @credentum/qa-team @credentum/devops
+
+# Scripts - require careful review
+scripts/*.sh @credentum/devops @credentum/senior-engineers
+scripts/recovery-*.sh @credentum/sre @credentum/platform-lead
+scripts/deploy*.sh @credentum/devops @credentum/platform-lead
+
+# Documentation - lighter review requirements
+*.md @credentum/docs-team @credentum/platform-team
+docs/ @credentum/docs-team
+
+# Security-sensitive files
+.env* @credentum/security-team @credentum/platform-lead
+*secret* @credentum/security-team @credentum/platform-lead
+*token* @credentum/security-team @credentum/platform-lead
+*password* @credentum/security-team @credentum/platform-lead
+
+# Manifest and configuration hygiene
+manifests/ @credentum/platform-team @credentum/senior-engineers
+configs/ @credentum/platform-team
