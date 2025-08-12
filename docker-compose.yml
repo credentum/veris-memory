@@ -30,7 +30,8 @@ services:
 
   # Vector Database (Qdrant) - Using v1.9.6 (GLIBC 2.35 compatible)
   qdrant:
-    image: qdrant/qdrant@sha256:d63acd24c397c45b730d16baa032a9fa7da9e8e1c7e5349bc35ef1bdac4d54e3
+    image: qdrant/qdrant:v1.9.6@sha256:d63acd24c397c45b730d16baa032a9fa7da9e8e1c7e5349bc35ef1bdac4d54e3
+    platform: linux/amd64
     ports:
       - "6333:6333"
       - "6334:6334" # gRPC port
@@ -52,6 +53,7 @@ services:
   # Graph Database (Neo4j)
   neo4j:
     image: neo4j:5.15-community@sha256:69c579facb7acab1e98f28952b91144c89e469a081804a5dafebd6c3030433b8
+    platform: linux/amd64
     ports:
       - "7474:7474" # HTTP
       - "7687:7687" # Bolt
@@ -85,7 +87,8 @@ services:
 
   # Cache/KV Store (Redis)
   redis:
-    image: redis:7-alpine@sha256:7d3fdf5c51b226341dffbcc40881454dd2f2330e2ad4051901bc0aee26975a7e
+    image: redis:7.2.5-alpine@sha256:6aaf3f5e6bc8a592fbfe2cccf19eb36d27c39d12dab4f4b01556b7449e7b1f44
+    platform: linux/amd64
     ports:
       - "6379:6379"
     volumes:
