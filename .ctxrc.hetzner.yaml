@@ -1,0 +1,342 @@
+# Context Store Configuration for Hetzner Dedicated Server Deployment
+# High-performance configuration for 64GB RAM, 6-core AMD Ryzen 5 5600X with RAID1 NVMe
+
+# System configuration
+system:
+  environment: production
+  debug: false
+  hardware_profile: hetzner-dedicated
+  memory_profile: 64gb
+  cpu_profile: 6core-ryzen5600x
+  storage_profile: raid1-nvme
+
+# Embedding configuration - scaled for high throughput
+embedding:
+  dimensions: 1536
+  model: text-embedding-ada-002
+  batch_size: 500 # 5x increase from 100
+  max_retries: 3
+  timeout: 30
+  parallel_requests: 8 # Utilize all 6 cores + hyperthreading
+
+# Storage configuration
+storage:
+  backend: multi
+  primary: neo4j
+  cache: redis
+  analytics: duckdb
+  raid1_path: /raid1/docker-data
+
+# Agent configuration - massive concurrency increase
+agents:
+  max_concurrent: 64 # 6.4x increase from 10
+  timeout: 300
+  retry_policy:
+    max_attempts: 3
+    backoff_multiplier: 2
+  thread_pool_size: 32 # Utilize hyperthreading
+
+# Database configurations - optimized for 64GB system
+qdrant:
+  host: localhost
+  port: 6333
+  collection: context_store
+  ssl: false
+  grpc_port: 6334
+  prefer_grpc: true # Use gRPC for better performance
+  connection_pool:
+    min_size: 8 # 4x increase
+    max_size: 64 # 6.4x increase
+    idle_timeout: 300
+    max_lifetime: 7200
+  # High-performance settings
+  indexing:
+    vectors_per_segment: 100000 # Large segments for NVMe
+    payload_storage_type: on_disk
+    vector_storage_type: memmap # Use memory mapping for large datasets
+  search:
+    max_threads: 12 # Use all logical cores
+    max_segment_number: 8
+  storage:
+    wal_capacity_mb: 2048 # 2GB WAL for high throughput
+    wal_segments_ahead: 2
+
+neo4j:
+  uri: bolt://localhost:7687
+  database: neo4j
+  ssl: false
+  connection_pool:
+    min_size: 8 # 4x increase
+    max_size: 32 # 3.2x increase
+    acquisition_timeout: 60 # Longer timeout for complex queries
+    max_lifetime: 7200
+    idle_timeout: 600
+  # Memory configuration for 20GB heap
+  memory:
+    heap_size: 20G
+    pagecache_size: 16G
+  query:
+    timeout: 300 # 5 minutes for complex graph queries
+    max_concurrent: 24
+    parallel_runtime_support: true
+  cache:
+    query_cache_size: 32768 # Large query cache
+    page_cache_memory: 16G
+
+redis:
+  host: localhost
+  port: 6379
+  database: 0
+  ssl: false
+  connection_pool:
+    min_size: 8 # 4x increase
+    max_size: 128 # 6.4x increase
+    socket_timeout: 10
+    socket_connect_timeout: 5
+    retry_on_timeout: true
+  # Memory configuration for 8GB allocation
+  memory:
+    maxmemory: 8gb
+    maxmemory_policy: allkeys-lru
+  persistence:
+    save_policy: "900 1 300 10 60 10000"
+    appendonly: true
+    appendfsync: everysec
+
+duckdb:
+  database_path: /raid1/docker-data/analytics.db
+  threads: 12 # Use all logical cores
+  memory_limit: 16GB # 16x increase from 1GB
+  temp_directory: /raid1/docker-data/duckdb-tmp
+  # NVMe optimizations
+  checkpoint_threshold: 16MB
+  force_checkpoint: false
+  access_mode: automatic
+
+# MCP Server configuration
+mcp:
+  server_port: 8000
+  host: 0.0.0.0
+  tools:
+    - store_context
+    - retrieve_context
+    - query_graph
+    - update_scratchpad
+    - get_agent_state
+  # MCP tool contracts for Hetzner deployment
+  tool_contracts:
+    store_context:
+      max_payload_size: 10MB  # Increased for high-memory system
+      batch_size: 500  # Increased batch processing
+      timeout: 120s  # Extended timeout for complex operations
+    retrieve_context:
+      max_results: 1000  # Increased for better search results
+      timeout: 120s  # Extended timeout for complex queries
+      include_metadata: true
+    query_graph:
+      max_depth: 10  # Increased graph traversal depth
+      timeout: 120s  # Extended for complex graph queries
+      max_nodes: 10000
+    update_scratchpad:
+      max_size: 50MB  # Increased scratchpad capacity
+      compression: true
+    get_agent_state:
+      include_metrics: true  # Enable hardware metrics
+      include_performance: true  # Enable performance data
+      include_health: true
+  cors:
+    enabled: true
+    origins:
+      - "*"
+  # High-throughput server settings
+  server:
+    workers: 8 # Multiple workers for concurrency
+    max_requests: 10000
+    max_requests_jitter: 100
+    keepalive: 2
+    timeout: 300
+    graceful_timeout: 120
+
+# Security configuration - enhanced for dedicated server
+security:
+  max_query_length: 50000 # 5x increase for complex queries
+  query_timeout: 300 # 10x increase for graph analytics
+  allowed_operations:
+    - MATCH
+    - WITH
+    - RETURN
+    - WHERE
+    - ORDER BY
+    - LIMIT
+    - SKIP
+    - COLLECT
+    - UNWIND
+    - CALL # Allow procedure calls
+  forbidden_operations:
+    - CREATE
+    - DELETE
+    - SET
+    - REMOVE
+    - MERGE
+    - DROP
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 600 # 10x increase
+    burst_size: 100 # 10x increase
+  tailscale:
+    enabled: true
+    hostname: ${TAILSCALE_HOSTNAME}
+    auth_key: ${TAILSCALE_AUTHKEY}
+
+# Cache configuration - optimized for high memory
+cache:
+  ttl_seconds: 7200 # 2 hours for better hit rates
+  max_size: 50000 # 50x increase from 1000
+  eviction_policy: lru
+  # Multi-tier caching
+  l1_cache:
+    size: 10000
+    ttl: 300 # 5 minutes
+  l2_cache:
+    size: 40000
+    ttl: 7200 # 2 hours
+  compression:
+    enabled: true
+    algorithm: lz4 # Fast compression for NVMe
+
+# Logging configuration
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: /raid1/docker-data/logs/app.log
+  max_bytes: 104857600 # 100MB (10x increase)
+  backup_count: 20 # 4x increase
+  rotation:
+    when: midnight
+    interval: 1
+    utc: true
+  structured_logging:
+    enabled: true
+    format: json
+
+# Monitoring configuration - enhanced
+monitoring:
+  enabled: true
+  metrics_port: 9090
+  health_check_path: /health
+  readiness_check_path: /ready
+  # Hardware monitoring
+  hardware:
+    enabled: true
+    raid_check_interval: 300 # 5 minutes
+    temperature_threshold: 70 # Celsius
+    memory_threshold: 90 # Percent
+  # Performance monitoring
+  performance:
+    enabled: true
+    metrics_interval: 30
+    slow_query_threshold: 1000 # ms
+    connection_pool_monitoring: true
+
+# Performance tuning for 64GB memory system
+performance:
+  vector_db:
+    embedding:
+      batch_size: 500 # 10x increase
+      max_retries: 3
+      request_timeout: 60
+      parallel_workers: 8
+    search:
+      default_limit: 50 # 5x increase
+      max_limit: 1000 # 10x increase
+      score_threshold: 0.7
+      ef_construct: 256 # Higher for better recall
+      m: 32 # More connections for better performance
+    indexing:
+      parallel_threads: 12
+      memory_budget: 8G # Large memory budget for indexing
+
+  graph_db:
+    connection_pool:
+      min_size: 8
+      max_size: 32
+    query:
+      max_path_length: 10 # Allow deeper traversals
+      timeout: 300 # 10x increase
+      parallel_runtime: true
+      cypher_runtime: slotted # Fastest runtime
+    transactions:
+      max_concurrent: 100
+      timeout: 600
+    # Memory optimization
+    memory:
+      transaction_memory_limit: 2G
+      query_memory_limit: 4G
+
+  kv_store:
+    redis:
+      connection_pool:
+        min_size: 8
+        max_size: 128
+      cache:
+        ttl_seconds: 7200
+      pipelining:
+        enabled: true
+        batch_size: 1000
+    duckdb:
+      batch_insert:
+        size: 10000 # 20x increase
+      analytics:
+        retention_days: 365 # 4x increase for long-term analytics
+        parallel_workers: 12
+        memory_limit: 16G
+
+# Backup configuration for RAID1 environment
+backup:
+  enabled: true
+  strategy: incremental
+  schedule: "0 2 * * *" # Daily at 2 AM
+  retention:
+    daily: 7
+    weekly: 4
+    monthly: 12
+  compression:
+    enabled: true
+    level: 6
+  verification:
+    enabled: true
+    schedule: "0 3 * * 0" # Weekly verification
+  raid1:
+    monitor_health: true
+    alert_threshold: 1 # Alert on first disk failure
+
+# Network configuration for Tailscale
+network:
+  tailscale:
+    enabled: true
+    hostname: ${TAILSCALE_HOSTNAME:-veris-memory-hetzner}
+    auth_key: ${TAILSCALE_AUTHKEY}
+    accept_routes: true
+    advertise_routes: false
+    accept_dns: true
+  firewall:
+    enabled: true
+    default_policy: deny
+    allowed_networks:
+      - 100.64.0.0/10 # Tailscale CGNAT range
+    ports:
+      - 8000 # MCP server
+      - 22 # SSH (Tailscale only)
+
+# Resource limits and optimization
+resources:
+  limits:
+    max_memory_percent: 90 # Use up to 90% of 64GB
+    max_cpu_percent: 95 # Use up to 95% of 6 cores
+    max_disk_iops: 100000 # NVMe can handle high IOPS
+  optimization:
+    numa_policy: interleave
+    transparent_hugepages: madvise
+    swappiness: 1 # Minimal swapping with 64GB RAM
+    dirty_ratio: 15
+    dirty_background_ratio: 5
