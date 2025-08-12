@@ -247,9 +247,9 @@ MIIEpAIBAAKCAQEA1234567890abcdef...
         
         test_secrets = [
             ("AKIA1234567890ABCDEF", "aws_access_key"),
-            ("ghp_1234567890abcdefghijklmnopqrstuvwxyz", "github_token"),
-            ("sk_test_FAKE_KEY_1234567890abcdef", "stripe_key"),
-            ("xoxb-FAKE-TEST-TOKEN-123456789012-1234567890123", "slack_token"),
+            ("ghp_" + "x" * 36, "github_token"),
+            ("sk_test_" + "x" * 24, "stripe_key"), 
+            ("xoxb-" + "x" * 51, "slack_token"),
         ]
         
         for secret_value, expected_type in test_secrets:

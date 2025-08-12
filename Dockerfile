@@ -1,4 +1,7 @@
 # Production Dockerfile for Context Store API
+# This is the Python-only container for use with docker-compose
+# where other services (Qdrant, Neo4j, Redis) run as separate containers
+
 FROM python:3.11-slim as builder
 
 # Build arguments
@@ -26,6 +29,7 @@ FROM python:3.11-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     curl \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -39,34 +43,34 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
-COPY --chown=appuser:appuser . .
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser schemas/ ./schemas/
+COPY --chown=appuser:appuser contracts/ ./contracts/
+COPY --chown=appuser:appuser .ctxrc.yaml ./.ctxrc.yaml
+
+# Copy monitoring and secrets management if they exist
+COPY --chown=appuser:appuser monitoring/ ./monitoring/ 2>/dev/null || true
+COPY --chown=appuser:appuser secrets/ ./secrets/ 2>/dev/null || true
 
 # Create necessary directories
 RUN mkdir -p /app/logs /app/data && \
     chown -R appuser:appuser /app
 
+# Environment variables (will be overridden by docker-compose)
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV MCP_SERVER_PORT=8000
+ENV LOG_LEVEL=info
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
 # Switch to non-root user
 USER appuser
-
-# Environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    ENVIRONMENT=production
 
 # Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8000/health/live || exit 1
-
-# Run application with gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", \
-     "--workers", "4", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--max-requests", "1000", \
-     "--max-requests-jitter", "50", \
-     "--timeout", "60", \
-     "--access-logfile", "/app/logs/access.log", \
-     "--error-logfile", "/app/logs/error.log", \
-     "src.main:app"]
+# Start the application
+CMD ["python", "-m", "src.mcp_server.server"]
