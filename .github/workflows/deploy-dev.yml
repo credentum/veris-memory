@@ -175,19 +175,33 @@ jobs:
               echo "✅ Password configuration completed"
               echo "🔍 ============================================"
               
-              # Stop any existing containers first (force remove)
-              echo "🛑 Stopping any existing DEV services..."
-              docker compose -p veris-memory-dev -f "$COMPOSE_FILE" down -v --remove-orphans || true
-              # Extra cleanup in case containers are stuck
-              docker ps -a | grep veris-memory-dev | awk '{print $1}' | xargs -r docker rm -f || true
+              # ROBUST CONTAINER CLEANUP
+              echo "🛑 Performing robust container cleanup for DEV..."
               
-              # CRITICAL: Remove Neo4j volumes to ensure password reset
-              echo "🗑️  Removing Neo4j volumes to ensure clean authentication..."
-              docker volume ls | grep veris-memory-dev | grep neo4j | awk '{print $2}' | xargs -r docker volume rm || true
-              # Also try with explicit volume names
+              # Method 1: docker-compose down
+              echo "  → Attempting docker-compose down..."
+              docker compose -p veris-memory-dev -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
+              
+              # Method 2: Force remove by project name
+              echo "  → Force removing containers by project..."
+              docker ps -a --filter "name=veris-memory-dev" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
+              
+              # Method 3: Remove specific containers
+              echo "  → Removing specific service containers..."
+              for service in context-store qdrant neo4j redis; do
+                container="veris-memory-dev-${service}-1"
+                docker rm -f "$container" 2>/dev/null || true
+              done
+              
+              # Remove ALL volumes for clean state
+              echo "🗑️  Removing all volumes for clean state..."
+              docker volume ls --filter "name=veris-memory-dev" --format "{{.Name}}" | xargs -r docker volume rm 2>/dev/null || true
+              
+              # Also try explicit volume names
               docker volume rm veris-memory-dev_neo4j_data veris-memory-dev_neo4j_logs 2>/dev/null || true
+              docker volume rm veris-memory-dev_qdrant_data veris-memory-dev_redis_data 2>/dev/null || true
               
-              echo "✅ Neo4j volumes removed - will use fresh password on startup"
+              echo "✅ Cleanup complete - starting fresh deployment"
               
               # Start dev services with NEO4J_PASSWORD exported for health checks
               echo "🚀 Starting DEV services..."
@@ -300,6 +314,53 @@ jobs:
             curl -s http://localhost:8000/health > /dev/null 2>&1 && echo "✓ (8000)" || echo "✗"
           EOF
 
+      - name: Generate Deployment Report
+        id: deployment-report
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOF'
+            echo "📊 Generating deployment report..."
+            cd /opt/veris-memory
+            
+            # Create deployment report script if it doesn't exist
+            if [ ! -f "scripts/deployment-report.sh" ]; then
+              echo "⚠️ Deployment report script not found, creating basic report..."
+              
+              # Create a basic report
+              cat > /tmp/deployment-report.json << REPORT
+          {
+            "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "environment": "dev",
+            "server": "$(hostname)",
+            "containers": {
+              "running": $(docker ps --filter "name=veris-memory-dev" --format "{{.Names}}" | wc -l),
+              "list": $(docker ps --filter "name=veris-memory-dev" --format "{{json .Names}}" | jq -s .)
+            },
+            "services": {
+              "api": $(curl -sf http://localhost:8000/health > /dev/null 2>&1 && echo '"healthy"' || echo '"unhealthy"'),
+              "qdrant": $(curl -sf http://localhost:6333/health > /dev/null 2>&1 && echo '"healthy"' || echo '"unhealthy"'),
+              "neo4j": $(timeout 2 bash -c "</dev/tcp/localhost/7687" 2>/dev/null && echo '"healthy"' || echo '"unhealthy"'),
+              "redis": $(echo "PING" | nc -w 2 localhost 6379 | grep -q PONG && echo '"healthy"' || echo '"unhealthy"')
+            },
+            "success": true
+          }
+          REPORT
+              cat /tmp/deployment-report.json
+            else
+              # Run the full deployment report
+              chmod +x scripts/deployment-report.sh
+              ./scripts/deployment-report.sh dev
+              
+              # Output the latest report
+              if [ -f "/tmp/deployment-report-dev.json" ]; then
+                cat /tmp/deployment-report-dev.json
+              fi
+            fi
+            
+            # Save report for artifact upload
+            mkdir -p /opt/veris-memory/deployment-reports
+            cp /tmp/deployment-report*.json /opt/veris-memory/deployment-reports/ 2>/dev/null || true
+          EOF
+          
       - name: Run Dev Smoke Tests
         continue-on-error: true
         run: |

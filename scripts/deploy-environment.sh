@@ -222,35 +222,74 @@ else
     exit 1
 fi
 
-# Stop existing containers for this environment
-echo -e "${YELLOW}🛑 Stopping existing $ENVIRONMENT containers...${NC}"
+# Stop existing containers for this environment with ROBUST cleanup
+echo -e "${YELLOW}🛑 Performing robust container cleanup for $ENVIRONMENT...${NC}"
 
-# Stop containers by project name (with volumes to ensure clean state)
-docker-compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down -v --remove-orphans 2>/dev/null || true
+# Debug: Show what containers exist before cleanup
+echo -e "${BLUE}📊 Current Docker state before cleanup:${NC}"
+docker ps --format "table {{.Names}}\t{{.Status}}" | grep "$PROJECT_NAME" || echo "  No $PROJECT_NAME containers running"
+
+# Method 1: Stop using docker-compose
+echo "  → Attempting docker-compose down..."
+docker-compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
+
+# Method 2: Force remove containers by project name
+echo "  → Force removing containers by project name..."
+docker ps -a --filter "name=$PROJECT_NAME" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
+
+# Method 3: Remove specific service containers if they still exist
+echo "  → Checking for lingering service containers..."
+for service in context-store qdrant neo4j redis; do
+    container_name="${PROJECT_NAME}-${service}-1"
+    if docker ps -a --format "{{.Names}}" | grep -q "^${container_name}$"; then
+        echo "    → Force removing $container_name"
+        docker rm -f "$container_name" 2>/dev/null || true
+    fi
+done
 
 # CRITICAL: Remove Neo4j volumes to ensure password changes take effect
 echo -e "${YELLOW}🗑️  Removing Neo4j volumes for clean authentication...${NC}"
-docker volume ls | grep "$PROJECT_NAME" | grep neo4j | awk '{print $2}' | xargs -r docker volume rm 2>/dev/null || true
-# Try explicit volume names
-docker volume rm "${PROJECT_NAME}_neo4j_data" "${PROJECT_NAME}_neo4j_logs" 2>/dev/null || true
-echo -e "${GREEN}✅ Neo4j volumes removed - fresh password will be used${NC}"
+# List all volumes for this project
+docker volume ls --filter "name=$PROJECT_NAME" --format "{{.Name}}" | while read vol; do
+    echo "  → Removing volume: $vol"
+    docker volume rm "$vol" 2>/dev/null || true
+done
 
-# Also stop any containers using our target ports
-echo "  → Checking for containers on $ENVIRONMENT ports..."
+# Also try explicit volume names
+docker volume rm "${PROJECT_NAME}_neo4j_data" "${PROJECT_NAME}_neo4j_logs" 2>/dev/null || true
+docker volume rm "${PROJECT_NAME}_qdrant_data" 2>/dev/null || true
+docker volume rm "${PROJECT_NAME}_redis_data" 2>/dev/null || true
+
+echo -e "${GREEN}✅ Volumes removed - fresh state ensured${NC}"
+
+# Stop any containers using our target ports
+echo -e "${BLUE}🔍 Checking for port conflicts...${NC}"
 if [ "$ENVIRONMENT" = "dev" ]; then
-    PORTS="$API_PORT $QDRANT_PORT $NEO4J_HTTP_PORT $NEO4J_BOLT_PORT $REDIS_PORT 6335"
-else
     PORTS="$API_PORT $QDRANT_PORT $NEO4J_HTTP_PORT $NEO4J_BOLT_PORT $REDIS_PORT 6334"
+else
+    PORTS="$API_PORT $QDRANT_PORT $NEO4J_HTTP_PORT $NEO4J_BOLT_PORT $REDIS_PORT 6335"
 fi
 
 for port in $PORTS; do
     containers=$(docker ps --filter "publish=$port" --format "{{.Names}}" 2>/dev/null || true)
     if [ -n "$containers" ]; then
-        echo "  → Stopping containers using port $port: $containers"
-        docker stop $containers 2>/dev/null || true
-        docker rm $containers 2>/dev/null || true
+        echo "  → Port $port in use by: $containers"
+        echo "    → Force removing conflicting containers..."
+        echo "$containers" | xargs -r docker rm -f 2>/dev/null || true
+    else
+        echo "  → Port $port is free ✓"
     fi
 done
+
+# Final verification that cleanup was successful
+echo -e "${BLUE}📊 Docker state after cleanup:${NC}"
+remaining=$(docker ps -a --filter "name=$PROJECT_NAME" --format "{{.Names}}" | wc -l)
+if [ "$remaining" -eq 0 ]; then
+    echo -e "${GREEN}✅ All containers successfully removed${NC}"
+else
+    echo -e "${YELLOW}⚠️  Warning: $remaining containers may still exist${NC}"
+    docker ps -a --filter "name=$PROJECT_NAME" --format "table {{.Names}}\t{{.Status}}"
+fi
 
 # Verify ports are free
 echo -e "${BLUE}🔍 Verifying $ENVIRONMENT ports are available...${NC}"
@@ -340,9 +379,26 @@ echo ""
 echo -e "${BLUE}📊 $ENVIRONMENT containers running:${NC}"
 docker-compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" ps
 
+# Generate deployment report
+echo ""
+echo -e "${BLUE}📊 Generating deployment report...${NC}"
+if [ -f "scripts/deployment-report.sh" ]; then
+    chmod +x scripts/deployment-report.sh
+    ./scripts/deployment-report.sh "$ENVIRONMENT"
+    
+    # Check the exit code
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✅ Deployment report generated successfully${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Deployment report indicates issues${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠️  Deployment report script not found${NC}"
+fi
+
 # Environment-specific instructions
 echo ""
-echo -e "${GREEN}🎉 $ENVIRONMENT deployment completed successfully!${NC}"
+echo -e "${GREEN}🎉 $ENVIRONMENT deployment completed!${NC}"
 echo "================================================"
 if [ "$ENVIRONMENT" = "dev" ]; then
     echo "Development services available at:"
@@ -362,4 +418,14 @@ else
     echo ""
     echo "Run tests with:"
     echo "  python ops/smoke/smoke_runner.py"
+fi
+
+# Output final JSON report location
+LATEST_REPORT="/opt/veris-memory/deployment-reports/latest-${ENVIRONMENT}.json"
+if [ -f "$LATEST_REPORT" ]; then
+    echo ""
+    echo -e "${BLUE}📄 Latest deployment report: $LATEST_REPORT${NC}"
+    
+    # Create a symlink to the latest report
+    ln -sf "$(ls -t /opt/veris-memory/deployment-reports/deployment-${ENVIRONMENT}-*.json 2>/dev/null | head -1)" "$LATEST_REPORT" 2>/dev/null || true
 fi
