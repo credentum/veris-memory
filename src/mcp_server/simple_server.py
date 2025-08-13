@@ -299,6 +299,7 @@ async def main():
                 InitializationOptions(
                     server_name="context-store",
                     server_version="1.0.0",
+                    capabilities=server.get_capabilities()
                 ),
             )
     except Exception as e:

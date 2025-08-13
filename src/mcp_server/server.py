@@ -103,18 +103,37 @@ async def initialize_storage_clients() -> Dict[str, Any]:
         # Initialize Neo4j with SSL support
         neo4j_password = os.getenv("NEO4J_PASSWORD")
         if neo4j_password:
-            neo4j_client = Neo4jInitializer()
+            # Get Neo4j URI from environment
+            neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
             neo4j_username = os.getenv("NEO4J_USER", "neo4j")
+            
+            # Parse URI to extract host and port
+            import urllib.parse
+            parsed = urllib.parse.urlparse(neo4j_uri)
+            neo4j_host = parsed.hostname or "localhost"
+            neo4j_port = parsed.port or 7687
+            
+            # Create config for Neo4jInitializer
+            neo4j_config = {
+                "neo4j": {
+                    "host": neo4j_host,
+                    "port": neo4j_port,
+                    "database": "neo4j",
+                    "ssl": neo4j_uri.startswith("bolt+s") or neo4j_uri.startswith("neo4j+s")
+                }
+            }
+            
+            neo4j_client = Neo4jInitializer(config=neo4j_config)
             neo4j_ssl_config = ssl_manager.get_neo4j_ssl_config()
 
             # Neo4j.connect only accepts username and password
             # SSL config is handled internally by Neo4j client
             if neo4j_client.connect(username=neo4j_username, password=neo4j_password):
                 ssl_status = "with SSL" if neo4j_ssl_config.get("encrypted") else "without SSL"
-                logger.info(f"✅ Neo4j client initialized {ssl_status}")
+                logger.info(f"✅ Neo4j client initialized at {neo4j_uri} {ssl_status}")
             else:
                 neo4j_client = None
-                logger.warning("⚠️ Neo4j connection failed")
+                logger.warning(f"⚠️ Neo4j connection failed at {neo4j_uri}")
         else:
             neo4j_client = None
             logger.warning("⚠️ Neo4j disabled: NEO4J_PASSWORD not set")
@@ -122,15 +141,31 @@ async def initialize_storage_clients() -> Dict[str, Any]:
         # Initialize Qdrant with SSL support
         qdrant_url = os.getenv("QDRANT_URL")
         if qdrant_url:
-            qdrant_client = VectorDBInitializer()
+            # Parse Qdrant URL to extract host and port
+            import urllib.parse
+            parsed_qdrant = urllib.parse.urlparse(qdrant_url)
+            qdrant_host = parsed_qdrant.hostname or "localhost"
+            qdrant_port = parsed_qdrant.port or 6333
+            
+            # Create config for VectorDBInitializer
+            qdrant_config = {
+                "qdrant": {
+                    "host": qdrant_host,
+                    "port": qdrant_port,
+                    "ssl": qdrant_url.startswith("https"),
+                    "timeout": 5
+                }
+            }
+            
+            qdrant_client = VectorDBInitializer(config=qdrant_config)
             qdrant_ssl_config = ssl_manager.get_qdrant_ssl_config()
 
-            if qdrant_client.connect(**qdrant_ssl_config):
+            if qdrant_client.connect():
                 ssl_status = "with HTTPS" if qdrant_ssl_config.get("https") else "without SSL"
-                logger.info(f"✅ Qdrant client initialized {ssl_status}")
+                logger.info(f"✅ Qdrant client initialized at {qdrant_url} {ssl_status}")
             else:
                 qdrant_client = None
-                logger.warning("⚠️ Qdrant connection failed")
+                logger.warning(f"⚠️ Qdrant connection failed at {qdrant_url}")
         else:
             qdrant_client = None
             logger.warning("⚠️ Qdrant disabled: QDRANT_URL not set")
@@ -139,19 +174,32 @@ async def initialize_storage_clients() -> Dict[str, Any]:
         redis_url = os.getenv("REDIS_URL")
         redis_password = os.getenv("REDIS_PASSWORD")
         if redis_url:
-            kv_store = ContextKV()
+            # Parse Redis URL to extract host and port
+            import urllib.parse
+            parsed_redis = urllib.parse.urlparse(redis_url)
+            redis_host = parsed_redis.hostname or "localhost"
+            redis_port = parsed_redis.port or 6379
+            
+            # Create config for ContextKV
+            redis_config = {
+                "redis": {
+                    "host": redis_host,
+                    "port": redis_port,
+                    "database": 0,
+                    "ssl": redis_url.startswith("rediss")
+                }
+            }
+            
+            kv_store = ContextKV(config=redis_config)
             redis_ssl_config = ssl_manager.get_redis_ssl_config()
 
-            # Merge SSL config with password
-            connect_kwargs = {"redis_password": redis_password}
-            connect_kwargs.update(redis_ssl_config)
-
-            if kv_store.connect(**connect_kwargs):
+            # Pass password if available
+            if kv_store.connect(redis_password=redis_password):
                 ssl_status = "with SSL" if redis_ssl_config.get("ssl") else "without SSL"
-                logger.info(f"✅ KV store initialized {ssl_status}")
+                logger.info(f"✅ KV store initialized at {redis_url} {ssl_status}")
             else:
                 kv_store = None
-                logger.warning("⚠️ KV store connection failed")
+                logger.warning(f"⚠️ KV store connection failed at {redis_url}")
         else:
             kv_store = None
             logger.warning("⚠️ KV store disabled: REDIS_URL not set")
@@ -1844,6 +1892,7 @@ async def main():
                 InitializationOptions(
                     server_name="context-store",
                     server_version="1.0.0",
+                    capabilities=server.get_capabilities()
                 ),
             )
     finally:
