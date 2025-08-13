@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Sequence
 
 # MCP SDK imports
 from mcp.server import Server
-from mcp.server.models import InitializationOptions
+from mcp.server.models import InitializationOptions, NotificationOptions
 from mcp.server.stdio import stdio_server
 from mcp.types import EmbeddedResource, ImageContent, Resource, TextContent, Tool
 
@@ -109,11 +109,9 @@ async def initialize_storage_clients() -> Dict[str, Any]:
             neo4j_username = os.getenv("NEO4J_USER", "neo4j")
             neo4j_ssl_config = ssl_manager.get_neo4j_ssl_config()
 
-            # Merge SSL config into connection parameters
-            connect_kwargs = {"username": neo4j_username, "password": neo4j_password}
-            connect_kwargs.update(neo4j_ssl_config)
-
-            if neo4j_client.connect(**connect_kwargs):
+            # Neo4j.connect only accepts username and password
+            # SSL config is handled internally by Neo4j client
+            if neo4j_client.connect(username=neo4j_username, password=neo4j_password):
                 ssl_status = "with SSL" if neo4j_ssl_config.get("encrypted") else "without SSL"
                 logger.info(f"✅ Neo4j client initialized {ssl_status}")
             else:
@@ -1848,7 +1846,10 @@ async def main():
                 InitializationOptions(
                     server_name="context-store",
                     server_version="1.0.0",
-                    capabilities=server.get_capabilities(),
+                    capabilities=server.get_capabilities(
+                        notification_options=NotificationOptions(),
+                        experimental_capabilities={}
+                    ),
                 ),
             )
     finally:

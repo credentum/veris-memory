@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Sequence
 
 # MCP SDK imports
 from mcp.server import Server
-from mcp.server.models import InitializationOptions
+from mcp.server.models import InitializationOptions, NotificationOptions
 from mcp.server.stdio import stdio_server
 from mcp.types import EmbeddedResource, ImageContent, Resource, TextContent, Tool
 
@@ -299,7 +299,10 @@ async def main():
                 InitializationOptions(
                     server_name="context-store",
                     server_version="1.0.0",
-                    capabilities=server.get_capabilities(),
+                    capabilities=server.get_capabilities(
+                        notification_options=NotificationOptions(),
+                        experimental_capabilities={}
+                    ),
                 ),
             )
     except Exception as e:
