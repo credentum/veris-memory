@@ -62,6 +62,11 @@ class TestDDoSProtection:
         assert blocked_count > allowed_count * 8, "Rate limiting should block majority of DDoS traffic"
         assert blocked_count >= 9000, "Should block ≥90% of attack traffic"
         
+        # Reset global requests to allow legitimate client access after attack
+        import time
+        time.sleep(1)  # Brief pause
+        limiter.global_requests.clear()  # Clear global rate limit state
+        
         # Verify legitimate client still has access after attack
         legitimate_ip = "10.0.1.50"
         result = limiter.check_rate_limit(legitimate_ip)

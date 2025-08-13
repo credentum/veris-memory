@@ -217,7 +217,7 @@ class CapabilityManager:
         role_perms = self.rbac_manager.get_effective_permissions(role)
         validated_caps = [cap for cap in capabilities if cap in role_perms]
         
-        # Create token payload
+        # Create token payload with required JWT claims
         now = datetime.utcnow()
         payload = {
             "sub": user_id,
@@ -225,6 +225,8 @@ class CapabilityManager:
             "capabilities": validated_caps,
             "iat": now,
             "exp": now + timedelta(seconds=expires_in),
+            "iss": "context-store",  # Required issuer claim
+            "aud": "context-store-api",  # Required audience claim
             "jti": hashlib.sha256(f"{user_id}{now}".encode()).hexdigest()[:16]
         }
         
