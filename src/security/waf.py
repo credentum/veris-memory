@@ -70,7 +70,7 @@ class WAFConfig:
             # SQL Injection Protection
             WAFRule(
                 name="sql_injection",
-                pattern=r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|EXEC|EXECUTE|SCRIPT|TRUNCATE)\b.*\b(FROM|INTO|WHERE|TABLE|DATABASE)\b)|(--)|(;.*DROP)|(OR\s+1\s*=\s*1)|(AND\s+1\s*=\s*1)|(\'\s*OR\s*\')|(\"\s*OR\s*\")",
+                pattern=r"((\b(DROP|ALTER|CREATE|TRUNCATE)\s+(TABLE|DATABASE)\b)|(--\s*$)|(;\s*(DROP|DELETE|TRUNCATE|ALTER|CREATE)\s+)|(\bOR\s+['\"]\w*['\"]?\s*=\s*['\"]\w*['\"])|(\bUNION\s+(ALL\s+)?SELECT\b)|(\bEXEC(UTE)?\s*\()|(\bWAITFOR\s+DELAY\b)|(\bBENCHMARK\s*\()|(pg_sleep)|(%20(SELECT|DROP|UNION|INSERT)%20)|(0x[0-9a-fA-F]+)|(ＳＥＬＥＣＴ|ＤＲＯＰ|ＵＮＩＯＮ)|(/\*.*?\*/)|(\s+SELECT\s+)|(\nSELECT\s)|(\rSELECT\s))",
                 severity="critical",
                 action="block",
                 description="SQL injection attempt detected"
@@ -88,7 +88,7 @@ class WAFConfig:
             # Path Traversal Protection
             WAFRule(
                 name="path_traversal",
-                pattern=r"(\.\./){2,}|(\.\.\\){2,}|(\.\./etc/)|(\.\.\\windows\\)",
+                pattern=r"(\.\.\/|\.\.\\|%2e%2e%2f|%2e%2e%5c|\.\.%252f|%252e%252e|\.\.;|\.\.%00|\.\.%0d%0a|\.\.\\x|\.\.%c0%af|\.\.\/\/|\.\.\/|\.\.\\){2,}|(\.\./etc/)|(\.\./windows/)|(\.\./boot/)|(\.\./var/)|(\.\./proc/)|(\.\.\.\.//|%2e%2e%2f%2e%2e%2f|\.\.%252f|%c0%af|\.\.%5c|\.\.\.\.\\\.\.\.\.\\|\.\.;/)",
                 severity="high",
                 action="block",
                 description="Path traversal attempt detected"
@@ -124,7 +124,7 @@ class WAFConfig:
             # NoSQL Injection Protection
             WAFRule(
                 name="nosql_injection",
-                pattern=r"(\$ne|\$eq|\$gt|\$gte|\$lt|\$lte|\$in|\$nin|\$and|\$or|\$not|\$regex|\$where|\$exists)[\s:{\[]",
+                pattern=r"(\$ne|\$eq|\$gt|\$gte|\$lt|\$lte|\$in|\$nin|\$and|\$or|\$not|\$regex|\$where|\$exists)|(\[\$ne\]|\[\$eq\]|\[\$gt\]|\[\$in\]|\[\$or\])|({.*\$ne.*}|{.*\$eq.*}|{.*\$gt.*}|{.*\$in.*}|{.*\$or.*}|{.*\$regex.*}|{.*\$where.*})",
                 severity="high",
                 action="block",
                 description="NoSQL injection attempt detected"
