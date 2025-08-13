@@ -84,10 +84,10 @@ jobs:
             # Navigate to veris-memory repository
             cd /opt/veris-memory
             
-            # Pull latest changes
+            # Pull latest changes (force to avoid lock issues)
             echo "📥 Pulling latest changes from repository..."
-            git fetch origin
-            git reset --hard origin/main
+            git fetch origin --prune || git remote prune origin
+            git reset --hard origin/main || (git fetch origin main && git reset --hard FETCH_HEAD)
             
             # No need to navigate to context-store - everything is in repo root
             # cd context-store
