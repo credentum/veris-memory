@@ -57,8 +57,8 @@ jobs:
             echo "=================================="
             
             # Export dev environment variables with actual password value
-            # NEO4J_PASSWORD is expanded from GitHub Actions environment
-            export NEO4J_PASSWORD='${NEO4J_PASSWORD}'
+            # NEO4J_PASSWORD is expanded from GitHub Actions environment  
+            export NEO4J_PASSWORD="${NEO4J_PASSWORD}"
             echo "✅ Using NEO4J_PASSWORD from GitHub secrets"
             export ENVIRONMENT=dev
             
