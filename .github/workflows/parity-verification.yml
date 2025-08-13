@@ -43,7 +43,16 @@ jobs:
           echo "Waiting for Qdrant... attempt $i"
           sleep 2
         done
-        python ops/bootstrap/qdrant_bootstrap.py --qdrant-url http://localhost:6333 || echo "Bootstrap completed"
+        # Check Qdrant health directly
+        curl -v http://localhost:6333/health || true
+        # Try bootstrap with explicit parameters
+        python ops/bootstrap/qdrant_bootstrap.py \
+          --collection context_embeddings \
+          --dimensions 384 \
+          --distance Cosine \
+          --qdrant-url http://localhost:6333 \
+          --ensure-collection \
+          --stats || echo "Bootstrap attempt completed"
         
     - name: Run manifest verifier
       id: verify
