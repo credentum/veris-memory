@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Sequence
 
 # MCP SDK imports
 from mcp.server import Server
-from mcp.server.models import InitializationOptions, NotificationOptions
+from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 from mcp.types import EmbeddedResource, ImageContent, Resource, TextContent, Tool
 
@@ -1847,7 +1847,7 @@ async def main():
                     server_name="context-store",
                     server_version="1.0.0",
                     capabilities=server.get_capabilities(
-                        notification_options=NotificationOptions(),
+                        notification_options=None,
                         experimental_capabilities={}
                     ),
                 ),
