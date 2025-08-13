@@ -1,0 +1,246 @@
+name: Deploy to Production (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_notes:
+        description: 'Deployment notes or reason'
+        required: false
+        type: string
+
+jobs:
+  validate-and-deploy:
+    name: Validate and Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log Deployment
+        run: |
+          echo "📝 PRODUCTION DEPLOYMENT INITIATED"
+          echo "=================================="
+          echo "Triggered by: ${{ github.actor }}"
+          echo "Time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Notes: ${{ github.event.inputs.deployment_notes }}"
+          echo "=================================="
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          # Mask secrets in logs
+          echo "::add-mask::${{ secrets.HETZNER_SSH_KEY }}"
+          echo "::add-mask::${{ secrets.NEO4J_PROD_PASSWORD }}"
+          echo "::add-mask::${{ secrets.TAILSCALE_AUTHKEY }}"
+          
+          # Create SSH key with secure permissions
+          # Use printf to preserve newlines in the key
+          printf '%s\n' "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          
+          # Add SSH host to known hosts to avoid prompt
+          ssh-keyscan -t ed25519 -H ${{ secrets.HETZNER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Test SSH key format
+          if ! ssh-keygen -l -f ~/.ssh/id_ed25519 >/dev/null 2>&1; then
+            echo "Error: Invalid SSH key format"
+            exit 1
+          fi
+
+      - name: Pre-deployment Health Check
+        run: |
+          echo "🔍 Checking current production status..."
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOF'
+            # Check if production is currently running
+            if docker ps --format "{{.Names}}" | grep -E "^veris-memory-prod-|^veris-memory-context-store-|^context-store-" | grep -v dev; then
+              echo "✅ Production services detected"
+              echo "Current production containers:"
+              docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "^veris-memory-prod-|^veris-memory-context-store-|^context-store-|NAME" | grep -v dev
+            else
+              echo "⚠️ No production services currently running"
+            fi
+          EOF
+
+      - name: Backup Current Production
+        run: |
+          echo "💾 Creating production backup..."
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOF'
+            BACKUP_DIR="/opt/backups/veris-memory/$(date +%Y%m%d_%H%M%S)"
+            mkdir -p "$BACKUP_DIR"
+            
+            # Backup current configuration
+            if [ -d "/opt/veris-memory/context-store" ]; then
+              cp -r /opt/veris-memory/context-store/.env* "$BACKUP_DIR/" 2>/dev/null || true
+              cp -r /opt/veris-memory/context-store/docker-compose*.yml "$BACKUP_DIR/" 2>/dev/null || true
+              echo "✅ Configuration backed up to $BACKUP_DIR"
+            fi
+            
+            # Note: Add database backup commands here if needed
+            # docker exec veris-memory-prod-neo4j neo4j-admin dump --database=neo4j --to=/backup/...
+          EOF
+
+      - name: Deploy to Production
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOF'
+            set -e
+            
+            echo "🔴 PRODUCTION DEPLOYMENT STARTING"
+            echo "=================================="
+            
+            # Export production environment variables
+            export NEO4J_PASSWORD='${{ secrets.NEO4J_PROD_PASSWORD }}'
+            export TAILSCALE_AUTHKEY='${{ secrets.TAILSCALE_AUTHKEY }}'
+            export TAILSCALE_HOSTNAME='veris-memory-prod'
+            export ENVIRONMENT=prod
+            
+            # Navigate to veris-memory repository
+            cd /opt/veris-memory
+            
+            # Pull latest changes
+            echo "📥 Pulling latest changes from repository..."
+            git fetch origin
+            git reset --hard origin/main
+            
+            # Navigate to context-store
+            cd context-store
+            
+            # Check if deployment script exists
+            if [ -f "scripts/deploy-environment.sh" ]; then
+              echo "🚀 Running environment deployment script for PRODUCTION..."
+              chmod +x scripts/deploy-environment.sh
+              ./scripts/deploy-environment.sh prod
+            else
+              echo "⚠️ Environment deployment script not found, using standard deployment..."
+              
+              # Stop ALL non-dev containers (production)
+              echo "🛑 Stopping existing production containers..."
+              docker ps --format "{{.Names}}" | grep -v dev | while read container; do
+                if [[ "$container" =~ ^(veris-memory-|context-store-) ]]; then
+                  echo "Stopping: $container"
+                  docker stop "$container" 2>/dev/null || true
+                  docker rm "$container" 2>/dev/null || true
+                fi
+              done
+              
+              # Clean up with docker-compose
+              docker-compose down --remove-orphans 2>/dev/null || true
+              docker-compose -p veris-memory-prod down --remove-orphans 2>/dev/null || true
+              
+              # Setup production environment
+              if [ -f ".env.prod" ]; then
+                cp .env.prod .env
+              elif [ -f ".env.hetzner" ]; then
+                cp .env.hetzner .env
+              fi
+              
+              # Use appropriate compose file
+              if [ -f "docker-compose.hetzner.yml" ]; then
+                COMPOSE_FILE="docker-compose.hetzner.yml"
+              else
+                COMPOSE_FILE="docker-compose.yml"
+              fi
+              
+              # Build and start production services
+              echo "🚀 Starting PRODUCTION services..."
+              docker-compose -f "$COMPOSE_FILE" up -d --build
+              
+              # Wait for services
+              echo "⏳ Waiting for PRODUCTION services to be healthy..."
+              timeout=300
+              count=0
+              while [ $count -lt $timeout ]; do
+                if curl -f http://localhost:8001/health > /dev/null 2>&1; then
+                  echo "✅ PRODUCTION services are healthy"
+                  break
+                fi
+                echo "Waiting... ($count/$timeout)"
+                sleep 10
+                count=$((count + 10))
+              done
+              
+              if [ $count -ge $timeout ]; then
+                echo "❌ PRODUCTION services failed to become healthy"
+                docker-compose -f "$COMPOSE_FILE" logs --tail=100
+                exit 1
+              fi
+            fi
+            
+            echo ""
+            echo "🔴 PRODUCTION DEPLOYMENT COMPLETED"
+            echo "=================================="
+          EOF
+
+      - name: Verify Production Deployment
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOF'
+            echo "🔍 Verifying PRODUCTION deployment..."
+            cd /opt/veris-memory/context-store
+            
+            # Show production containers
+            echo "Production containers running:"
+            docker ps --format "table {{.Names}}\t{{.Status}}" | grep -v dev
+            
+            # Check production service health
+            echo ""
+            echo "Production service health (standard ports):"
+            echo -n "  Redis (6379): "
+            echo "PING" | nc -w 2 localhost 6379 | grep -q PONG && echo "✓" || echo "✗"
+            echo -n "  Neo4j (7474): "
+            timeout 1 bash -c "</dev/tcp/localhost/7474" 2>/dev/null && echo "✓" || echo "✗"
+            echo -n "  Qdrant (6333): "
+            curl -s http://localhost:6333/health > /dev/null 2>&1 && echo "✓" || echo "✗"
+            echo -n "  API (8000): "
+            curl -s http://localhost:8000/health > /dev/null 2>&1 && echo "✓" || echo "✗"
+            
+            # Ensure dev is still running if it was before
+            echo ""
+            echo "Dev environment status:"
+            if docker ps --format "{{.Names}}" | grep -q "dev"; then
+              echo "✅ Dev containers still running (good - no interference)"
+              docker ps --format "{{.Names}}" | grep dev
+            else
+              echo "ℹ️ No dev containers running"
+            fi
+          EOF
+
+      - name: Run Production Smoke Tests
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOF'
+            echo "🧪 Running smoke tests on PRODUCTION..."
+            cd /opt/veris-memory/context-store
+            
+            # Run production smoke tests
+            if [ -f "ops/smoke/smoke_runner.py" ]; then
+              python3 ops/smoke/smoke_runner.py --timeout 30
+            else
+              echo "⚠️ Smoke test runner not found"
+            fi
+          EOF
+
+      - name: Cleanup SSH key
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_ed25519
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ PRODUCTION DEPLOYMENT SUCCESSFUL!"
+            echo "=================================="
+            echo "🔴 Environment: PRODUCTION"
+            echo "🌐 Server: ${{ secrets.HETZNER_HOST }}"
+            echo "📍 Location: /opt/veris-memory"
+            echo "👤 Deployed by: ${{ github.actor }}"
+            echo "📝 Notes: ${{ github.event.inputs.deployment_notes }}"
+            echo "⏰ Time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            echo ""
+            echo "⚠️ Remember to monitor the production services!"
+          else
+            echo "❌ PRODUCTION DEPLOYMENT FAILED!"
+            echo "Please check the logs and consider rollback if necessary"
+          fi

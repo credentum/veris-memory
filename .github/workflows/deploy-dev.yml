@@ -1,0 +1,208 @@
+name: Deploy to Development Environment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'context-store/**'
+      - '.github/workflows/deploy-dev.yml'
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment even without changes'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  deploy-dev:
+    name: Deploy to Dev Environment
+    runs-on: ubuntu-latest
+    environment: development
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          # Mask secrets in logs
+          echo "::add-mask::${{ secrets.HETZNER_SSH_KEY }}"
+          echo "::add-mask::${{ secrets.NEO4J_DEV_PASSWORD }}"
+          
+          # Create SSH key with secure permissions
+          # Use printf to preserve newlines in the key
+          printf '%s\n' "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          
+          # Add SSH host to known hosts to avoid prompt
+          ssh-keyscan -t ed25519 -H ${{ secrets.HETZNER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Test SSH key format
+          if ! ssh-keygen -l -f ~/.ssh/id_ed25519 >/dev/null 2>&1; then
+            echo "Error: Invalid SSH key format"
+            exit 1
+          fi
+
+      - name: Deploy to Dev Environment
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOF'
+            set -e
+            
+            echo "🔵 DEVELOPMENT DEPLOYMENT STARTING"
+            echo "=================================="
+            
+            # Export dev environment variables
+            export NEO4J_PASSWORD='${{ secrets.NEO4J_DEV_PASSWORD }}'
+            export ENVIRONMENT=dev
+            
+            # Navigate to veris-memory repository
+            cd /opt/veris-memory
+            
+            # Pull latest changes
+            echo "📥 Pulling latest changes from repository..."
+            git fetch origin
+            git reset --hard origin/main
+            
+            # Navigate to context-store
+            cd context-store
+            
+            # Check if deployment script exists
+            if [ -f "scripts/deploy-environment.sh" ]; then
+              echo "🚀 Running environment deployment script for DEV..."
+              chmod +x scripts/deploy-environment.sh
+              ./scripts/deploy-environment.sh dev
+            else
+              echo "⚠️ Environment deployment script not found, using fallback..."
+              
+              # Fallback deployment for dev
+              echo "🛑 Stopping existing dev containers..."
+              docker-compose -p veris-memory-dev down --remove-orphans 2>/dev/null || true
+              
+              # Stop containers on dev ports (standard ports we test with)
+              for port in 8000 6333 7474 7687 6379 6334; do
+                containers=$(docker ps --filter "publish=$port" --format "{{.Names}}" 2>/dev/null || true)
+                if [ -n "$containers" ]; then
+                  echo "Stopping containers on port $port: $containers"
+                  docker stop $containers 2>/dev/null || true
+                  docker rm $containers 2>/dev/null || true
+                fi
+              done
+              
+              # Dev uses standard docker-compose.yml
+              COMPOSE_FILE="docker-compose.yml"
+              echo "✅ Using standard docker-compose for dev environment"
+              
+              # Setup dev environment file
+              if [ -f ".env.dev" ]; then
+                cp .env.dev .env
+              elif [ -f ".env.template" ]; then
+                cp .env.template .env
+              fi
+              
+              # Start dev services
+              echo "🚀 Starting DEV services..."
+              docker-compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build
+              
+              # Wait for services
+              echo "⏳ Waiting for DEV services to be healthy..."
+              timeout=300
+              count=0
+              # Dev always uses standard ports (8000)
+              health_url="http://localhost:8000/health"
+              
+              while [ $count -lt $timeout ]; do
+                if curl -f "$health_url" > /dev/null 2>&1; then
+                  echo "✅ DEV services are healthy"
+                  break
+                fi
+                echo "Waiting... ($count/$timeout)"
+                sleep 10
+                count=$((count + 10))
+              done
+              
+              if [ $count -ge $timeout ]; then
+                echo "❌ DEV services failed to become healthy"
+                docker-compose -p veris-memory-dev -f "$COMPOSE_FILE" logs --tail=50
+                exit 1
+              fi
+            fi
+            
+            echo ""
+            echo "🔵 DEV DEPLOYMENT COMPLETED"
+            echo "=================================="
+          EOF
+
+      - name: Verify Dev Deployment
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOF'
+            echo "🔍 Verifying DEV deployment..."
+            cd /opt/veris-memory/context-store
+            
+            # Show dev containers
+            echo "Dev containers running:"
+            docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "dev|NAME" || docker ps --format "table {{.Names}}\t{{.Status}}" | head -5
+            
+            # Check dev service health
+            echo ""
+            echo "Dev service health:"
+            
+            # Dev uses standard ports (what we test with)
+            echo -n "  Redis: "
+            echo "PING" | nc -w 2 localhost 6379 | grep -q PONG && echo "✓ (6379)" || echo "✗"
+            
+            echo -n "  Neo4j: "
+            timeout 1 bash -c "</dev/tcp/localhost/7474" 2>/dev/null && echo "✓ (7474)" || echo "✗"
+            
+            echo -n "  Qdrant: "
+            curl -s http://localhost:6333/health > /dev/null 2>&1 && echo "✓ (6333)" || echo "✗"
+            
+            echo -n "  API: "
+            curl -s http://localhost:8000/health > /dev/null 2>&1 && echo "✓ (8000)" || echo "✗"
+          EOF
+
+      - name: Run Dev Smoke Tests
+        continue-on-error: true
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOF'
+            echo "🧪 Running smoke tests on DEV environment..."
+            cd /opt/veris-memory/context-store
+            
+            # Dev uses standard ports (what we test with)
+            API_URL="http://localhost:8000"
+            QDRANT_URL="http://localhost:6333"
+            NEO4J_URL="http://localhost:7474"
+            echo "Testing dev environment on standard ports..."
+            
+            # Run smoke tests if available
+            if [ -f "ops/smoke/smoke_runner.py" ]; then
+              python3 ops/smoke/smoke_runner.py \
+                --api-url "$API_URL" \
+                --qdrant-url "$QDRANT_URL" \
+                --neo4j-url "$NEO4J_URL" \
+                --timeout 30 || echo "⚠️ Some smoke tests failed (non-blocking)"
+            else
+              echo "⚠️ Smoke test runner not found, skipping tests"
+            fi
+          EOF
+
+      - name: Cleanup SSH key
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_ed25519
+
+      - name: Notify Deployment Status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Development deployment successful!"
+            echo "🔵 Environment: DEV"
+            echo "🌐 Server: ${{ secrets.HETZNER_HOST }}"
+            echo "📍 Location: /opt/veris-memory"
+            echo ""
+            echo "📝 Note: Production deployment requires manual intervention"
+          else
+            echo "❌ Development deployment failed!"
+            echo "Please check the logs for details"
+          fi
