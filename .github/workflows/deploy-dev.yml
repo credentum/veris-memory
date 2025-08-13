@@ -139,6 +139,10 @@ jobs:
               
               echo "✅ Added NEO4J_PASSWORD to .env file (non-empty)"
               
+              # Stop any existing containers first
+              echo "🛑 Stopping any existing DEV services..."
+              docker compose -p veris-memory-dev -f "$COMPOSE_FILE" down || true
+              
               # Start dev services with NEO4J_PASSWORD exported for health checks
               echo "🚀 Starting DEV services..."
               export NEO4J_PASSWORD
