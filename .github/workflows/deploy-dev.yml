@@ -56,35 +56,21 @@ jobs:
           
           echo "✅ NEO4J_PASSWORD secret exists in GitHub Actions"
           
-          # Base64 encode the password to safely pass it through SSH
-          # This handles special characters and ensures reliable transmission
-          ENCODED_PWD=$(echo -n '${{ secrets.NEO4J_PASSWORD }}' | base64 -w 0)
-          
-          # ALTERNATIVE APPROACHES (if base64 doesn't work):
-          # 1. Using printf with %q for proper escaping:
-          #    ESCAPED_PWD=$(printf '%q' '${{ secrets.NEO4J_PASSWORD }}')
-          # 
-          # 2. Using a temporary file transfer:
-          #    echo -n '${{ secrets.NEO4J_PASSWORD }}' > /tmp/pwd.txt
-          #    scp -i ~/.ssh/id_ed25519 /tmp/pwd.txt ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }}:/tmp/
-          #    Then in SSH: export NEO4J_PASSWORD=$(cat /tmp/pwd.txt)
-          #
-          # 3. Using SSH with environment passing (requires AcceptEnv on server):
-          #    NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}' ssh -o SendEnv=NEO4J_PASSWORD ...
-          
-          # Pass the encoded password to the remote server
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << EOF
+          # Pass the password directly using unquoted heredoc for GitHub Actions substitution
+          # The password will be substituted by GitHub Actions before SSH
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << EOSSH
             set -e
             
             echo "🔵 DEVELOPMENT DEPLOYMENT STARTING"
             echo "=================================="
             
-            # Decode the password on the remote server
-            export NEO4J_PASSWORD=\$(echo -n '${ENCODED_PWD}' | base64 -d)
+            # Set the password that was passed from GitHub Actions
+            # Using a quoted heredoc to prevent premature expansion
+            export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
             
             # Verify password was transmitted (without exposing the value)
             if [ -z "\${NEO4J_PASSWORD}" ]; then
-              echo "❌ ERROR: NEO4J_PASSWORD is empty after decoding!"
+              echo "❌ ERROR: NEO4J_PASSWORD is empty!"
               exit 1
             fi
             
@@ -136,7 +122,7 @@ jobs:
               fi
               
               # Ensure NEO4J_PASSWORD is in .env file for docker-compose
-              echo "NEO4J_PASSWORD=${NEO4J_PASSWORD}" >> .env
+              echo "NEO4J_PASSWORD=\${NEO4J_PASSWORD}" >> .env
               
               # Verify the password was written correctly (without exposing it)
               if grep -q "NEO4J_PASSWORD=$" .env || grep -q "NEO4J_PASSWORD= *$" .env; then
@@ -178,7 +164,7 @@ jobs:
             echo ""
             echo "🔵 DEV DEPLOYMENT COMPLETED"
             echo "=================================="
-          EOF
+          EOSSH
 
       - name: Verify Dev Deployment
         run: |
