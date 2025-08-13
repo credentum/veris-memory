@@ -125,23 +125,55 @@ jobs:
                 cp .env.template .env
               fi
               
-              # Remove any existing NEO4J_PASSWORD lines from .env
-              grep -v "^NEO4J_PASSWORD=" .env > .env.tmp || true
-              mv .env.tmp .env
+              # CRITICAL: Debug and fix password issues
+              echo "🔍 ============================================"
+              echo "🔍 DEBUG: Password Configuration"
+              echo "🔍 ============================================"
               
-              # Ensure NEO4J_PASSWORD is available for docker-compose
-              # Both export it as environment variable AND write to .env file
+              # Show what's currently in .env (if it exists)
+              if [ -f .env ]; then
+                echo "📋 Current .env NEO4J entries BEFORE modification:"
+                grep NEO4J .env || echo "  No NEO4J entries found"
+              fi
+              
+              # Remove ALL NEO4J lines (both PASSWORD and AUTH)
+              echo "🗑️  Removing ALL existing NEO4J lines from .env..."
+              if [ -f .env ]; then
+                grep -v "^NEO4J" .env > .env.tmp || true
+                mv .env.tmp .env
+              fi
+              
+              # Write the correct password from GitHub Secrets
               export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
+              echo "✏️  Writing NEO4J_PASSWORD from GitHub Secrets..."
               echo "NEO4J_PASSWORD=${{ secrets.NEO4J_PASSWORD }}" >> .env
+              echo "NEO4J_AUTH=neo4j/${{ secrets.NEO4J_PASSWORD }}" >> .env
               
-              # Verify the password was written correctly (without exposing it)
-              if grep -q "NEO4J_PASSWORD=$" .env || grep -q "NEO4J_PASSWORD= *$" .env; then
-                echo "❌ ERROR: NEO4J_PASSWORD appears to be empty in .env file!"
-                cat .env | grep NEO4J_PASSWORD
+              # Verify what we wrote
+              echo "📋 NEW .env NEO4J entries AFTER modification:"
+              grep NEO4J .env || echo "  ERROR: No NEO4J entries found!"
+              
+              # Check password length to verify it's not empty (without exposing it)
+              PASSWORD_LENGTH=$(grep "^NEO4J_PASSWORD=" .env | cut -d= -f2 | wc -c)
+              echo "🔐 Password length: $PASSWORD_LENGTH characters"
+              
+              if [ "$PASSWORD_LENGTH" -lt 5 ]; then
+                echo "❌ ============================================"
+                echo "❌ FATAL ERROR: NEO4J_PASSWORD is too short or empty!"
+                echo "❌ Password must be at least 5 characters"
+                echo "❌ Check GitHub Secrets configuration"
+                echo "❌ ============================================"
                 exit 1
               fi
               
-              echo "✅ Added NEO4J_PASSWORD to .env file (non-empty)"
+              # Also verify Neo4j container can use this password
+              echo "🔍 Neo4j will be configured with:"
+              echo "  - Username: neo4j"
+              echo "  - Password length: $PASSWORD_LENGTH characters"
+              echo "  - Password starts with: $(grep "^NEO4J_PASSWORD=" .env | cut -d= -f2 | cut -c1-3)***"
+              
+              echo "✅ Password configuration completed"
+              echo "🔍 ============================================"
               
               # Stop any existing containers first (force remove)
               echo "🛑 Stopping any existing DEV services..."
@@ -153,6 +185,30 @@ jobs:
               echo "🚀 Starting DEV services..."
               export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
               docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build
+              
+              # CRITICAL: Verify .env wasn't changed by docker-compose or any script
+              echo "🔍 ============================================"
+              echo "🔍 POST-DEPLOY: Verifying .env integrity"
+              echo "🔍 ============================================"
+              echo "📋 .env NEO4J entries AFTER docker-compose:"
+              grep NEO4J .env || echo "  ERROR: No NEO4J entries found!"
+              
+              # Check if password matches what we expect
+              ACTUAL_PASSWORD=$(grep "^NEO4J_PASSWORD=" .env | cut -d= -f2)
+              EXPECTED_START=$(echo "${{ secrets.NEO4J_PASSWORD }}" | cut -c1-3)
+              ACTUAL_START=$(echo "$ACTUAL_PASSWORD" | cut -c1-3)
+              
+              if [ "$ACTUAL_START" != "$EXPECTED_START" ]; then
+                echo "❌ ============================================"
+                echo "❌ FATAL: Password was changed after deployment!"
+                echo "❌ Expected to start with: $EXPECTED_START***"
+                echo "❌ Actually starts with: $ACTUAL_START***"
+                echo "❌ Something is overwriting the .env file!"
+                echo "❌ ============================================"
+                exit 1
+              fi
+              echo "✅ Password verification passed"
+              echo "🔍 ============================================"
               
               # Bootstrap Qdrant if needed
               echo "🔧 Bootstrapping Qdrant collection..."
