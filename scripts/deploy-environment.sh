@@ -190,9 +190,36 @@ else
     echo -e "${YELLOW}⚠️  Warning: No environment file found${NC}"
 fi
 
-# Export environment variables if provided
+# Create .env file with NEO4J_PASSWORD if it doesn't exist
+if [ ! -f ".env" ]; then
+    echo -e "${YELLOW}📝 Creating .env file with NEO4J_PASSWORD...${NC}"
+    echo "# Auto-generated environment file" > .env
+    echo "QDRANT_URL=http://localhost:6333" >> .env
+    echo "NEO4J_URI=bolt://localhost:7687" >> .env
+    echo "NEO4J_USER=neo4j" >> .env
+    echo "REDIS_URL=redis://localhost:6379" >> .env
+    echo "MCP_SERVER_PORT=8000" >> .env
+    echo "LOG_LEVEL=info" >> .env
+fi
+
+# Ensure NEO4J_PASSWORD is in .env file (remove old and add new)
 if [ -n "$NEO4J_PASSWORD" ]; then
+    echo -e "${YELLOW}📝 Updating NEO4J_PASSWORD in .env file...${NC}"
+    # Remove any existing NEO4J_PASSWORD lines
+    grep -v "^NEO4J_PASSWORD=" .env > .env.tmp || true
+    grep -v "^NEO4J_AUTH=" .env.tmp > .env || true
+    rm -f .env.tmp
+    
+    # Add the password from environment variable
+    echo "NEO4J_PASSWORD=$NEO4J_PASSWORD" >> .env
+    echo "NEO4J_AUTH=neo4j/$NEO4J_PASSWORD" >> .env
     export NEO4J_PASSWORD="$NEO4J_PASSWORD"
+    
+    echo -e "${GREEN}✅ NEO4J_PASSWORD added to .env (${#NEO4J_PASSWORD} characters)${NC}"
+else
+    echo -e "${RED}❌ ERROR: NEO4J_PASSWORD environment variable not set!${NC}"
+    echo "Please set NEO4J_PASSWORD before running this script"
+    exit 1
 fi
 
 # Stop existing containers for this environment
