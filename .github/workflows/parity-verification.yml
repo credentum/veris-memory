@@ -24,7 +24,7 @@ jobs:
     - name: Install dependencies
       run: |
         pip install --upgrade pip
-        pip install pyyaml requests
+        pip install pyyaml requests qdrant-client
         
     - name: Start test services
       run: |
@@ -34,7 +34,16 @@ jobs:
     - name: Bootstrap Qdrant collection
       run: |
         echo "Bootstrapping Qdrant collection..."
-        python ops/bootstrap/qdrant_bootstrap.py || echo "Bootstrap completed (may already exist)"
+        # Wait for Qdrant to be fully ready
+        for i in {1..10}; do
+          if curl -s http://localhost:6333/health > /dev/null; then
+            echo "Qdrant is ready"
+            break
+          fi
+          echo "Waiting for Qdrant... attempt $i"
+          sleep 2
+        done
+        python ops/bootstrap/qdrant_bootstrap.py --qdrant-url http://localhost:6333 || echo "Bootstrap completed"
         
     - name: Run manifest verifier
       id: verify
