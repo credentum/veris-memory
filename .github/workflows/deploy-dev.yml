@@ -46,20 +46,49 @@ jobs:
           fi
 
       - name: Deploy to Dev Environment
-        env:
-          NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
         run: |
-          # Use heredoc that allows variable expansion from GitHub Actions
+          # First, verify the secret exists in GitHub Actions
+          if [ -z '${{ secrets.NEO4J_PASSWORD }}' ]; then
+            echo "❌ ERROR: NEO4J_PASSWORD secret is not set in GitHub Actions!"
+            echo "Please set the NEO4J_PASSWORD secret in: Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          
+          echo "✅ NEO4J_PASSWORD secret exists in GitHub Actions"
+          
+          # Base64 encode the password to safely pass it through SSH
+          # This handles special characters and ensures reliable transmission
+          ENCODED_PWD=$(echo -n '${{ secrets.NEO4J_PASSWORD }}' | base64 -w 0)
+          
+          # ALTERNATIVE APPROACHES (if base64 doesn't work):
+          # 1. Using printf with %q for proper escaping:
+          #    ESCAPED_PWD=$(printf '%q' '${{ secrets.NEO4J_PASSWORD }}')
+          # 
+          # 2. Using a temporary file transfer:
+          #    echo -n '${{ secrets.NEO4J_PASSWORD }}' > /tmp/pwd.txt
+          #    scp -i ~/.ssh/id_ed25519 /tmp/pwd.txt ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }}:/tmp/
+          #    Then in SSH: export NEO4J_PASSWORD=$(cat /tmp/pwd.txt)
+          #
+          # 3. Using SSH with environment passing (requires AcceptEnv on server):
+          #    NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}' ssh -o SendEnv=NEO4J_PASSWORD ...
+          
+          # Pass the encoded password to the remote server
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << EOF
             set -e
             
             echo "🔵 DEVELOPMENT DEPLOYMENT STARTING"
             echo "=================================="
             
-            # Export dev environment variables with actual password value
-            # NEO4J_PASSWORD is expanded from GitHub Actions environment  
-            export NEO4J_PASSWORD="${NEO4J_PASSWORD}"
-            echo "✅ Using NEO4J_PASSWORD from GitHub secrets"
+            # Decode the password on the remote server
+            export NEO4J_PASSWORD=\$(echo -n '${ENCODED_PWD}' | base64 -d)
+            
+            # Verify password was transmitted (without exposing the value)
+            if [ -z "\${NEO4J_PASSWORD}" ]; then
+              echo "❌ ERROR: NEO4J_PASSWORD is empty after decoding!"
+              exit 1
+            fi
+            
+            echo "✅ NEO4J_PASSWORD successfully set (length: \${#NEO4J_PASSWORD} characters)"
             export ENVIRONMENT=dev
             
             # Navigate to veris-memory repository
@@ -108,7 +137,15 @@ jobs:
               
               # Ensure NEO4J_PASSWORD is in .env file for docker-compose
               echo "NEO4J_PASSWORD=${NEO4J_PASSWORD}" >> .env
-              echo "✅ Added NEO4J_PASSWORD to .env file"
+              
+              # Verify the password was written correctly (without exposing it)
+              if grep -q "NEO4J_PASSWORD=$" .env || grep -q "NEO4J_PASSWORD= *$" .env; then
+                echo "❌ ERROR: NEO4J_PASSWORD appears to be empty in .env file!"
+                cat .env | grep NEO4J_PASSWORD
+                exit 1
+              fi
+              
+              echo "✅ Added NEO4J_PASSWORD to .env file (non-empty)"
               
               # Start dev services
               echo "🚀 Starting DEV services..."
