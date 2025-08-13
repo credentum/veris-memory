@@ -1,0 +1,13 @@
+# Custom Qdrant image with health check tools
+FROM qdrant/qdrant:v1.9.6
+
+# Install curl for health checks
+# Qdrant is based on Alpine Linux
+USER root
+RUN apk add --no-cache curl wget
+
+# Switch back to qdrant user
+USER qdrant
+
+# Use the original entrypoint
+ENTRYPOINT ["./entrypoint.sh"]

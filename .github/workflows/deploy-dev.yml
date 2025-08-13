@@ -155,8 +155,28 @@ jobs:
               sleep 10  # Give Qdrant time to fully start
               python3 ops/bootstrap/qdrant_bootstrap.py --qdrant-url http://localhost:6333 || echo "Bootstrap completed or not needed"
               
-              # Wait for services
+              # Wait for services with better error reporting
               echo "⏳ Waiting for DEV services to be healthy..."
+              
+              # Check health status of containers and report issues
+              echo "🔍 Checking container health status..."
+              docker ps --format "table {{.Names}}\t{{.Status}}" | grep veris-memory-dev || true
+              
+              # Check for unhealthy containers and show detailed health check errors
+              unhealthy=$(docker ps --filter "health=unhealthy" --format "{{.Names}}" | grep veris-memory-dev || true)
+              if [ -n "$unhealthy" ]; then
+                echo "⚠️  ============================================"
+                echo "⚠️  WARNING: UNHEALTHY CONTAINERS DETECTED!"
+                echo "⚠️  ============================================"
+                for container in $unhealthy; do
+                  echo "❌ Container: $container"
+                  echo "   Health check errors:"
+                  docker inspect $container --format='{{range .State.Health.Log}}{{.Output}}{{end}}' | head -3
+                  echo ""
+                done
+                echo "⚠️  ============================================"
+              fi
+              
               timeout=300
               count=0
               # Dev always uses standard ports (8000)
