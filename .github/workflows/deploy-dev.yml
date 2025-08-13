@@ -221,7 +221,7 @@ jobs:
               # Bootstrap Qdrant if needed
               echo "🔧 Bootstrapping Qdrant collection..."
               sleep 10  # Give Qdrant time to fully start
-              python3 ops/bootstrap/qdrant_bootstrap.py --qdrant-url http://localhost:6333 || echo "Bootstrap completed or not needed"
+              python3 ops/bootstrap/qdrant_bootstrap.py --qdrant-url http://localhost:6333 --ensure-collection || echo "Bootstrap completed or not needed"
               
               # Wait for services with better error reporting
               echo "⏳ Waiting for DEV services to be healthy..."
@@ -305,7 +305,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOF'
             echo "🧪 Running smoke tests on DEV environment..."
-            cd /opt/veris-memory/context-store
+            cd /opt/veris-memory
             
             # Dev uses standard ports (what we test with)
             API_URL="http://localhost:8000"
