@@ -29,7 +29,7 @@ jobs:
           mkdir -p ~/.ssh
           # Mask secrets in logs
           echo "::add-mask::${{ secrets.HETZNER_SSH_KEY }}"
-          echo "::add-mask::${{ secrets.NEO4J_DEV_PASSWORD }}"
+          echo "::add-mask::${{ secrets.NEO4J_PASSWORD }}"
           
           # Create SSH key with secure permissions
           # Use printf to preserve newlines in the key
@@ -46,17 +46,19 @@ jobs:
           fi
 
       - name: Deploy to Dev Environment
+        env:
+          NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
         run: |
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << EOF
             set -e
             
             echo "🔵 DEVELOPMENT DEPLOYMENT STARTING"
             echo "=================================="
             
             # Export dev environment variables
-            # NEO4J_DEV_PASSWORD secret must be set in GitHub Actions
-            export NEO4J_PASSWORD='${{ secrets.NEO4J_DEV_PASSWORD }}'
-            echo "✅ Using NEO4J_DEV_PASSWORD from GitHub secrets"
+            # NEO4J_PASSWORD secret must be set in GitHub Actions
+            export NEO4J_PASSWORD='${NEO4J_PASSWORD}'
+            echo "✅ Using NEO4J_PASSWORD from GitHub secrets"
             export ENVIRONMENT=dev
             
             # Navigate to veris-memory repository
