@@ -70,7 +70,7 @@ class WAFConfig:
             # SQL Injection Protection
             WAFRule(
                 name="sql_injection",
-                pattern=r"((\b(DROP|ALTER|CREATE|TRUNCATE)\s+(TABLE|DATABASE)\b)|(--\s*$)|(;\s*(DROP|DELETE|TRUNCATE|ALTER|CREATE)\s+)|(\bOR\s+['\"]\w*['\"]?\s*=\s*['\"]\w*['\"])|(\bUNION\s+(ALL\s+)?SELECT\b)|(\bEXEC(UTE)?\s*\()|(\bWAITFOR\s+DELAY\b)|(\bBENCHMARK\s*\()|(pg_sleep)|(%20(SELECT|DROP|UNION|INSERT)%20)|(0x[0-9a-fA-F]+)|(ＳＥＬＥＣＴ|ＤＲＯＰ|ＵＮＩＯＮ)|(/\*.*?\*/)|(\s+SELECT\s+)|(\nSELECT\s)|(\rSELECT\s))",
+                pattern=r"((\b(DROP|ALTER|CREATE|TRUNCATE)\s+(TABLE|DATABASE)\b)|(--\s*$)|(;\s*(DROP|DELETE|TRUNCATE|ALTER|CREATE)\s+)|(\bOR\s+['\"]\w*['\"]?\s*=\s*['\"]\w*['\"])|(\bUNION\s+(ALL\s+)?SELECT\b)|(\bEXEC(UTE)?\s*\()|(\bWAITFOR\s+DELAY\b)|(\bBENCHMARK\s*\()|(pg_sleep)|(%20(SELECT|DROP|UNION|INSERT)%20)|(0x[0-9a-fA-F]+)|(ＳＥＬＥＣＴ|ＤＲＯＰ|ＵＮＩＯＮ)|(/\*.*?\*/)|(\s+SELECT\s+)|(\nSELECT\s)|(\rSELECT\s)|(\'?\|\|\'?)|(\/\*\!\d+.*?\*\/)|(OR\s+'1'\s*=\s*'1))",
                 severity="critical",
                 action="block",
                 description="SQL injection attempt detected"
@@ -94,10 +94,10 @@ class WAFConfig:
                 description="Path traversal attempt detected"
             ),
             
-            # Command Injection Protection
+            # Command Injection Protection - Enhanced patterns
             WAFRule(
                 name="command_injection",
-                pattern=r"(\||;|&|`|\$\(|\)|\{|\}|<|>).*?(cat|ls|rm|del|wget|curl|bash|sh|cmd|powershell|eval|exec)",
+                pattern=r"((\||;|&|`|\$\(|\)|\{|\}|<|>).*?(cat|ls|rm|del|wget|curl|bash|sh|cmd|powershell|eval|exec|whoami|id|netstat|nc|nohup))|(%3B|%7C|%26|%60|%24%28).*?(ls|cat|whoami|bash|sh|cmd|powershell)|(\.\.\/.*?(bin\/bash|sh))|(powershell\s+-enc)|(IEX\(New-Object)|(nohup\s+nc\s+-e)|(DownloadString)",
                 severity="critical",
                 action="block",
                 description="Command injection attempt detected"
@@ -155,6 +155,60 @@ class WAFConfig:
                 severity="medium",
                 action="block",
                 description="Protocol injection attempt detected"
+            ),
+            
+            # OWASP A04: Insecure Design - Privilege Escalation
+            WAFRule(
+                name="privilege_escalation",
+                pattern=r"role.*?admin|admin.*role",
+                severity="high",
+                action="block",
+                description="Privilege escalation attempt detected"
+            ),
+            
+            # OWASP A05: Security Misconfiguration - Debug Mode
+            WAFRule(
+                name="debug_mode_exposure",
+                pattern=r"debug.*?true|true.*debug",
+                severity="medium",
+                action="block",
+                description="Debug mode exposure attempt detected"
+            ),
+            
+            # OWASP A06: Vulnerable Components - Version Disclosure
+            WAFRule(
+                name="version_disclosure",
+                pattern=r"version.*?\d+\.\d+(\.\d+)?",
+                severity="low",
+                action="block",
+                description="Version information disclosure detected"
+            ),
+            
+            # OWASP A07: Authentication Failures - Weak Credentials
+            WAFRule(
+                name="weak_credentials",
+                pattern=r"username.*?admin.*?password.*?admin|admin.*?admin",
+                severity="high",
+                action="block",
+                description="Weak credential usage detected"
+            ),
+            
+            # OWASP A09: Security Logging Failures - Log Tampering
+            WAFRule(
+                name="log_tampering",
+                pattern=r"(delete|remove|clear|truncate|modify).*?(log|audit|event|history)",
+                severity="high",
+                action="block",
+                description="Log tampering attempt detected"
+            ),
+            
+            # OWASP A10: SSRF - Server-Side Request Forgery
+            WAFRule(
+                name="ssrf_protection",
+                pattern=r"url.*?localhost|localhost.*url",
+                severity="high",
+                action="block",
+                description="Server-Side Request Forgery (SSRF) attempt detected"
             )
         ]
         
@@ -217,9 +271,12 @@ class WAFFilter:
         if not self.config.is_enabled():
             return WAFResult(blocked=False)
         
-        # Convert all values to strings for pattern matching
+        # Convert all keys and values to strings for pattern matching
         text_to_check = []
         for key, value in request_data.items():
+            # Include the key in the text to check
+            text_to_check.append(str(key))
+            
             if value is not None:
                 if isinstance(value, (list, dict)):
                     text_to_check.append(json.dumps(value))
@@ -293,19 +350,23 @@ class WAFRateLimiter:
     def __init__(
         self,
         requests_per_minute: int = 60,
-        burst_size: int = 10
+        burst_size: int = 10,
+        global_requests_per_minute: int = 1000
     ):
         """
         Initialize rate limiter.
         
         Args:
-            requests_per_minute: Maximum requests per minute
-            burst_size: Maximum burst size
+            requests_per_minute: Maximum requests per minute per client
+            burst_size: Maximum burst size per client
+            global_requests_per_minute: Maximum total requests per minute (DDoS protection)
         """
         self.requests_per_minute = requests_per_minute
         self.burst_size = burst_size
+        self.global_requests_per_minute = global_requests_per_minute
         self.request_counts: Dict[str, List[float]] = defaultdict(list)
         self.blocked_clients: Dict[str, float] = {}
+        self.global_requests: List[float] = []
     
     def check_rate_limit(self, client_id: str) -> RateLimitResult:
         """
@@ -341,7 +402,26 @@ class WAFRateLimiter:
             if ts > window_start
         ]
         
-        # Check rate limit
+        # Clean old global requests
+        self.global_requests = [
+            ts for ts in self.global_requests
+            if ts > window_start
+        ]
+        
+        # Check global rate limit (DDoS protection)
+        global_request_count = len(self.global_requests)
+        if global_request_count >= self.global_requests_per_minute:
+            logger.warning(
+                f"Global rate limit exceeded: {global_request_count} requests in last minute"
+            )
+            return RateLimitResult(
+                allowed=False,
+                remaining=0,
+                retry_after=60,
+                limit=self.global_requests_per_minute
+            )
+        
+        # Check per-client rate limit
         request_count = len(self.request_counts[client_id])
         
         if request_count >= self.requests_per_minute:
@@ -375,6 +455,7 @@ class WAFRateLimiter:
         
         # Allow request and record timestamp
         self.request_counts[client_id].append(current_time)
+        self.global_requests.append(current_time)
         
         return RateLimitResult(
             allowed=True,

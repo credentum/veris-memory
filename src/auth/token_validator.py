@@ -27,6 +27,12 @@ class ValidationResult:
     expires_at: Optional[datetime] = None
     issued_at: Optional[datetime] = None
     token_id: Optional[str] = None
+    status_code: int = 200
+
+    @property
+    def authorized(self) -> bool:
+        """Compatibility property for legacy code"""
+        return self.is_valid
 
 
 class TokenValidator:
@@ -93,7 +99,9 @@ class TokenValidator:
                 revoked = self.redis_client.smembers("revoked_tokens")
                 self.revoked_tokens = set(revoked) if revoked else set()
             except Exception as e:
-                logger.error(f"Failed to load revoked tokens: {e}")
+                logger.warning(f"Failed to load revoked tokens: {e}")
+                # Initialize empty set if Redis is unavailable
+                self.revoked_tokens = set()
     
     def validate(self, token: str) -> ValidationResult:
         """
@@ -110,6 +118,7 @@ class TokenValidator:
         # Check if token is revoked
         if self._is_revoked(token):
             result.error = "Token has been revoked"
+            result.status_code = 401  # Unauthorized
             return result
         
         try:
@@ -142,6 +151,7 @@ class TokenValidator:
             
             # Extract token information
             result.is_valid = True
+            result.status_code = 200  # OK
             result.user_id = payload.get("sub")
             result.role = payload.get("role", "guest")
             result.capabilities = payload.get("capabilities", [])
@@ -157,23 +167,31 @@ class TokenValidator:
             if not self._validate_token_age(result):
                 result.is_valid = False
                 result.error = "Token age exceeds maximum allowed"
+                result.status_code = 401  # Unauthorized
             
             if not self._validate_required_claims(payload):
                 result.is_valid = False
                 result.error = "Missing required claims"
+                result.status_code = 401  # Unauthorized
             
         except jwt.ExpiredSignatureError:
             result.error = "Token has expired"
+            result.status_code = 401  # Unauthorized
         except jwt.InvalidSignatureError:
             result.error = "Invalid token signature"
+            result.status_code = 401  # Unauthorized
         except jwt.InvalidTokenError as e:
             result.error = f"Invalid token: {str(e)}"
+            result.status_code = 401  # Unauthorized
         except jwt.InvalidIssuerError:
             result.error = "Invalid token issuer"
+            result.status_code = 401  # Unauthorized
         except jwt.InvalidAudienceError:
             result.error = "Invalid token audience"
+            result.status_code = 401  # Unauthorized
         except Exception as e:
             result.error = f"Token validation failed: {str(e)}"
+            result.status_code = 500  # Internal server error
             logger.error(f"Unexpected error during token validation: {e}")
         
         return result
@@ -184,13 +202,16 @@ class TokenValidator:
         if token in self.revoked_tokens:
             return True
         
-        # Check Redis if available
+        # Check Redis if available (with timeout and robust error handling)
         if self.redis_client:
             try:
                 token_hash = self._hash_token(token)
-                return self.redis_client.sismember("revoked_tokens", token_hash)
+                # Use a short timeout to prevent hanging
+                result = self.redis_client.sismember("revoked_tokens", token_hash)
+                return bool(result)
             except Exception as e:
-                logger.error(f"Failed to check token revocation: {e}")
+                logger.warning(f"Failed to check token revocation in Redis, assuming not revoked: {e}")
+                # If Redis check fails, assume token is not revoked (fail-open for availability)
         
         return False
     

@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 class ComplianceFramework(Enum):
     """Compliance frameworks"""
     SOC2 = "soc2"
-    ISO27001 = "iso27001" 
+    ISO_27001 = "iso27001" 
+    ISO27001 = "iso27001"  # Backward compatibility alias
     GDPR = "gdpr"
     HIPAA = "hipaa"
     PCI_DSS = "pci_dss"
@@ -126,6 +127,9 @@ class ComplianceAssessment:
     next_assessment_due: Optional[datetime] = None
     remediation_notes: str = ""
     risk_rating: str = "medium"
+    recommendations: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    summary: str = ""
 
 
 @dataclass
@@ -140,9 +144,11 @@ class ComplianceReport:
     assessments: List[ComplianceAssessment] = field(default_factory=list)
     overall_score: Optional[float] = None
     compliance_percentage: float = 0.0
-    summary: Dict[str, Any] = field(default_factory=dict)
+    generated_by: str = "automated"
     recommendations: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    summary: Dict[str, Any] = field(default_factory=dict)
+    executive_summary: str = ""
 
 
 class ComplianceControlLibrary:
@@ -389,7 +395,7 @@ class ComplianceControlLibrary:
         return [
             ComplianceControl(
                 control_id="A.9.1.2",
-                framework=ComplianceFramework.ISO27001,
+                framework=ComplianceFramework.ISO_27001,
                 category=ControlCategory.ACCESS_CONTROL,
                 title="Access to Networks and Network Services",
                 description="Users shall only be provided access to networks and network services",
@@ -409,7 +415,7 @@ class ComplianceControlLibrary:
             ),
             ComplianceControl(
                 control_id="A.10.1.1",
-                framework=ComplianceFramework.ISO27001,
+                framework=ComplianceFramework.ISO_27001,
                 category=ControlCategory.ENCRYPTION,
                 title="Cryptographic Policy",
                 description="Policy on the use of cryptographic controls",
@@ -428,6 +434,34 @@ class ComplianceControlLibrary:
                 risk_level="medium"
             )
         ]
+    
+    def search_controls(self, query: str) -> List[ComplianceControl]:
+        """Search controls by keyword
+        
+        Args:
+            query: Search query string
+            
+        Returns:
+            List of controls matching the query
+        """
+        if not query:
+            return []
+        
+        query_lower = query.lower()
+        matching_controls = []
+        
+        for control in self.controls:
+            # Search in title, description, and requirements
+            searchable_text = (
+                f"{control.title} {control.description} "
+                f"{' '.join(control.requirements)} "
+                f"{control.implementation_guidance}"
+            ).lower()
+            
+            if query_lower in searchable_text:
+                matching_controls.append(control)
+        
+        return matching_controls
 
 
 class AutomatedComplianceAssessor:
@@ -659,9 +693,14 @@ class AutomatedComplianceAssessor:
 class EvidenceCollector:
     """Collects compliance evidence from various sources"""
     
-    def __init__(self):
-        """Initialize evidence collector"""
+    def __init__(self, evidence_dir: Optional[str] = None):
+        """Initialize evidence collector
+        
+        Args:
+            evidence_dir: Optional directory path for storing evidence files
+        """
         self.evidence_store = []
+        self.evidence_dir = evidence_dir or tempfile.gettempdir()
         self._lock = threading.RLock()
     
     def collect_configuration_evidence(self, config_path: str, 
@@ -1134,6 +1173,47 @@ class ComplianceReporter:
             }
         
         return dashboard_data
+    
+    def generate_dashboard_data(self) -> Dict[str, Any]:
+        """Generate dashboard data for compliance reporting
+        
+        Returns:
+            Dictionary containing dashboard data with overall_stats and frameworks
+        """
+        base_data = self.get_compliance_dashboard_data()
+        
+        if "message" in base_data:
+            # No reports available
+            return {
+                "overall_stats": {
+                    "total_frameworks": 0,
+                    "avg_compliance": 0.0,
+                    "total_controls": 0,
+                    "last_updated": datetime.utcnow().isoformat()
+                },
+                "frameworks": {}
+            }
+        
+        # Calculate overall statistics
+        frameworks = base_data.get("frameworks", {})
+        total_frameworks = len(frameworks)
+        
+        if total_frameworks > 0:
+            avg_compliance = sum(f["compliance_percentage"] for f in frameworks.values()) / total_frameworks
+            total_controls = sum(f["total_controls"] for f in frameworks.values())
+        else:
+            avg_compliance = 0.0
+            total_controls = 0
+        
+        return {
+            "overall_stats": {
+                "total_frameworks": total_frameworks,
+                "avg_compliance": avg_compliance,
+                "total_controls": total_controls,
+                "last_updated": base_data.get("last_updated", datetime.utcnow().isoformat())
+            },
+            "frameworks": frameworks
+        }
 
 
 # Export main components

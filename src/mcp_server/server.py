@@ -34,6 +34,7 @@ try:
     from src.storage.qdrant_client import VectorDBInitializer
     from src.storage.reranker import get_reranker
     from src.validators.config_validator import validate_all_configs
+    from src.security.input_validator import InputValidator, ContentTypeValidator
 except ImportError:
     # Fallback for different import contexts
     import sys
@@ -50,6 +51,7 @@ except ImportError:
     from storage.qdrant_client import VectorDBInitializer
     from storage.reranker import get_reranker
     from validators.config_validator import validate_all_configs
+    from security.input_validator import InputValidator, ContentTypeValidator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -67,6 +69,8 @@ embedding_generator = None
 # Global security and namespace instances
 cypher_validator = CypherValidator()
 agent_namespace = AgentNamespace()
+input_validator = InputValidator()
+content_type_validator = ContentTypeValidator()
 
 # Tool selector bridge import
 try:
@@ -673,10 +677,40 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
         context_id = f"ctx_{uuid.uuid4().hex[:12]}"
 
+        # Validate input arguments with comprehensive security checks
         content = arguments["content"]
         context_type = arguments["type"]
         metadata = arguments.get("metadata", {})
         relationships = arguments.get("relationships", [])
+
+        # Validate content size and structure
+        content_str = json.dumps(content, sort_keys=True, ensure_ascii=False)
+        content_validation = input_validator.validate_input(content_str, "content")
+        if not content_validation.valid:
+            return {
+                "success": False,
+                "message": f"Content validation failed: {content_validation.error}",
+                "error_type": content_validation.error,
+            }
+
+        # Validate JSON structure if content is dict/list
+        if isinstance(content, (dict, list)):
+            json_validation = input_validator.validate_json_input(content)
+            if not json_validation.valid:
+                return {
+                    "success": False,
+                    "message": f"JSON structure validation failed: {json_validation.error}",
+                    "error_type": json_validation.error,
+                }
+
+        # Validate context_type
+        type_validation = input_validator.validate_input(context_type, "query")
+        if not type_validation.valid:
+            return {
+                "success": False,
+                "message": f"Type validation failed: {type_validation.error}",
+                "error_type": type_validation.error,
+            }
 
         # Store in vector database
         vector_id = None
@@ -874,11 +908,42 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     try:
+        # Extract and validate query input
         query = arguments["query"]
         context_type = arguments.get("type", "all")
         search_mode = arguments.get("search_mode", "hybrid")
         retrieval_mode = arguments.get("retrieval_mode", "hybrid")
         limit = arguments.get("limit", 10)
+
+        # Validate query with comprehensive security checks
+        query_validation = input_validator.validate_input(query, "query")
+        if not query_validation.valid:
+            return {
+                "success": False,
+                "results": [],
+                "message": f"Query validation failed: {query_validation.error}",
+                "error_type": query_validation.error,
+            }
+
+        # Validate context_type if provided
+        if context_type != "all":
+            type_validation = input_validator.validate_input(context_type, "query")
+            if not type_validation.valid:
+                return {
+                    "success": False,
+                    "results": [],
+                    "message": f"Type validation failed: {type_validation.error}",
+                    "error_type": type_validation.error,
+                }
+
+        # Validate limit parameter
+        if not isinstance(limit, int) or limit < 1 or limit > 100:
+            return {
+                "success": False,
+                "results": [],
+                "message": "Limit must be an integer between 1 and 100",
+                "error_type": "invalid_parameter",
+            }
 
         # New GraphRAG parameters
         max_hops = arguments.get("max_hops", 2)
@@ -1249,11 +1314,18 @@ async def update_scratchpad_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "error_type": "invalid_content_type",
             }
 
-        if len(content) > 100000:  # 100KB limit
+        # Use comprehensive input validation
+        content_validation = input_validator.validate_input(content, "content")
+        if not content_validation.valid:
+            error_messages = {
+                "input_too_large": "Content exceeds maximum size (100KB)",
+                "null_byte_detected": "Content contains null bytes",
+                "control_characters_detected": "Content contains invalid control characters"
+            }
             return {
                 "success": False,
-                "message": "Content exceeds maximum size (100KB)",
-                "error_type": "content_too_large",
+                "message": error_messages.get(content_validation.error, f"Content validation failed: {content_validation.error}"),
+                "error_type": content_validation.error,
             }
 
         # Validate TTL

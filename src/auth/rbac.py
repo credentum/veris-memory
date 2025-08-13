@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import redis
 from functools import wraps
+from .token_validator import TokenValidator, ValidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -355,44 +356,6 @@ class RBACMiddleware:
         return None
 
 
-class TokenValidator:
-    """Token validation utility"""
-    
-    def __init__(self, secret_key: Optional[str] = None):
-        """Initialize token validator"""
-        self.secret_key = secret_key or os.environ.get("JWT_SECRET", "default-secret-key")
-        
-    def validate(self, token: str) -> AuthResult:
-        """Validate JWT token"""
-        result = AuthResult(authorized=False)
-        
-        try:
-            payload = jwt.decode(
-                token,
-                self.secret_key,
-                algorithms=["HS256"]
-            )
-            
-            result.authorized = True
-            result.user_id = payload.get("sub")
-            result.role = payload.get("role")
-            result.capabilities = payload.get("capabilities", [])
-            
-        except jwt.ExpiredSignatureError:
-            result.authorized = False
-            result.error = "Token expired"
-        except jwt.InvalidSignatureError:
-            result.authorized = False
-            result.error = "Invalid signature"
-        except jwt.InvalidTokenError as e:
-            result.authorized = False
-            result.error = f"Invalid token: {str(e)}"
-        except Exception as e:
-            result.authorized = False
-            result.error = str(e)
-        
-        return result
-
 
 class ServiceAuthManager:
     """Manager for cross-service authorization"""
@@ -456,11 +419,11 @@ class ServiceAuthManager:
 class RateLimiter:
     """Rate limiting based on role and capability"""
     
-    def __init__(self, redis_client: Optional[redis.Redis] = None):
+    def __init__(self, redis_client: Optional[redis.Redis] = None, secret_key: Optional[str] = None):
         """Initialize rate limiter"""
         self.redis_client = redis_client or self._init_redis()
         self.rbac_manager = RBACManager()
-        self.token_validator = TokenValidator()
+        self.token_validator = TokenValidator(secret_key=secret_key)
         
     def _init_redis(self) -> Optional[redis.Redis]:
         """Initialize Redis connection"""
@@ -493,44 +456,48 @@ class RateLimiter:
         
         # Check rate limit using sliding window
         if self.redis_client:
-            key = f"rate_limit:{user_id}:{role}"
-            current_time = time.time()
-            window_start = current_time - 60  # 1 minute window
-            
-            # Remove old entries
-            self.redis_client.zremrangebyscore(key, 0, window_start)
-            
-            # Count requests in window
-            request_count = self.redis_client.zcard(key)
-            
-            if request_count >= limit:
-                # Calculate retry after
-                oldest = self.redis_client.zrange(key, 0, 0, withscores=True)
-                if oldest:
-                    retry_after = int(60 - (current_time - oldest[0][1]))
-                else:
-                    retry_after = 60
+            try:
+                key = f"rate_limit:{user_id}:{role}"
+                current_time = time.time()
+                window_start = current_time - 60  # 1 minute window
+                
+                # Remove old entries
+                self.redis_client.zremrangebyscore(key, 0, window_start)
+                
+                # Count requests in window
+                request_count = self.redis_client.zcard(key)
+                
+                if request_count >= limit:
+                    # Calculate retry after
+                    oldest = self.redis_client.zrange(key, 0, 0, withscores=True)
+                    if oldest:
+                        retry_after = int(60 - (current_time - oldest[0][1]))
+                    else:
+                        retry_after = 60
+                    
+                    return RateLimitResult(
+                        allowed=False,
+                        remaining=0,
+                        retry_after=retry_after,
+                        limit=limit
+                    )
+                
+                # Add current request
+                self.redis_client.zadd(key, {str(current_time): current_time})
+                self.redis_client.expire(key, 60)
                 
                 return RateLimitResult(
-                    allowed=False,
-                    remaining=0,
-                    retry_after=retry_after,
+                    allowed=True,
+                    remaining=limit - request_count - 1,
+                    retry_after=0,
                     limit=limit
                 )
-            
-            # Add current request
-            self.redis_client.zadd(key, {str(current_time): current_time})
-            self.redis_client.expire(key, 60)
-            
-            return RateLimitResult(
-                allowed=True,
-                remaining=limit - request_count - 1,
-                retry_after=0,
-                limit=limit
-            )
+            except Exception as e:
+                logger.warning(f"Redis rate limiting failed, allowing request: {e}")
+                # Fall through to Redis-free mode
         
-        # Fallback if Redis not available
-        return RateLimitResult(allowed=True, limit=limit)
+        # Fallback if Redis not available (allow all requests)
+        return RateLimitResult(allowed=True, limit=limit, remaining=limit-1)
     
     def check_capability_limit(self, token: str, capability: str) -> RateLimitResult:
         """Check rate limit for specific capability"""

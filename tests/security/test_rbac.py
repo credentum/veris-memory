@@ -296,7 +296,7 @@ class TestRateLimiting:
         """Test rate limits are enforced per role"""
         from src.auth.rbac import RateLimiter
         
-        limiter = RateLimiter()
+        limiter = RateLimiter(secret_key="test_secret")
         
         # Test guest rate limit (10/minute)
         guest_token = self._create_token("guest", ["retrieve_context"])
@@ -325,7 +325,7 @@ class TestRateLimiting:
         """Test rate limits per capability"""
         from src.auth.rbac import RateLimiter
         
-        limiter = RateLimiter()
+        limiter = RateLimiter(secret_key="test_secret")
         
         token = self._create_token("writer", ["store_context", "retrieve_context"])
         

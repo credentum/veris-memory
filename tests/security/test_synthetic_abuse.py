@@ -41,7 +41,7 @@ class TestDDoSProtection:
         """Simulate DDoS attack and verify rate limiting works"""
         from src.security.waf import WAFRateLimiter
         
-        limiter = WAFRateLimiter(requests_per_minute=60, burst_size=10)
+        limiter = WAFRateLimiter(requests_per_minute=60, burst_size=10, global_requests_per_minute=1000)
         
         # Simulate multiple clients attacking
         attack_clients = [f"192.168.1.{i}" for i in range(1, 101)]  # 100 attackers
