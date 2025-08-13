@@ -950,8 +950,22 @@ class TestRecoveryAndResilience:
         
         assert detector.is_blocked(attacker_ip), "Should be blocked"
         
-        # Wait for expiration
-        time.sleep(3)
+        # Wait for expiration with timeout protection
+
+        
+        try:
+
+        
+            with test_timeout(5):  # 5 second timeout
+
+        
+                time.sleep(3)
+
+        
+        except TimeoutError:
+
+        
+            pass  # Continue if timeout occurs
         
         # Should be unblocked
         assert not detector.is_blocked(attacker_ip), "Should expire after duration"
