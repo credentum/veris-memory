@@ -47,6 +47,19 @@ jobs:
 
       - name: Deploy to Dev Environment
         run: |
+          # PASSWORD HANDLING STRATEGY:
+          # ============================
+          # The NEO4J_PASSWORD in GitHub secrets is base64 encoded for safety
+          # This is a common practice to handle special characters in passwords
+          # 
+          # If your password is stored as plain text in GitHub secrets:
+          #   - Remove the base64 decode step below
+          #   - Use: export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
+          #
+          # If your password is base64 encoded in GitHub secrets (recommended):
+          #   - Keep the decode step as shown below
+          #   - This safely handles special characters like /, +, =, spaces, etc.
+          
           # First, verify the secret exists in GitHub Actions
           if [ -z '${{ secrets.NEO4J_PASSWORD }}' ]; then
             echo "❌ ERROR: NEO4J_PASSWORD secret is not set in GitHub Actions!"
@@ -55,26 +68,31 @@ jobs:
           fi
           
           echo "✅ NEO4J_PASSWORD secret exists in GitHub Actions"
-          
-          # Pass the password directly using unquoted heredoc for GitHub Actions substitution
-          # The password will be substituted by GitHub Actions before SSH
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << EOSSH
             set -e
             
             echo "🔵 DEVELOPMENT DEPLOYMENT STARTING"
             echo "=================================="
             
-            # Set the password that was passed from GitHub Actions
-            # Using a quoted heredoc to prevent premature expansion
-            export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
+            # The password in GitHub secrets is base64 encoded - decode it for use
+            # This handles special characters and ensures compatibility
+            export NEO4J_PASSWORD_ENCODED='${{ secrets.NEO4J_PASSWORD }}'
+            export NEO4J_PASSWORD=\$(echo -n "\${NEO4J_PASSWORD_ENCODED}" | base64 -d)
             
-            # Verify password was transmitted (without exposing the value)
+            # Verify password was decoded correctly
             if [ -z "\${NEO4J_PASSWORD}" ]; then
-              echo "❌ ERROR: NEO4J_PASSWORD is empty!"
+              echo "❌ ERROR: NEO4J_PASSWORD is empty after decoding!"
               exit 1
             fi
             
-            echo "✅ NEO4J_PASSWORD successfully set (length: \${#NEO4J_PASSWORD} characters)"
+            # Check if the password is still base64 (contains = at end or is 44 chars)
+            if [[ "\${NEO4J_PASSWORD}" =~ = ]] || [ \${#NEO4J_PASSWORD} -eq 44 ]; then
+              echo "⚠️  WARNING: Password appears to still be base64 encoded"
+              echo "    Length: \${#NEO4J_PASSWORD} characters"
+              echo "    If the password in GitHub secrets is plain text, remove the base64 decode step"
+            else
+              echo "✅ NEO4J_PASSWORD successfully decoded (length: \${#NEO4J_PASSWORD} characters)"
+            fi
             export ENVIRONMENT=dev
             
             # Navigate to veris-memory repository
