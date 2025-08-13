@@ -65,8 +65,8 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             
-            # Navigate to context-store
-            cd context-store
+            # No need to navigate to context-store - everything is in repo root
+            # cd context-store
             
             # Check if deployment script exists
             if [ -f "scripts/deploy-environment.sh" ]; then
