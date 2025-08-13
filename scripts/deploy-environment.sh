@@ -225,8 +225,15 @@ fi
 # Stop existing containers for this environment
 echo -e "${YELLOW}🛑 Stopping existing $ENVIRONMENT containers...${NC}"
 
-# Stop containers by project name
-docker-compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
+# Stop containers by project name (with volumes to ensure clean state)
+docker-compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down -v --remove-orphans 2>/dev/null || true
+
+# CRITICAL: Remove Neo4j volumes to ensure password changes take effect
+echo -e "${YELLOW}🗑️  Removing Neo4j volumes for clean authentication...${NC}"
+docker volume ls | grep "$PROJECT_NAME" | grep neo4j | awk '{print $2}' | xargs -r docker volume rm 2>/dev/null || true
+# Try explicit volume names
+docker volume rm "${PROJECT_NAME}_neo4j_data" "${PROJECT_NAME}_neo4j_logs" 2>/dev/null || true
+echo -e "${GREEN}✅ Neo4j volumes removed - fresh password will be used${NC}"
 
 # Also stop any containers using our target ports
 echo "  → Checking for containers on $ENVIRONMENT ports..."
