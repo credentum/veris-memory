@@ -299,7 +299,10 @@ async def main():
                 InitializationOptions(
                     server_name="context-store",
                     server_version="1.0.0",
-                    capabilities=server.get_capabilities()
+                    capabilities=server.get_capabilities(
+                        notification_options=None,
+                        experimental_capabilities=None
+                    )
                 ),
             )
     except Exception as e:
