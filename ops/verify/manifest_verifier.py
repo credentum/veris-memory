@@ -28,8 +28,12 @@ def ok(msg: str) -> None:
     print(f"VERIFIER: ✅ {msg}")
 
 def get_qdrant_collection(qbase: str, collection: str) -> Dict[str, Any]:
-    r = requests.get(f"{qbase.rstrip('/')}/collections/{collection}")
+    url = f"{qbase.rstrip('/')}/collections/{collection}"
+    print(f"DEBUG: Fetching Qdrant collection from: {url}")
+    r = requests.get(url)
+    print(f"DEBUG: Response status: {r.status_code}")
     if r.status_code != 200:
+        print(f"DEBUG: Response text: {r.text[:500] if r.text else 'No response text'}")
         fail(f"Qdrant: cannot fetch collection '{collection}' ({r.status_code})")
     return r.json().get("result", {})
 

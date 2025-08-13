@@ -70,6 +70,11 @@ jobs:
       id: verify
       run: |
         echo "Running manifest verification..."
+        # Debug: Check collection one more time before verifier
+        echo "Pre-check: Verifying collection exists..."
+        curl -s http://localhost:6333/collections/context_embeddings | head -c 100
+        echo ""
+        
         python ops/verify/manifest_verifier.py \
           --config production_locked_config.yaml \
           --qdrant-url http://localhost:6333 \
