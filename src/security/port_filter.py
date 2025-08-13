@@ -8,7 +8,7 @@ import time
 import ipaddress
 from typing import Dict, List, Set, Optional, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from enum import Enum
 
@@ -264,6 +264,21 @@ class PortScanDetector:
         if source_ip in self.blocked_ips:
             del self.blocked_ips[source_ip]
             logger.info(f"Manually unblocked IP: {source_ip}")
+    
+    def cleanup_expired(self):
+        """Clean up expired IP blocks"""
+        current_time = time.time()
+        expired_ips = []
+        
+        for ip, block_until in self.blocked_ips.items():
+            if current_time >= block_until:
+                expired_ips.append(ip)
+        
+        for ip in expired_ips:
+            del self.blocked_ips[ip]
+            logger.info(f"Cleanup: Unblocked expired IP {ip}")
+        
+        return len(expired_ips)
 
 
 class ServicePortManager:
@@ -500,7 +515,7 @@ class NetworkFirewall:
     ):
         """Log connection attempt"""
         log_entry = {
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "source_ip": source_ip,
             "dest_port": dest_port,
             "service": service,

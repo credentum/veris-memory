@@ -9,7 +9,7 @@ import json
 import hashlib
 import logging
 from typing import Optional, Dict, Any, List, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 import redis
 
@@ -222,7 +222,7 @@ class TokenValidator:
     def _validate_token_age(self, result: ValidationResult) -> bool:
         """Validate token age is within acceptable range"""
         if result.issued_at:
-            age = datetime.utcnow() - result.issued_at
+            age = datetime.now(timezone.utc) - result.issued_at
             if age.days > self.MAX_TOKEN_AGE_DAYS:
                 return False
         return True
@@ -253,7 +253,7 @@ class TokenValidator:
                 # Get token expiry to set TTL
                 validation = self.validate(token)
                 if validation.expires_at:
-                    ttl = int((validation.expires_at - datetime.utcnow()).total_seconds())
+                    ttl = int((validation.expires_at - datetime.now(timezone.utc)).total_seconds())
                     if ttl > 0:
                         self.redis_client.sadd("revoked_tokens", token_hash)
                         self.redis_client.expire(f"revoked_token:{token_hash}", ttl)
@@ -281,7 +281,7 @@ class TokenValidator:
             return False
         
         if validation.expires_at:
-            time_to_expiry = validation.expires_at - datetime.utcnow()
+            time_to_expiry = validation.expires_at - datetime.now(timezone.utc)
             return time_to_expiry.total_seconds() < self.TOKEN_REFRESH_THRESHOLD
         
         return False
@@ -375,7 +375,7 @@ class TokenValidator:
         
         # Calculate time to expiry
         if validation.expires_at:
-            time_to_expiry = validation.expires_at - datetime.utcnow()
+            time_to_expiry = validation.expires_at - datetime.now(timezone.utc)
             info["expires_in_seconds"] = int(time_to_expiry.total_seconds())
         
         return info
@@ -409,13 +409,13 @@ class TokenBlacklist:
             token_hash = hashlib.sha256(token.encode()).hexdigest()
             
             if expires_at:
-                ttl = int((expires_at - datetime.utcnow()).total_seconds())
+                ttl = int((expires_at - datetime.now(timezone.utc)).total_seconds())
                 if ttl > 0:
                     self.redis_client.setex(
                         f"blacklist:{token_hash}",
                         ttl,
                         json.dumps({
-                            "revoked_at": datetime.utcnow().isoformat(),
+                            "revoked_at": datetime.now(timezone.utc).isoformat(),
                             "expires_at": expires_at.isoformat()
                         })
                     )

@@ -15,7 +15,7 @@ import threading
 from contextlib import contextmanager
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import requests
 import json
 import os
@@ -531,7 +531,7 @@ class TestAuthenticationAbuse:
                     assert result1.is_valid, "First use should be valid"
                     
                     # Simulate token being compromised and blacklisted
-                    blacklist.add(token, expires_at=datetime.utcnow() + timedelta(hours=1))
+                    blacklist.add(token, expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
                     
                     # Replay attempt should fail
                     validator.revoked_tokens.add(token)  # Simulate revocation
@@ -605,8 +605,8 @@ class TestAuthenticationAbuse:
             "sub": user_id,
             "role": role,
             "capabilities": ["retrieve_context"],
-            "exp": datetime.utcnow() + timedelta(hours=1),
-            "iat": datetime.utcnow(),
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+            "iat": datetime.now(timezone.utc),
             "iss": "context-store",  # Match expected issuer
             "aud": "context-store-api"  # Match expected audience
         }
@@ -943,7 +943,7 @@ class TestRecoveryAndResilience:
         """Test that blacklists expire appropriately"""
         from src.security.port_filter import PortScanDetector
         
-        detector = PortScanDetector(block_duration=2)  # 2 seconds for testing
+        detector = PortScanDetector(block_duration=1)  # 1 second for testing
         
         attacker_ip = "192.168.1.200"
         
@@ -953,28 +953,14 @@ class TestRecoveryAndResilience:
         
         assert detector.is_blocked(attacker_ip), "Should be blocked"
         
-        # Wait for expiration (simulated instantly for testing)
-
+        # Wait for expiration (actual wait + cleanup)
+        time.sleep(1.1)  # Wait just over the block duration
         
-        # Simulate expiration by directly calling cleanup if available
-
+        # Force cleanup of expired blocks
+        if hasattr(detector, 'cleanup_expired'):
+            detector.cleanup_expired()
         
-        try:
-
-        
-            if hasattr(detector, 'cleanup_expired'):
-
-        
-                detector.cleanup_expired()
-
-        
-        except:
-
-        
-            pass  # Continue if cleanup method not available
-
-        
-        # Should be unblocked
+        # Should be unblocked after expiration
         assert not detector.is_blocked(attacker_ip), "Should expire after duration"
     
     def test_graceful_degradation(self):
@@ -1019,7 +1005,7 @@ def generate_attack_report(results: List[AttackResult]) -> Dict[str, Any]:
             "total_attacks": total_attacks,
             "blocked_attacks": blocked_attacks,
             "success_rate": f"{success_rate:.2f}%",
-            "test_date": datetime.utcnow().isoformat()
+            "test_date": datetime.now(timezone.utc).isoformat()
         },
         "by_attack_type": attack_types,
         "performance": {

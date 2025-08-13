@@ -10,7 +10,7 @@ import time
 import hashlib
 import logging
 from typing import Dict, List, Optional, Set, Any, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from enum import Enum
 import redis
@@ -218,7 +218,7 @@ class CapabilityManager:
         validated_caps = [cap for cap in capabilities if cap in role_perms]
         
         # Create token payload with required JWT claims
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         payload = {
             "sub": user_id,
             "role": role,
@@ -525,7 +525,7 @@ class AuditLogger:
     ):
         """Log an authorization attempt"""
         log_entry = {
-            "timestamp": timestamp or datetime.utcnow(),
+            "timestamp": timestamp or datetime.now(timezone.utc),
             "user_id": user_id,
             "operation": operation,
             "authorized": authorized,
@@ -562,7 +562,7 @@ class AuditLogger:
     
     def cleanup_old_logs(self):
         """Remove logs older than retention period"""
-        cutoff = datetime.utcnow() - timedelta(days=self.retention_days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self.retention_days)
         self.logs = [l for l in self.logs if l["timestamp"] > cutoff]
 
 
@@ -587,7 +587,7 @@ class SessionManager:
             "user_id": validation.user_id,
             "role": validation.role,
             "capabilities": validation.capabilities,
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
             "token": token
         }
         
