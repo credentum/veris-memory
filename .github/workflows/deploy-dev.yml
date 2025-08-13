@@ -103,6 +103,10 @@ jobs:
                 cp .env.template .env
               fi
               
+              # Ensure NEO4J_PASSWORD is in .env file for docker-compose
+              echo "NEO4J_PASSWORD=${NEO4J_PASSWORD}" >> .env
+              echo "✅ Added NEO4J_PASSWORD to .env file"
+              
               # Start dev services
               echo "🚀 Starting DEV services..."
               docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build
