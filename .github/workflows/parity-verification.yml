@@ -62,6 +62,10 @@ jobs:
         echo "Getting collection info..."
         curl -s http://localhost:6333/collections/context_embeddings | python -m json.tool || true
         
+        # Test with Python requests (same as manifest verifier)
+        echo "Testing with Python requests..."
+        python -c "import requests; r = requests.get('http://localhost:6333/collections/context_embeddings'); print(f'Status: {r.status_code}'); print(r.text[:500] if r.ok else r.text)" || true
+        
     - name: Run manifest verifier
       id: verify
       run: |
