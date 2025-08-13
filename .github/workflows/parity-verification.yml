@@ -54,6 +54,10 @@ jobs:
           --ensure-collection \
           --stats || echo "Bootstrap attempt completed"
         
+        # Verify collection exists
+        echo "Checking if collection was created..."
+        curl -s http://localhost:6333/collections | python -m json.tool || true
+        
     - name: Run manifest verifier
       id: verify
       run: |
