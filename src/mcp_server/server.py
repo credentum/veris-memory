@@ -1891,7 +1891,8 @@ async def main():
                 write_stream,
                 InitializationOptions(
                     server_name="context-store",
-                    server_version="1.0.0"
+                    server_version="1.0.0",
+                    capabilities={}
                 ),
             )
     finally:
