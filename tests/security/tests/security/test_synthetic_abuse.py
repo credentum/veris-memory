@@ -456,92 +456,35 @@ class TestAuthenticationAbuse:
     
     def test_token_replay_attack(self):
         """Test protection against token replay attacks"""
-        with test_timeout(10):  # 10-second timeout
-            try:
-                from src.auth.token_validator import TokenValidator, TokenBlacklist
-                from src.auth.rbac import CapabilityManager
-                import redis
-                import os
-                
-                # Use same secret key for both token creation and validation
-                test_secret = "test_secret"
-                cap_manager = CapabilityManager(secret_key=test_secret)
-                validator = TokenValidator(secret_key=test_secret)
-                
-                # Test Redis connectivity with multiple possible hosts
-                redis_hosts = [
-                    os.environ.get("REDIS_HOST", "localhost"),
-                    "127.0.0.1",
-                    "redis",  # Docker compose service name
-                    "veris-memory-dev-redis-1"  # Container name
-                ]
-                
-                redis_client = None
-                for host in redis_hosts:
-                    try:
-                        redis_client = redis.Redis(
-                            host=host,
-                            port=int(os.environ.get("REDIS_PORT", 6379)),
-                            socket_connect_timeout=2,
-                            socket_timeout=2,
-                            decode_responses=True
-                        )
-                        redis_client.ping()  # Test connection
-                        print(f"✅ Connected to Redis at {host}:6379")
-                        break
-                    except Exception:
-                        continue
-                
-                if not redis_client:
-                    # Fall back to in-memory simulation
-                    print("⚠️  Redis not accessible, using in-memory token revocation simulation")
-                    
-                    # Create a valid token
-                    token = cap_manager.create_token(
-                        user_id="test_user",
-                        role="writer",
-                        capabilities=["store_context"],
-                        expires_in=3600
-                    )
-                    
-                    # First use should be valid
-                    result1 = validator.validate(token)
-                    assert result1.is_valid, "First use should be valid"
-                    
-                    # Simulate token revocation in memory
-                    validator.revoked_tokens.add(token)
-                    result2 = validator.validate(token)
-                    assert not result2.is_valid, "Replayed token should be invalid"
-                    assert "revoked" in result2.error.lower(), "Should indicate token is revoked"
-                    
-                else:
-                    # Full Redis-based test
-                    blacklist = TokenBlacklist(redis_client=redis_client)
-                    
-                    # Create a valid token
-                    token = cap_manager.create_token(
-                        user_id="test_user",
-                        role="writer",
-                        capabilities=["store_context"],
-                        expires_in=3600
-                    )
-                    
-                    # First use should be valid
-                    result1 = validator.validate(token)
-                    assert result1.is_valid, "First use should be valid"
-                    
-                    # Simulate token being compromised and blacklisted
-                    blacklist.add(token, expires_at=datetime.utcnow() + timedelta(hours=1))
-                    
-                    # Replay attempt should fail
-                    validator.revoked_tokens.add(token)  # Simulate revocation
-                    result2 = validator.validate(token)
-                    assert not result2.is_valid, "Replayed token should be invalid"
-                    assert "revoked" in result2.error.lower(), "Should indicate token is revoked"
-                
-            except Exception as e:
-                auto_cleanup_security_state()
-                raise
+        from src.auth.token_validator import TokenValidator, TokenBlacklist
+        from src.auth.rbac import CapabilityManager
+        
+        # Use same secret key for both token creation and validation
+        test_secret = "test_secret"
+        cap_manager = CapabilityManager(secret_key=test_secret)
+        validator = TokenValidator(secret_key=test_secret)
+        blacklist = TokenBlacklist()
+        
+        # Create a valid token
+        token = cap_manager.create_token(
+            user_id="test_user",
+            role="writer",
+            capabilities=["store_context"],
+            expires_in=3600
+        )
+        
+        # First use should be valid
+        result1 = validator.validate(token)
+        assert result1.is_valid, "First use should be valid"
+        
+        # Simulate token being compromised and blacklisted
+        blacklist.add(token, expires_at=datetime.utcnow() + timedelta(hours=1))
+        
+        # Replay attempt should fail
+        validator.revoked_tokens.add(token)  # Simulate revocation
+        result2 = validator.validate(token)
+        assert not result2.is_valid, "Replayed token should be invalid"
+        assert "revoked" in result2.error.lower(), "Should indicate token is revoked"
     
     def test_privilege_escalation_attempt(self):
         """Test protection against privilege escalation"""
