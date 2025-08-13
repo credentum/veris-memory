@@ -121,10 +121,10 @@ class WAFConfig:
                 description="LDAP injection attempt detected"
             ),
             
-            # NoSQL Injection Protection
+            # NoSQL Injection Protection - Enhanced with array injection detection
             WAFRule(
                 name="nosql_injection",
-                pattern=r"(\$ne|\$eq|\$gt|\$gte|\$lt|\$lte|\$in|\$nin|\$and|\$or|\$not|\$regex|\$where|\$exists)|(\[\$ne\]|\[\$eq\]|\[\$gt\]|\[\$in\]|\[\$or\])|({.*\$ne.*}|{.*\$eq.*}|{.*\$gt.*}|{.*\$in.*}|{.*\$or.*}|{.*\$regex.*}|{.*\$where.*})",
+                pattern=r"(\$ne|\$eq|\$gt|\$gte|\$lt|\$lte|\$in|\$nin|\$and|\$or|\$not|\$regex|\$where|\$exists)|(\[\$ne\]|\[\$eq\]|\[\$gt\]|\[\$in\]|\[\$or\])|({.*\$ne.*}|{.*\$eq.*}|{.*\$gt.*}|{.*\$in.*}|{.*\$or.*}|{.*\$regex.*}|{.*\$where.*})|(\"(username|password|email|user|admin)\"\s*:\s*\[.*\])",
                 severity="high",
                 action="block",
                 description="NoSQL injection attempt detected"
