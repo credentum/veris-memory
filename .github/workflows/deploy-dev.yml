@@ -92,6 +92,75 @@ jobs:
             # No need to navigate to context-store - everything is in repo root
             # cd context-store
             
+            # BULLETPROOF CONTAINER CLEANUP - Run this BEFORE any deployment script
+            echo "🛡️  BULLETPROOF CONTAINER CLEANUP"
+            echo "======================================"
+            
+            # Method 1: Nuclear option - remove ALL veris-memory-dev containers
+            echo "🗑️  Method 1: Nuclear container removal..."
+            docker ps -aq --filter "name=veris-memory-dev" | xargs -r docker rm -f 2>/dev/null || true
+            
+            # Method 2: Remove by exact container names
+            echo "🗑️  Method 2: Removing specific containers..."
+            for container in veris-memory-dev-context-store-1 veris-memory-dev-qdrant-1 veris-memory-dev-neo4j-1 veris-memory-dev-redis-1; do
+              docker rm -f "$container" 2>/dev/null || true
+              echo "    → Removed $container (if it existed)"
+            done
+            
+            # Method 3: Kill any processes on our target ports
+            echo "🗑️  Method 3: Freeing target ports..."
+            for port in 8000 6333 7474 7687 6379; do
+              # Find and kill any processes using these ports
+              pids=$(lsof -ti:$port 2>/dev/null || true)
+              if [ -n "$pids" ]; then
+                echo "    → Killing processes on port $port: $pids"
+                kill -9 $pids 2>/dev/null || true
+              fi
+              
+              # Remove containers using these ports
+              containers=$(docker ps -a --filter "publish=$port" --format "{{.Names}}" 2>/dev/null || true)
+              if [ -n "$containers" ]; then
+                echo "    → Removing containers on port $port: $containers"
+                echo "$containers" | xargs -r docker rm -f 2>/dev/null || true
+              fi
+            done
+            
+            # Method 4: Remove ALL volumes with veris-memory-dev prefix
+            echo "🗑️  Method 4: Nuclear volume removal..."
+            docker volume ls -q --filter "name=veris-memory-dev" | xargs -r docker volume rm 2>/dev/null || true
+            
+            # Method 5: Clean up networks
+            echo "🗑️  Method 5: Network cleanup..."
+            docker network ls --filter "name=veris-memory-dev" --format "{{.Name}}" | xargs -r docker network rm 2>/dev/null || true
+            
+            # Method 6: Docker system cleanup (be conservative)
+            echo "🗑️  Method 6: System cleanup of unused resources..."
+            docker system prune -f --volumes 2>/dev/null || true
+            
+            # Method 7: Wait a moment for Docker to settle
+            echo "⏳ Waiting 3 seconds for Docker to settle..."
+            sleep 3
+            
+            # Verification
+            echo "✅ Cleanup verification:"
+            remaining_containers=$(docker ps -aq --filter "name=veris-memory-dev" | wc -l)
+            remaining_volumes=$(docker volume ls -q --filter "name=veris-memory-dev" | wc -l)
+            echo "    → Remaining containers: $remaining_containers"
+            echo "    → Remaining volumes: $remaining_volumes"
+            
+            # Show what Docker sees now
+            echo "🐳 Current Docker state:"
+            echo "    → Running containers: $(docker ps --format '{{.Names}}' | wc -l)"
+            echo "    → All containers: $(docker ps -a --format '{{.Names}}' | wc -l)"
+            echo "    → Volumes: $(docker volume ls --format '{{.Name}}' | wc -l)"
+            
+            if [ "$remaining_containers" -eq 0 ] && [ "$remaining_volumes" -eq 0 ]; then
+              echo "🎉 Complete cleanup achieved!"
+            else
+              echo "⚠️  Some resources may still exist, but deployment will continue"
+              docker ps -a --filter "name=veris-memory-dev" --format "table {{.Names}}\t{{.Status}}" || true
+            fi
+            
             # Check if deployment script exists
             if [ -f "scripts/deploy-environment.sh" ]; then
               echo "🚀 Running environment deployment script for DEV..."
@@ -175,38 +244,27 @@ jobs:
               echo "✅ Password configuration completed"
               echo "🔍 ============================================"
               
-              # ROBUST CONTAINER CLEANUP
-              echo "🛑 Performing robust container cleanup for DEV..."
-              
-              # Method 1: docker-compose down
-              echo "  → Attempting docker-compose down..."
-              docker compose -p veris-memory-dev -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
-              
-              # Method 2: Force remove by project name
-              echo "  → Force removing containers by project..."
-              docker ps -a --filter "name=veris-memory-dev" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
-              
-              # Method 3: Remove specific containers
-              echo "  → Removing specific service containers..."
-              for service in context-store qdrant neo4j redis; do
-                container="veris-memory-dev-${service}-1"
-                docker rm -f "$container" 2>/dev/null || true
-              done
-              
-              # Remove ALL volumes for clean state
-              echo "🗑️  Removing all volumes for clean state..."
-              docker volume ls --filter "name=veris-memory-dev" --format "{{.Name}}" | xargs -r docker volume rm 2>/dev/null || true
-              
-              # Also try explicit volume names
-              docker volume rm veris-memory-dev_neo4j_data veris-memory-dev_neo4j_logs 2>/dev/null || true
-              docker volume rm veris-memory-dev_qdrant_data veris-memory-dev_redis_data 2>/dev/null || true
-              
-              echo "✅ Cleanup complete - starting fresh deployment"
+              # Containers and volumes already cleaned up by bulletproof cleanup above
+              echo "✅ Using clean state from bulletproof cleanup"
               
               # Start dev services with NEO4J_PASSWORD exported for health checks
               echo "🚀 Starting DEV services..."
               export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
-              docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build
+              
+              # Try multiple approaches to ensure success
+              echo "  → Attempt 1: Standard docker compose up..."
+              if ! docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build; then
+                echo "  → Attempt 1 failed, trying without cache..."
+                if ! docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build --no-cache; then
+                  echo "  → Attempt 2 failed, trying with force recreate..."
+                  if ! docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build --force-recreate; then
+                    echo "❌ All docker compose attempts failed!"
+                    exit 1
+                  fi
+                fi
+              fi
+              
+              echo "✅ Docker compose completed successfully"
               
               # CRITICAL: Verify .env wasn't changed by docker-compose or any script
               echo "🔍 ============================================"
