@@ -125,6 +125,10 @@ jobs:
                 cp .env.template .env
               fi
               
+              # Remove any existing NEO4J_PASSWORD lines from .env
+              grep -v "^NEO4J_PASSWORD=" .env > .env.tmp || true
+              mv .env.tmp .env
+              
               # Ensure NEO4J_PASSWORD is available for docker-compose
               # Both export it as environment variable AND write to .env file
               export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
