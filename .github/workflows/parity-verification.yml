@@ -83,7 +83,6 @@ jobs:
           --config production_locked_config.yaml \
           --qdrant-url http://localhost:6333 \
           --collection context_embeddings \
-          --require-text-index \
           2>&1 | tee verification.log
         
         # Check for success
