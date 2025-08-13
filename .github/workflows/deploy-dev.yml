@@ -125,7 +125,9 @@ jobs:
                 cp .env.template .env
               fi
               
-              # Ensure NEO4J_PASSWORD is in .env file for docker-compose
+              # Ensure NEO4J_PASSWORD is available for docker-compose
+              # Both export it as environment variable AND write to .env file
+              export NEO4J_PASSWORD="\${NEO4J_PASSWORD}"
               echo "NEO4J_PASSWORD=\${NEO4J_PASSWORD}" >> .env
               
               # Verify the password was written correctly (without exposing it)
@@ -137,8 +139,9 @@ jobs:
               
               echo "✅ Added NEO4J_PASSWORD to .env file (non-empty)"
               
-              # Start dev services
+              # Start dev services with NEO4J_PASSWORD exported for health checks
               echo "🚀 Starting DEV services..."
+              export NEO4J_PASSWORD
               docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build
               
               # Wait for services
