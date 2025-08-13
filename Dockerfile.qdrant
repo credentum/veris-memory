@@ -2,9 +2,12 @@
 FROM qdrant/qdrant:v1.9.6
 
 # Install curl for health checks
-# Qdrant is based on Alpine Linux
+# Qdrant is based on Debian/Ubuntu
 USER root
-RUN apk add --no-cache curl wget
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
 # Switch back to qdrant user
 USER qdrant
