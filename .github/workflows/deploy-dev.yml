@@ -150,6 +150,11 @@ jobs:
               export NEO4J_PASSWORD
               docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build
               
+              # Bootstrap Qdrant if needed
+              echo "🔧 Bootstrapping Qdrant collection..."
+              sleep 10  # Give Qdrant time to fully start
+              python3 ops/bootstrap/qdrant_bootstrap.py --qdrant-url http://localhost:6333 || echo "Bootstrap completed or not needed"
+              
               # Wait for services
               echo "⏳ Waiting for DEV services to be healthy..."
               timeout=300
