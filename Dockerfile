@@ -46,7 +46,8 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --chown=appuser:appuser src/ ./src/
 COPY --chown=appuser:appuser schemas/ ./schemas/
 COPY --chown=appuser:appuser contracts/ ./contracts/
-COPY --chown=appuser:appuser .ctxrc.yaml ./.ctxrc.yaml
+# Use Docker-specific config file with service names instead of localhost
+COPY --chown=appuser:appuser .ctxrc.docker.yaml ./.ctxrc.yaml
 
 # Optional directories - commented out since they don't exist in current structure
 # COPY --chown=appuser:appuser monitoring/ ./monitoring/
