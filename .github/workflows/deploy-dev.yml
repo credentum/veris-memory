@@ -49,14 +49,15 @@ jobs:
         env:
           NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
         run: |
+          # Use heredoc that allows variable expansion from GitHub Actions
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << EOF
             set -e
             
             echo "🔵 DEVELOPMENT DEPLOYMENT STARTING"
             echo "=================================="
             
-            # Export dev environment variables
-            # NEO4J_PASSWORD secret must be set in GitHub Actions
+            # Export dev environment variables with actual password value
+            # NEO4J_PASSWORD is expanded from GitHub Actions environment
             export NEO4J_PASSWORD='${NEO4J_PASSWORD}'
             echo "✅ Using NEO4J_PASSWORD from GitHub secrets"
             export ENVIRONMENT=dev
