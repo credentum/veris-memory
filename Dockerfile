@@ -72,5 +72,5 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-# Start the application
-CMD ["python", "-m", "src.mcp_server.server"]
+# Start the application with FastAPI/Uvicorn for HTTP endpoints
+CMD ["python", "-m", "uvicorn", "src.mcp_server.main:app", "--host", "0.0.0.0", "--port", "8000"]
