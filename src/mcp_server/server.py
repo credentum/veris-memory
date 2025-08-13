@@ -22,25 +22,23 @@ from mcp.types import EmbeddedResource, ImageContent, Resource, TextContent, Too
 
 # Storage client imports
 try:
-    from core.config import Config
-
-    from ..core.agent_namespace import AgentNamespace
-    from ..core.embedding_config import create_embedding_generator
-
-    # Unused import removed: from ..core.query_validator import validate_cypher_query
-    from ..core.rate_limiter import rate_limit_check
-    from ..core.ssl_config import SSLConfigManager
-    from ..security.cypher_validator import CypherValidator
-    from ..storage.kv_store import ContextKV
-    from ..storage.neo4j_client import Neo4jInitializer
-    from ..storage.qdrant_client import VectorDBInitializer
-    from ..storage.reranker import get_reranker
-    from ..validators.config_validator import validate_all_configs
+    # Try absolute imports from src package
+    from src.core.agent_namespace import AgentNamespace
+    from src.core.config import Config
+    from src.core.embedding_config import create_embedding_generator
+    from src.core.rate_limiter import rate_limit_check
+    from src.core.ssl_config import SSLConfigManager
+    from src.security.cypher_validator import CypherValidator
+    from src.storage.kv_store import ContextKV
+    from src.storage.neo4j_client import Neo4jInitializer
+    from src.storage.qdrant_client import VectorDBInitializer
+    from src.storage.reranker import get_reranker
+    from src.validators.config_validator import validate_all_configs
 except ImportError:
     # Fallback for different import contexts
     import sys
-
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    
     from core.agent_namespace import AgentNamespace
     from core.config import Config
     from core.embedding_config import create_embedding_generator
@@ -1846,10 +1844,6 @@ async def main():
                 InitializationOptions(
                     server_name="context-store",
                     server_version="1.0.0",
-                    capabilities=server.get_capabilities(
-                        notification_options=None,
-                        experimental_capabilities={}
-                    ),
                 ),
             )
     finally:
