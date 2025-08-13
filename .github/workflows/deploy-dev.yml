@@ -92,23 +92,38 @@ jobs:
             # No need to navigate to context-store - everything is in repo root
             # cd context-store
             
-            # BULLETPROOF CONTAINER CLEANUP - Run this BEFORE any deployment script
-            echo "🛡️  BULLETPROOF CONTAINER CLEANUP"
-            echo "======================================"
+            # BULLETPROOF CONTAINER CLEANUP - ENHANCED TO FIX RACE CONDITION
+            echo "🛡️  BULLETPROOF CONTAINER CLEANUP (Enhanced)"
+            echo "================================================"
             
-            # Method 1: Nuclear option - remove ALL veris-memory-dev containers
-            echo "🗑️  Method 1: Nuclear container removal..."
+            # Method 0: Stop docker-compose project first
+            echo "🗑️  Method 0: Stop docker-compose project..."
+            docker compose -p veris-memory-dev down --remove-orphans --volumes 2>/dev/null || true
+            docker compose -f docker-compose.yml -p veris-memory-dev down --remove-orphans --volumes 2>/dev/null || true
+            
+            # Method 1: Force stop ALL containers first (before removal)
+            echo "🗑️  Method 1: Force stop all veris-memory-dev containers..."
+            docker ps -q --filter "name=veris-memory-dev" | xargs -r docker stop -t 1 2>/dev/null || true
+            
+            # Method 2: Nuclear option - remove ALL veris-memory-dev containers  
+            echo "🗑️  Method 2: Nuclear container removal..."
             docker ps -aq --filter "name=veris-memory-dev" | xargs -r docker rm -f 2>/dev/null || true
             
-            # Method 2: Remove by exact container names
-            echo "🗑️  Method 2: Removing specific containers..."
+            # Method 3: Remove by exact container names with retry
+            echo "🗑️  Method 3: Removing specific containers with retry..."
             for container in veris-memory-dev-context-store-1 veris-memory-dev-qdrant-1 veris-memory-dev-neo4j-1 veris-memory-dev-redis-1; do
-              docker rm -f "$container" 2>/dev/null || true
-              echo "    → Removed $container (if it existed)"
+              # Try multiple times to ensure removal
+              for attempt in 1 2 3; do
+                if docker rm -f "$container" 2>/dev/null; then
+                  echo "    → Removed $container (attempt $attempt)"
+                  break
+                fi
+                sleep 1
+              done
             done
             
-            # Method 3: Kill any processes on our target ports
-            echo "🗑️  Method 3: Freeing target ports..."
+            # Method 4: Kill any processes on target ports
+            echo "🗑️  Method 4: Freeing target ports..."
             for port in 8000 6333 7474 7687 6379; do
               # Find and kill any processes using these ports
               pids=$(lsof -ti:$port 2>/dev/null || true)
@@ -118,47 +133,64 @@ jobs:
               fi
               
               # Remove containers using these ports
-              containers=$(docker ps -a --filter "publish=$port" --format "{{.Names}}" 2>/dev/null || true)
+              containers=$(docker ps -aq --filter "publish=$port" 2>/dev/null || true)
               if [ -n "$containers" ]; then
                 echo "    → Removing containers on port $port: $containers"
                 echo "$containers" | xargs -r docker rm -f 2>/dev/null || true
               fi
             done
             
-            # Method 4: Remove ALL volumes with veris-memory-dev prefix
-            echo "🗑️  Method 4: Nuclear volume removal..."
+            # Method 5: Remove ALL volumes with veris-memory-dev prefix
+            echo "🗑️  Method 5: Nuclear volume removal..."
             docker volume ls -q --filter "name=veris-memory-dev" | xargs -r docker volume rm 2>/dev/null || true
             
-            # Method 5: Clean up networks
-            echo "🗑️  Method 5: Network cleanup..."
+            # Method 6: Clean up networks
+            echo "🗑️  Method 6: Network cleanup..."
             docker network ls --filter "name=veris-memory-dev" --format "{{.Name}}" | xargs -r docker network rm 2>/dev/null || true
             
-            # Method 6: Docker system cleanup (be conservative)
-            echo "🗑️  Method 6: System cleanup of unused resources..."
+            # Method 7: Docker system cleanup (be conservative)
+            echo "🗑️  Method 7: System cleanup of unused resources..."
             docker system prune -f --volumes 2>/dev/null || true
             
-            # Method 7: Wait a moment for Docker to settle
-            echo "⏳ Waiting 3 seconds for Docker to settle..."
-            sleep 3
+            # Method 8: CRITICAL - Wait for Docker daemon to fully process removals
+            echo "⏳ Method 8: Waiting for Docker daemon to settle..."
+            sleep 5
             
-            # Verification
+            # Method 9: ENHANCED - Verify cleanup with detailed reporting
+            echo "🗑️  Method 9: Enhanced verification..."
+            remaining_containers=$(docker ps -aq --filter "name=veris-memory-dev" 2>/dev/null | wc -l)
+            remaining_volumes=$(docker volume ls -q --filter "name=veris-memory-dev" 2>/dev/null | wc -l)
+            
             echo "✅ Cleanup verification:"
-            remaining_containers=$(docker ps -aq --filter "name=veris-memory-dev" | wc -l)
-            remaining_volumes=$(docker volume ls -q --filter "name=veris-memory-dev" | wc -l)
-            echo "    → Remaining containers: $remaining_containers"
+            echo "    → Remaining containers: $remaining_containers"  
             echo "    → Remaining volumes: $remaining_volumes"
             
-            # Show what Docker sees now
-            echo "🐳 Current Docker state:"
-            echo "    → Running containers: $(docker ps --format '{{.Names}}' | wc -l)"
-            echo "    → All containers: $(docker ps -a --format '{{.Names}}' | wc -l)"
-            echo "    → Volumes: $(docker volume ls --format '{{.Name}}' | wc -l)"
+            # Show what containers still exist (if any)
+            if [ "$remaining_containers" -gt 0 ]; then
+              echo "⚠️  Containers still exist:"
+              docker ps -a --filter "name=veris-memory-dev" --format "table {{.Names}}\t{{.Status}}\t{{.ID}}" || true
+              
+              # FINAL NUCLEAR OPTION - Remove by container ID
+              echo "🚨 FINAL NUCLEAR CLEANUP by container ID..."
+              docker ps -aq --filter "name=veris-memory-dev" | while read -r container_id; do
+                if [ -n "$container_id" ]; then
+                  echo "    → Force removing container ID: $container_id"
+                  docker rm -f "$container_id" 2>/dev/null || true
+                fi
+              done
+            fi
             
-            if [ "$remaining_containers" -eq 0 ] && [ "$remaining_volumes" -eq 0 ]; then
-              echo "🎉 Complete cleanup achieved!"
+            # Method 10: Final wait to ensure Docker namespace is clear
+            echo "⏳ Final wait for Docker namespace cleanup..."
+            sleep 3
+            
+            # Final verification
+            final_containers=$(docker ps -aq --filter "name=veris-memory-dev" 2>/dev/null | wc -l)
+            if [ "$final_containers" -eq 0 ]; then
+              echo "🎉 COMPLETE CLEANUP ACHIEVED - No containers remain!"
             else
-              echo "⚠️  Some resources may still exist, but deployment will continue"
-              docker ps -a --filter "name=veris-memory-dev" --format "table {{.Names}}\t{{.Status}}" || true
+              echo "⚠️  WARNING: $final_containers containers still exist - deployment may fail"
+              docker ps -a --filter "name=veris-memory-dev" --format "table {{.Names}}\t{{.Status}}\t{{.ID}}" || true
             fi
             
             # Check if deployment script exists
