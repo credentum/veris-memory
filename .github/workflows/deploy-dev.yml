@@ -395,7 +395,7 @@ jobs:
             },
             "services": {
               "api": $(curl -sf http://localhost:8000/health > /dev/null 2>&1 && echo '"healthy"' || echo '"unhealthy"'),
-              "qdrant": $(curl -sf http://localhost:6333/health > /dev/null 2>&1 && echo '"healthy"' || echo '"unhealthy"'),
+              "qdrant": $(curl -sf http://localhost:6333/ > /dev/null 2>&1 && echo '"healthy"' || echo '"unhealthy"'),
               "neo4j": $(timeout 2 bash -c "</dev/tcp/localhost/7687" 2>/dev/null && echo '"healthy"' || echo '"unhealthy"'),
               "redis": $(echo "PING" | nc -w 2 localhost 6379 | grep -q PONG && echo '"healthy"' || echo '"unhealthy"')
             },

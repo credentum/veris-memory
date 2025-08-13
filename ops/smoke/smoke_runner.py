@@ -83,19 +83,30 @@ class SmokeTestRunner:
         start = time.time()
         
         try:
+            # Qdrant uses root endpoint for health, not /health
             response = requests.get(
-                f"{self.qdrant_url}/health",
+                f"{self.qdrant_url}/",
                 timeout=self.timeout
             )
             duration = (time.time() - start) * 1000
             
             if response.status_code == 200:
-                return TestResult(
-                    name="Qdrant Health",
-                    passed=True,
-                    duration_ms=duration,
-                    message="Qdrant is healthy"
-                )
+                data = response.json()
+                # Check for expected Qdrant response structure
+                if "title" in data and "qdrant" in data.get("title", "").lower():
+                    return TestResult(
+                        name="Qdrant Health",
+                        passed=True,
+                        duration_ms=duration,
+                        message=f"Qdrant is healthy (v{data.get('version', 'unknown')})"
+                    )
+                else:
+                    return TestResult(
+                        name="Qdrant Health",
+                        passed=False,
+                        duration_ms=duration,
+                        message="Qdrant response missing expected fields"
+                    )
             else:
                 return TestResult(
                     name="Qdrant Health",

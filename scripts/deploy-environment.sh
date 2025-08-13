@@ -361,7 +361,7 @@ else
 fi
 
 echo -n "  → Qdrant (port $QDRANT_PORT): "
-if curl -s http://localhost:$QDRANT_PORT/health | grep -q "ok"; then
+if curl -s http://localhost:$QDRANT_PORT/ | grep -q "qdrant"; then
     echo -e "${GREEN}✓ Healthy${NC}"
 else
     echo -e "${RED}✗ Failed${NC}"

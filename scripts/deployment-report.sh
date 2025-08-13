@@ -112,8 +112,8 @@ else
     add_error "API health check failed"
 fi
 
-# Qdrant Health Check
-if curl -sf http://localhost:6333/health > /dev/null 2>&1; then
+# Qdrant Health Check - Qdrant uses root endpoint for health
+if curl -sf http://localhost:6333/ > /dev/null 2>&1; then
     # Check if collection exists
     if curl -sf http://localhost:6333/collections/context_embeddings > /dev/null 2>&1; then
         collection_info=$(curl -s http://localhost:6333/collections/context_embeddings | jq -c '.result')
