@@ -78,7 +78,7 @@ jobs:
               
               # Fallback deployment for dev
               echo "🛑 Stopping existing dev containers..."
-              docker-compose -p veris-memory-dev down --remove-orphans 2>/dev/null || true
+              docker compose -p veris-memory-dev down --remove-orphans 2>/dev/null || true
               
               # Stop containers on dev ports (standard ports we test with)
               for port in 8000 6333 7474 7687 6379 6334; do
@@ -90,9 +90,9 @@ jobs:
                 fi
               done
               
-              # Dev uses standard docker-compose.yml
+              # Dev uses standard docker compose file
               COMPOSE_FILE="docker-compose.yml"
-              echo "✅ Using standard docker-compose for dev environment"
+              echo "✅ Using standard docker compose for dev environment"
               
               # Setup dev environment file
               if [ -f ".env.dev" ]; then
@@ -103,7 +103,7 @@ jobs:
               
               # Start dev services
               echo "🚀 Starting DEV services..."
-              docker-compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build
+              docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build
               
               # Wait for services
               echo "⏳ Waiting for DEV services to be healthy..."
@@ -124,7 +124,7 @@ jobs:
               
               if [ $count -ge $timeout ]; then
                 echo "❌ DEV services failed to become healthy"
-                docker-compose -p veris-memory-dev -f "$COMPOSE_FILE" logs --tail=50
+                docker compose -p veris-memory-dev -f "$COMPOSE_FILE" logs --tail=50
                 exit 1
               fi
             fi

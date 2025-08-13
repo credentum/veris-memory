@@ -126,9 +126,9 @@ jobs:
                 fi
               done
               
-              # Clean up with docker-compose
-              docker-compose down --remove-orphans 2>/dev/null || true
-              docker-compose -p veris-memory-prod down --remove-orphans 2>/dev/null || true
+              # Clean up with docker compose
+              docker compose down --remove-orphans 2>/dev/null || true
+              docker compose -p veris-memory-prod down --remove-orphans 2>/dev/null || true
               
               # Setup production environment
               if [ -f ".env.prod" ]; then
@@ -146,7 +146,7 @@ jobs:
               
               # Build and start production services
               echo "🚀 Starting PRODUCTION services..."
-              docker-compose -f "$COMPOSE_FILE" up -d --build
+              docker compose -f "$COMPOSE_FILE" up -d --build
               
               # Wait for services
               echo "⏳ Waiting for PRODUCTION services to be healthy..."
@@ -164,7 +164,7 @@ jobs:
               
               if [ $count -ge $timeout ]; then
                 echo "❌ PRODUCTION services failed to become healthy"
-                docker-compose -f "$COMPOSE_FILE" logs --tail=100
+                docker compose -f "$COMPOSE_FILE" logs --tail=100
                 exit 1
               fi
             fi
