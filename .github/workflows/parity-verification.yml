@@ -36,7 +36,7 @@ jobs:
         echo "Bootstrapping Qdrant collection..."
         # Wait for Qdrant to be fully ready
         for i in {1..10}; do
-          if curl -s http://localhost:6333/health > /dev/null; then
+          if curl -s http://localhost:6333/ > /dev/null; then
             echo "Qdrant is ready"
             break
           fi
@@ -44,7 +44,7 @@ jobs:
           sleep 2
         done
         # Check Qdrant health directly
-        curl -v http://localhost:6333/health || true
+        curl -v http://localhost:6333/ || true
         # Try bootstrap with explicit parameters
         python ops/bootstrap/qdrant_bootstrap.py \
           --collection context_embeddings \

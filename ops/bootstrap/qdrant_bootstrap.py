@@ -33,7 +33,8 @@ class QdrantBootstrap:
     def check_health(self) -> bool:
         """Check if Qdrant is healthy."""
         try:
-            response = requests.get(f"{self.base_url}/health", timeout=5)
+            # Qdrant doesn't have /health, but root endpoint returns info
+            response = requests.get(f"{self.base_url}/", timeout=5)
             return response.status_code == 200
         except requests.exceptions.RequestException as e:
             print(f"❌ Qdrant health check failed: {e}")
