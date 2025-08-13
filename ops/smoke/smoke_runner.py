@@ -211,14 +211,15 @@ class SmokeTestRunner:
         start = time.time()
         
         try:
-            # Simple search query
+            # Use the correct MCP tool endpoint for retrieval
             payload = {
                 "query": "test query",
-                "limit": 5
+                "limit": 5,
+                "type": "all"
             }
             
             response = requests.post(
-                f"{self.api_url}/search",
+                f"{self.api_url}/tools/retrieve_context",
                 json=payload,
                 timeout=self.timeout
             )

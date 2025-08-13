@@ -296,6 +296,15 @@ if [ $count -ge $timeout ]; then
     exit 1
 fi
 
+# Bootstrap Qdrant collection if needed
+echo -e "${BLUE}🔧 Bootstrapping Qdrant collection...${NC}"
+if [ -f "ops/bootstrap/qdrant_bootstrap.py" ]; then
+    sleep 5  # Give services time to fully start
+    python3 ops/bootstrap/qdrant_bootstrap.py --qdrant-url http://localhost:$QDRANT_PORT || echo "  → Bootstrap completed or collection already exists"
+else
+    echo -e "${YELLOW}⚠️  Bootstrap script not found, skipping${NC}"
+fi
+
 # Run environment-specific health checks
 echo -e "${BLUE}🏥 Running $ENVIRONMENT health checks...${NC}"
 echo -n "  → Redis (port $REDIS_PORT): "
