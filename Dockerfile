@@ -48,9 +48,9 @@ COPY --chown=appuser:appuser schemas/ ./schemas/
 COPY --chown=appuser:appuser contracts/ ./contracts/
 COPY --chown=appuser:appuser .ctxrc.yaml ./.ctxrc.yaml
 
-# Copy monitoring and secrets management if they exist
-COPY --chown=appuser:appuser monitoring/ ./monitoring/ 2>/dev/null || true
-COPY --chown=appuser:appuser secrets/ ./secrets/ 2>/dev/null || true
+# Optional directories - commented out since they don't exist in current structure
+# COPY --chown=appuser:appuser monitoring/ ./monitoring/
+# COPY --chown=appuser:appuser secrets/ ./secrets/
 
 # Create necessary directories
 RUN mkdir -p /app/logs /app/data && \
