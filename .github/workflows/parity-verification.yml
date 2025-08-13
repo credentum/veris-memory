@@ -58,6 +58,10 @@ jobs:
         echo "Checking if collection was created..."
         curl -s http://localhost:6333/collections | python -m json.tool || true
         
+        # Try to get specific collection info
+        echo "Getting collection info..."
+        curl -s http://localhost:6333/collections/context_embeddings | python -m json.tool || true
+        
     - name: Run manifest verifier
       id: verify
       run: |
