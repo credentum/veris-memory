@@ -54,7 +54,12 @@ jobs:
             echo "=================================="
             
             # Export dev environment variables
+            # Use test password for dev if secret is not set (same as docker-compose.test.yml)
             export NEO4J_PASSWORD='${{ secrets.NEO4J_DEV_PASSWORD }}'
+            if [ -z "$NEO4J_PASSWORD" ]; then
+              export NEO4J_PASSWORD='test-password'
+              echo "⚠️ Using test password for Neo4j in dev environment"
+            fi
             export ENVIRONMENT=dev
             
             # Navigate to veris-memory repository
