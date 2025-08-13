@@ -66,6 +66,10 @@ jobs:
         echo "Testing with Python requests..."
         python -c "import requests; r = requests.get('http://localhost:6333/collections/context_embeddings'); print(f'Status: {r.status_code}'); print(r.text[:500] if r.ok else r.text)" || true
         
+        # Test indexes endpoint
+        echo "Testing indexes endpoint..."
+        curl -s http://localhost:6333/collections/context_embeddings/indexes || echo "No indexes endpoint"
+        
     - name: Run manifest verifier
       id: verify
       run: |

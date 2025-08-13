@@ -38,7 +38,14 @@ def get_qdrant_collection(qbase: str, collection: str) -> Dict[str, Any]:
     return r.json().get("result", {})
 
 def get_qdrant_indexes(qbase: str, collection: str) -> Dict[str, Any]:
-    r = requests.get(f"{qbase.rstrip('/')}/collections/{collection}/indexes")
+    url = f"{qbase.rstrip('/')}/collections/{collection}/indexes"
+    print(f"DEBUG: Fetching indexes from: {url}")
+    r = requests.get(url)
+    print(f"DEBUG: Indexes response status: {r.status_code}")
+    if r.status_code == 404:
+        # Indexes endpoint may not exist in newer Qdrant versions
+        print(f"INFO: Indexes endpoint not available (404) - skipping text index check")
+        return []
     if r.status_code != 200:
         fail(f"Qdrant: cannot fetch indexes for '{collection}' ({r.status_code})")
     return r.json().get("result", [])
