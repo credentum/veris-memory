@@ -282,6 +282,21 @@ class QueryGraphRequest(BaseModel):
     timeout: int = Field(5000, ge=1, le=30000)
 
 
+class UpdateScratchpadRequest(BaseModel):
+    """Request model for update_scratchpad tool."""
+    agent_id: str = Field(..., description="Agent identifier")
+    key: str = Field(..., description="Scratchpad key")
+    value: Any = Field(..., description="Value to store")
+    ttl: int = Field(3600, ge=1, le=86400, description="Time to live in seconds")
+
+
+class GetAgentStateRequest(BaseModel):
+    """Request model for get_agent_state tool."""
+    agent_id: str = Field(..., description="Agent identifier")
+    key: Optional[str] = Field(None, description="Specific state key")
+    prefix: str = Field("state", description="State type prefix")
+
+
 @app.on_event("startup")
 async def startup_event() -> None:
     """Initialize storage clients on startup."""
@@ -314,7 +329,7 @@ async def startup_event() -> None:
             qdrant_initializer = VectorDBInitializer()
             if qdrant_initializer.connect():
                 # Get the actual Qdrant client for operations
-                qdrant_client = qdrant_initializer.client
+                qdrant_client = qdrant_initializer
                 print("✅ Qdrant connected successfully")
             else:
                 qdrant_client = None
@@ -760,14 +775,13 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
             logger.info(f"Generated embedding with {len(embedding)} dimensions")
 
             vector_id = qdrant_client.store_vector(
-                collection="context_store",
-                id=context_id,
-                vector=embedding,
-                payload={
+                vector_id=context_id,
+                embedding=embedding,
+                metadata={
                     "content": request.content,
                     "type": request.type,
                     "metadata": request.metadata,
-                },
+                }
             )
 
         # Store in graph database
@@ -901,8 +915,7 @@ async def query_graph(request: QueryGraphRequest) -> Dict[str, Any]:
 
         results = neo4j_client.query(
             request.query,
-            parameters=request.parameters,
-            timeout=request.timeout / 1000,  # Convert to seconds
+            parameters=request.parameters
         )
 
         return {
@@ -914,6 +927,133 @@ async def query_graph(request: QueryGraphRequest) -> Dict[str, Any]:
 
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+@app.post("/tools/update_scratchpad")
+async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[str, Any]:
+    """
+    Update agent scratchpad with transient storage.
+    
+    Provides temporary storage for agent working memory with TTL support.
+    """
+    try:
+        if not kv_store:
+            raise HTTPException(status_code=503, detail="KV store not available")
+        
+        # Create namespaced key
+        redis_key = f"scratchpad:{request.agent_id}:{request.key}"
+        
+        # Store value with TTL
+        import json
+        value_str = json.dumps(request.value) if not isinstance(request.value, str) else request.value
+        success = kv_store.set(redis_key, value_str, ex=request.ttl)
+        
+        if success:
+            return {
+                "success": True,
+                "agent_id": request.agent_id,
+                "key": request.key,
+                "ttl": request.ttl,
+                "message": "Scratchpad updated successfully"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to update scratchpad"
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Scratchpad update error: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Internal error updating scratchpad"
+        }
+
+
+@app.post("/tools/get_agent_state")
+async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, Any]:
+    """
+    Retrieve agent state from storage.
+    
+    Returns agent-specific state data with namespace isolation.
+    """
+    try:
+        if not kv_store:
+            raise HTTPException(status_code=503, detail="KV store not available")
+        
+        # Build key pattern
+        if request.key:
+            redis_key = f"{request.prefix}:{request.agent_id}:{request.key}"
+            value = kv_store.get(redis_key)
+            
+            if value is None:
+                return {
+                    "success": False,
+                    "data": {},
+                    "message": f"No state found for key: {request.key}"
+                }
+            
+            # Parse JSON if possible
+            try:
+                import json
+                data = json.loads(value) if isinstance(value, bytes) else value
+            except:
+                data = value.decode('utf-8') if isinstance(value, bytes) else value
+            
+            return {
+                "success": True,
+                "data": {request.key: data},
+                "agent_id": request.agent_id,
+                "message": "State retrieved successfully"
+            }
+        else:
+            # Get all keys for agent
+            pattern = f"{request.prefix}:{request.agent_id}:*"
+            keys = kv_store.keys(pattern)
+            
+            if not keys:
+                return {
+                    "success": True,
+                    "data": {},
+                    "keys": [],
+                    "agent_id": request.agent_id,
+                    "message": "No state found for agent"
+                }
+            
+            # Retrieve all values
+            data = {}
+            for key in keys:
+                key_str = key.decode('utf-8') if isinstance(key, bytes) else key
+                key_name = key_str.split(':', 2)[-1]  # Extract key name
+                value = kv_store.get(key)
+                
+                try:
+                    import json
+                    data[key_name] = json.loads(value) if isinstance(value, bytes) else value
+                except:
+                    data[key_name] = value.decode('utf-8') if isinstance(value, bytes) else value
+            
+            return {
+                "success": True,
+                "data": data,
+                "keys": list(data.keys()),
+                "agent_id": request.agent_id,
+                "message": f"Retrieved {len(data)} state entries"
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Agent state retrieval error: {e}")
+        return {
+            "success": False,
+            "data": {},
+            "error": str(e),
+            "message": "Internal error retrieving agent state"
+        }
 
 
 @app.get("/tools")
