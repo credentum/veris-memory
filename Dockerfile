@@ -3,37 +3,17 @@
 # where other services (Qdrant, Neo4j, Redis) run as separate containers
 
 # Use pinned SHA256 digest for security (python:3.11-slim as of 2025-01-14)
-FROM python:3.11-slim@sha256:2ec5a4a5c3e919570f57675471f081d6299668d909feabd8d4803c6c61af666c as builder
+FROM python:3.11-slim@sha256:2ec5a4a5c3e919570f57675471f081d6299668d909feabd8d4803c6c61af666c
 
 # Build arguments
 ARG ENVIRONMENT=production
 
-# Set working directory
-WORKDIR /build
-
-# Copy requirements first for better caching
-COPY requirements.txt .
-
-# Install build dependencies
+# Install system dependencies (both build and runtime)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gcc \
         g++ \
         libc6-dev \
-        && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install Python packages
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Final stage
-FROM python:3.11-slim@sha256:2ec5a4a5c3e919570f57675471f081d6299668d909feabd8d4803c6c61af666c
-
-# Install minimal runtime dependencies only
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
         curl \
         netcat-openbsd \
         ca-certificates \
@@ -41,15 +21,25 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Create non-root user
+# Create non-root user early
 RUN useradd -m -u 1000 appuser
 
 # Set working directory
 WORKDIR /app
 
-# Copy Python packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python packages
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Remove build dependencies to keep image smaller (but keep runtime deps)
+RUN apt-get update && \
+    apt-get remove -y gcc g++ libc6-dev && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Copy application code
 COPY --chown=appuser:appuser src/ ./src/
