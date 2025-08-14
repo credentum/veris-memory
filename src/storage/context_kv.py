@@ -94,6 +94,97 @@ class ContextKV(BaseContextKV):
 
         return None
 
+    def set(self, key: str, value: str, ex: Optional[int] = None) -> bool:
+        """Redis-compatible set method for scratchpad operations.
+        
+        Args:
+            key: Redis key
+            value: Value to store
+            ex: TTL in seconds
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if not self.redis or not hasattr(self.redis, 'client'):
+                return False
+                
+            # Use Redis client directly for compatibility
+            if ex:
+                result = self.redis.client.set(key, value, ex=ex)
+            else:
+                result = self.redis.client.set(key, value)
+            return bool(result)
+        except Exception as e:
+            if self.verbose:
+                print(f"KV set error: {e}")
+            return False
+
+    def get(self, key: str) -> Optional[str]:
+        """Redis-compatible get method for scratchpad operations.
+        
+        Args:
+            key: Redis key
+            
+        Returns:
+            str: Retrieved value or None
+        """
+        try:
+            if not self.redis or not hasattr(self.redis, 'client'):
+                return None
+                
+            result = self.redis.client.get(key)
+            if result is None:
+                return None
+            if isinstance(result, bytes):
+                return result.decode('utf-8')
+            return str(result)
+        except Exception as e:
+            if self.verbose:
+                print(f"KV get error: {e}")
+            return None
+
+    def exists(self, key: str) -> bool:
+        """Redis-compatible exists method for scratchpad operations.
+        
+        Args:
+            key: Redis key
+            
+        Returns:
+            bool: True if key exists, False otherwise
+        """
+        try:
+            if not self.redis or not hasattr(self.redis, 'client'):
+                return False
+                
+            result = self.redis.client.exists(key)
+            return bool(result)
+        except Exception as e:
+            if self.verbose:
+                print(f"KV exists error: {e}")
+            return False
+
+    def connect(self, redis_password: Optional[str] = None) -> bool:
+        """Connect to Redis with optional password.
+        
+        Args:
+            redis_password: Optional Redis password
+            
+        Returns:
+            bool: True if connected successfully
+        """
+        try:
+            # Initialize Redis connection if not already done
+            if not self.redis:
+                self.initialize_redis_connection()
+            
+            # The base class should handle connection
+            return self.redis is not None
+        except Exception as e:
+            if self.verbose:
+                print(f"KV connect error: {e}")
+            return False
+
     def delete_context(self, context_id: str) -> bool:
         """Delete context data.
 
