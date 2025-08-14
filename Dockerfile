@@ -2,7 +2,8 @@
 # This is the Python-only container for use with docker-compose
 # where other services (Qdrant, Neo4j, Redis) run as separate containers
 
-FROM python:3.11-slim as builder
+# Use pinned SHA256 digest for security (python:3.11-slim as of 2025-01-14)
+FROM python:3.11-slim@sha256:2ec5a4a5c3e919570f57675471f081d6299668d909feabd8d4803c6c61af666c as builder
 
 # Build arguments
 ARG ENVIRONMENT=production
@@ -24,7 +25,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Final stage
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:2ec5a4a5c3e919570f57675471f081d6299668d909feabd8d4803c6c61af666c
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \

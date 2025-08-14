@@ -1,0 +1,196 @@
+{
+  "schema_version": "1.0",
+  "tool_name": "get_agent_state",
+  "description": "Retrieve agent state with namespace isolation and filtering",
+  "version": "1.0.0",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "agent_id": {
+        "type": "string",
+        "description": "Agent identifier for namespace isolation",
+        "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+        "examples": ["agent-123", "user_456", "bot-assistant"]
+      },
+      "key": {
+        "type": "string",
+        "description": "Specific state key to retrieve (optional for all keys)",
+        "pattern": "^[a-zA-Z0-9_.-]{1,128}$",
+        "examples": ["working_memory", "current_task", "config_data"]
+      },
+      "prefix": {
+        "type": "string",
+        "description": "State type to retrieve",
+        "enum": ["state", "scratchpad", "memory", "config"],
+        "default": "state",
+        "examples": ["state", "scratchpad", "memory", "config"]
+      }
+    },
+    "required": ["agent_id"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation succeeded"
+      },
+      "message": {
+        "type": "string",
+        "description": "Success or error message"
+      },
+      "agent_id": {
+        "type": "string",
+        "description": "The agent identifier used"
+      },
+      "data": {
+        "type": "object",
+        "description": "Retrieved state data",
+        "additionalProperties": true,
+        "examples": [
+          {
+            "working_memory": "Current task analysis",
+            "progress": "50% complete"
+          },
+          {}
+        ]
+      },
+      "keys": {
+        "type": "array",
+        "description": "Available keys when retrieving all keys",
+        "items": {
+          "type": "string"
+        },
+        "examples": [
+          ["working_memory", "progress", "config"],
+          []
+        ]
+      },
+      "error_type": {
+        "type": "string",
+        "description": "Classification of error type if operation failed",
+        "enum": [
+          "rate_limit",
+          "invalid_agent_id",
+          "invalid_key",
+          "invalid_prefix",
+          "namespace_error",
+          "storage_unavailable",
+          "storage_error",
+          "storage_exception",
+          "missing_parameter",
+          "unexpected_error"
+        ]
+      },
+      "error": {
+        "type": "string",
+        "description": "Detailed error information if operation failed"
+      }
+    },
+    "required": ["success", "message", "data"],
+    "additionalProperties": false
+  },
+  "namespace_isolation": {
+    "pattern": "{prefix}:{agent_id}:{key}",
+    "description": "Each agent has isolated namespace preventing cross-agent access",
+    "examples": [
+      "state:agent-123:working_memory",
+      "scratchpad:bot-assistant:current_task",
+      "memory:user-456:preferences"
+    ]
+  },
+  "security_features": [
+    "Namespace isolation prevents cross-agent access",
+    "Agent ID validation ensures proper format",
+    "Prefix validation limits accessible data types",
+    "Rate limiting prevents excessive usage",
+    "Input validation prevents injection attacks",
+    "No secret data exposure through state retrieval"
+  ],
+  "rate_limiting": {
+    "requests_per_minute": 240,
+    "requests_per_hour": 4000
+  },
+  "examples": {
+    "get_specific_key": {
+      "input": {
+        "agent_id": "agent-123",
+        "key": "working_memory",
+        "prefix": "scratchpad"
+      },
+      "expected_output": {
+        "success": true,
+        "message": "State retrieved successfully",
+        "agent_id": "agent-123",
+        "data": {
+          "working_memory": "Analyzing user requirements for login system"
+        }
+      }
+    },
+    "get_all_keys": {
+      "input": {
+        "agent_id": "agent-123",
+        "prefix": "scratchpad"
+      },
+      "expected_output": {
+        "success": true,
+        "message": "Retrieved 3 state entries",
+        "agent_id": "agent-123",
+        "data": {
+          "working_memory": "Current analysis",
+          "progress_log": "Step 1: Complete\nStep 2: In progress",
+          "temp_notes": "User feedback received"
+        },
+        "keys": ["working_memory", "progress_log", "temp_notes"]
+      }
+    },
+    "key_not_found": {
+      "input": {
+        "agent_id": "agent-123",
+        "key": "nonexistent_key",
+        "prefix": "scratchpad"
+      },
+      "expected_output": {
+        "success": false,
+        "message": "No state found for key: nonexistent_key",
+        "agent_id": "agent-123",
+        "data": {}
+      }
+    },
+    "no_data_for_agent": {
+      "input": {
+        "agent_id": "new-agent",
+        "prefix": "scratchpad"
+      },
+      "expected_output": {
+        "success": true,
+        "message": "No state found for agent",
+        "agent_id": "new-agent",
+        "data": {},
+        "keys": []
+      }
+    },
+    "error_storage_unavailable": {
+      "input": {
+        "agent_id": "agent-123",
+        "prefix": "scratchpad"
+      },
+      "expected_output": {
+        "success": false,
+        "message": "Redis connection unavailable",
+        "agent_id": "agent-123",
+        "data": {},
+        "error_type": "storage_unavailable"
+      }
+    }
+  },
+  "implementation_notes": {
+    "storage_backend": "Redis with key pattern matching",
+    "key_format": "{prefix}:{agent_id}:{key}",
+    "data_parsing": "Attempts JSON parsing, falls back to string",
+    "pattern_matching": "Uses Redis KEYS command with namespace patterns",
+    "error_handling": "Returns structured error responses with classification",
+    "empty_results": "Returns success=true with empty data for valid but empty results"
+  }
+}

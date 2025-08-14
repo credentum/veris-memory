@@ -283,7 +283,10 @@ class QueryGraphRequest(BaseModel):
 
 
 class UpdateScratchpadRequest(BaseModel):
-    """Request model for update_scratchpad tool."""
+    """Request model for update_scratchpad tool.
+    
+    Defines the input schema for updating agent scratchpad data.
+    """
     agent_id: str = Field(..., description="Agent identifier", pattern=r"^[a-zA-Z0-9_-]{1,64}$")
     key: str = Field(..., description="Scratchpad key", pattern=r"^[a-zA-Z0-9_.-]{1,128}$")
     content: str = Field(..., description="Content to store in the scratchpad", min_length=1, max_length=100000)
@@ -292,7 +295,10 @@ class UpdateScratchpadRequest(BaseModel):
 
 
 class GetAgentStateRequest(BaseModel):
-    """Request model for get_agent_state tool."""
+    """Request model for get_agent_state tool.
+    
+    Defines the input schema for retrieving agent state data.
+    """
     agent_id: str = Field(..., description="Agent identifier")
     key: Optional[str] = Field(None, description="Specific state key")
     prefix: str = Field("state", description="State type prefix")
@@ -816,6 +822,8 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
             "success": False,
             "id": None,
             "message": f"Failed to store context: {str(e)}",
+            "error_type": "unexpected_error",
+            "error": str(e)
         }
 
 
@@ -895,6 +903,8 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
             "success": False,
             "results": [],
             "message": f"Failed to retrieve context: {str(e)}",
+            "error_type": "unexpected_error",
+            "error": str(e)
         }
 
 
@@ -927,15 +937,26 @@ async def query_graph(request: QueryGraphRequest) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {
+            "success": False,
+            "message": f"Failed to execute graph query: {str(e)}",
+            "error_type": "unexpected_error",
+            "error": str(e)
+        }
 
 
 @app.post("/tools/update_scratchpad")
 async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[str, Any]:
-    """
-    Update agent scratchpad with transient storage.
+    """Update agent scratchpad with transient storage.
     
     Provides temporary storage for agent working memory with TTL support.
+    Supports both overwrite and append modes with namespace isolation.
+    
+    Args:
+        request: UpdateScratchpadRequest containing agent_id, key, content, mode, and ttl
+        
+    Returns:
+        Dict containing success status, message, and operation details
     """
     try:
         if not kv_store:
@@ -1011,10 +1032,16 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
 
 @app.post("/tools/get_agent_state")
 async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, Any]:
-    """
-    Retrieve agent state from storage.
+    """Retrieve agent state from storage.
     
     Returns agent-specific state data with namespace isolation.
+    Supports retrieving specific keys or all keys for an agent.
+    
+    Args:
+        request: GetAgentStateRequest containing agent_id, optional key, and prefix
+        
+    Returns:
+        Dict containing success status, retrieved data, and available keys
     """
     try:
         if not kv_store:
@@ -1119,8 +1146,9 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
         return {
             "success": False,
             "data": {},
-            "error": str(e),
-            "message": "Internal error retrieving agent state"
+            "message": "Internal error retrieving agent state",
+            "error_type": "unexpected_error",
+            "error": str(e)
         }
 
 
