@@ -15,8 +15,19 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from .dashboard import UnifiedDashboard
-from .streaming import MetricsStreamer
+# Import monitoring components with fallback handling
+try:
+    from .dashboard import UnifiedDashboard
+    from .streaming import MetricsStreamer
+except ImportError:
+    # Fallback imports for testing
+    import sys
+    import os
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    from src.monitoring.dashboard import UnifiedDashboard
+    from src.monitoring.streaming import MetricsStreamer
 
 logger = logging.getLogger(__name__)
 

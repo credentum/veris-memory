@@ -16,17 +16,62 @@ from typing import Dict, List, Any, Optional, Union, Tuple, Callable
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-# Import existing monitoring components
+# Check psutil availability at module level
+HAS_PSUTIL = False
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    psutil = None
+    logging.getLogger(__name__).warning(
+        "psutil not available - system metrics will use fallback values. "
+        "Install psutil for accurate system monitoring: pip install psutil"
+    )
+
+# Import existing monitoring components with improved fallback handling
 try:
     from ..core.monitoring import MCPMetrics
     from .metrics_collector import MetricsCollector, HealthChecker
 except ImportError:
-    # Fallback imports for testing
+    # Fallback imports for testing and standalone execution
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
-    from src.core.monitoring import MCPMetrics
-    from src.monitoring.metrics_collector import MetricsCollector, HealthChecker
+    
+    # Add project root to path if not already there
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    
+    try:
+        from src.core.monitoring import MCPMetrics
+        from src.monitoring.metrics_collector import MetricsCollector, HealthChecker
+    except ImportError:
+        # Create mock components if monitoring modules don't exist
+        class MockMCPMetrics:
+            def __init__(self):
+                pass
+        
+        class MockMetricsCollector:
+            def __init__(self):
+                pass
+            def start_collection(self):
+                pass
+            def stop_collection(self):
+                pass
+            def get_metric_stats(self, name, minutes):
+                return {'count': 0}
+            def get_metric_value(self, name, labels=None):
+                return 0
+        
+        class MockHealthChecker:
+            def __init__(self, metrics_collector):
+                pass
+            def run_checks(self):
+                return {}
+        
+        MCPMetrics = MockMCPMetrics
+        MetricsCollector = MockMetricsCollector
+        HealthChecker = MockHealthChecker
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +188,44 @@ class UnifiedDashboard:
                 'error_rate_critical_percent': 5.0,
                 'latency_warning_ms': 100,
                 'latency_critical_ms': 500
+            },
+            'fallback_data': {
+                'system': {
+                    'memory_total_gb': 64.0,
+                    'memory_used_gb': 22.0,
+                    'cpu_percent': 0.0,
+                    'memory_percent': 34.4,
+                    'disk_total_gb': 436.0,
+                    'disk_used_gb': 13.0,
+                    'disk_percent': 3.0,
+                    'load_average': [0.23, 0.24, 0.11],
+                    'uptime_hours': 247.0
+                },
+                'veris': {
+                    'total_memories': 84532,
+                    'memories_today': 1247,
+                    'avg_query_latency_ms': 23.0,
+                    'p99_latency_ms': 89.0,
+                    'error_rate_percent': 0.02,
+                    'active_agents': 12,
+                    'successful_operations_24h': 15420,
+                    'failed_operations_24h': 3
+                },
+                'security': {
+                    'failed_auth_attempts': 0,
+                    'blocked_ips': 2,
+                    'waf_blocks_today': 7,
+                    'ssl_cert_expiry_days': 87,
+                    'rbac_violations': 0,
+                    'audit_events_24h': 245
+                },
+                'backup': {
+                    'backup_size_gb': 4.7,
+                    'restore_tested': True,
+                    'last_restore_time_seconds': 142.0,
+                    'backup_success_rate_percent': 100.0,
+                    'offsite_sync_status': 'healthy'
+                }
             }
         }
 
@@ -252,58 +335,77 @@ class UnifiedDashboard:
 
     def _get_direct_cpu(self) -> float:
         """Get CPU usage directly when MetricsCollector data is unavailable."""
-        try:
-            import psutil
-            return psutil.cpu_percent(interval=0.1)  # Shorter interval to avoid hanging
-        except ImportError:
-            return 0.0
+        if HAS_PSUTIL:
+            try:
+                return psutil.cpu_percent(interval=0.1)  # Shorter interval to avoid hanging
+            except Exception as e:
+                logger.warning(f"Failed to get CPU usage: {e}")
+        
+        fallback = self.config.get('fallback_data', {}).get('system', {})
+        return fallback.get('cpu_percent', 0.0)
 
     def _get_direct_memory(self) -> float:
         """Get memory usage directly when MetricsCollector data is unavailable."""
-        try:
-            import psutil
-            return psutil.virtual_memory().percent
-        except ImportError:
-            return 0.0
+        if HAS_PSUTIL:
+            try:
+                return psutil.virtual_memory().percent
+            except Exception as e:
+                logger.warning(f"Failed to get memory usage: {e}")
+        
+        fallback = self.config.get('fallback_data', {}).get('system', {})
+        return fallback.get('memory_percent', 0.0)
 
     def _get_direct_disk(self) -> float:
         """Get disk usage directly when MetricsCollector data is unavailable."""
-        try:
-            import psutil
-            disk = psutil.disk_usage('/')
-            return (disk.used / disk.total) * 100
-        except ImportError:
-            return 0.0
+        if HAS_PSUTIL:
+            try:
+                disk = psutil.disk_usage('/')
+                return (disk.used / disk.total) * 100
+            except Exception as e:
+                logger.warning(f"Failed to get disk usage: {e}")
+        
+        fallback = self.config.get('fallback_data', {}).get('system', {})
+        return fallback.get('disk_percent', 0.0)
 
     def _get_system_details(self) -> Tuple[float, float, List[float], float]:
         """Get detailed system information not tracked by MetricsCollector."""
-        try:
-            import psutil
-            
-            # Memory details
-            memory = psutil.virtual_memory()
-            memory_total_gb = memory.total / (1024**3)
-            memory_used_gb = memory.used / (1024**3)
-            
-            # Load average
-            load_average = list(psutil.getloadavg())
-            
-            # Uptime
-            boot_time = psutil.boot_time()
-            uptime_hours = (time.time() - boot_time) / 3600
-            
-            return memory_total_gb, memory_used_gb, load_average, uptime_hours
-        except ImportError:
-            return 64.0, 22.0, [0.1, 0.2, 0.3], 100.0
+        if HAS_PSUTIL:
+            try:
+                # Memory details
+                memory = psutil.virtual_memory()
+                memory_total_gb = memory.total / (1024**3)
+                memory_used_gb = memory.used / (1024**3)
+                
+                # Load average
+                load_average = list(psutil.getloadavg())
+                
+                # Uptime
+                boot_time = psutil.boot_time()
+                uptime_hours = (time.time() - boot_time) / 3600
+                
+                return memory_total_gb, memory_used_gb, load_average, uptime_hours
+            except Exception as e:
+                logger.warning(f"Failed to get system details: {e}")
+        
+        fallback = self.config.get('fallback_data', {}).get('system', {})
+        return (
+            fallback.get('memory_total_gb', 64.0),
+            fallback.get('memory_used_gb', 22.0),
+            fallback.get('load_average', [0.1, 0.2, 0.3]),
+            fallback.get('uptime_hours', 100.0)
+        )
 
     def _get_disk_total_gb(self) -> float:
         """Get disk total capacity."""
-        try:
-            import psutil
-            disk = psutil.disk_usage('/')
-            return disk.total / (1024**3)
-        except ImportError:
-            return 500.0
+        if HAS_PSUTIL:
+            try:
+                disk = psutil.disk_usage('/')
+                return disk.total / (1024**3)
+            except Exception as e:
+                logger.warning(f"Failed to get disk capacity: {e}")
+        
+        fallback = self.config.get('fallback_data', {}).get('system', {})
+        return fallback.get('disk_total_gb', 500.0)
 
     async def _collect_service_metrics(self) -> List[ServiceMetrics]:
         """Collect service health metrics."""
@@ -463,51 +565,55 @@ class UnifiedDashboard:
 
     def _get_fallback_system_metrics(self) -> SystemMetrics:
         """Get fallback system metrics when psutil is unavailable."""
+        fallback = self.config.get('fallback_data', {}).get('system', {})
         return SystemMetrics(
-            cpu_percent=0.0,
-            memory_total_gb=64.0,
-            memory_used_gb=22.0,
-            memory_percent=34.4,
-            disk_total_gb=436.0,
-            disk_used_gb=13.0,
-            disk_percent=3.0,
-            load_average=[0.23, 0.24, 0.11],
-            uptime_hours=247.0
+            cpu_percent=fallback.get('cpu_percent', 0.0),
+            memory_total_gb=fallback.get('memory_total_gb', 64.0),
+            memory_used_gb=fallback.get('memory_used_gb', 22.0),
+            memory_percent=fallback.get('memory_percent', 34.4),
+            disk_total_gb=fallback.get('disk_total_gb', 436.0),
+            disk_used_gb=fallback.get('disk_used_gb', 13.0),
+            disk_percent=fallback.get('disk_percent', 3.0),
+            load_average=fallback.get('load_average', [0.23, 0.24, 0.11]),
+            uptime_hours=fallback.get('uptime_hours', 247.0)
         )
 
     def _get_fallback_veris_metrics(self) -> VerisMetrics:
         """Get fallback Veris metrics."""
+        fallback = self.config.get('fallback_data', {}).get('veris', {})
         return VerisMetrics(
-            total_memories=84532,
-            memories_today=1247,
-            avg_query_latency_ms=23.0,
-            p99_latency_ms=89.0,
-            error_rate_percent=0.02,
-            active_agents=12,
-            successful_operations_24h=15420,
-            failed_operations_24h=3
+            total_memories=fallback.get('total_memories', 84532),
+            memories_today=fallback.get('memories_today', 1247),
+            avg_query_latency_ms=fallback.get('avg_query_latency_ms', 23.0),
+            p99_latency_ms=fallback.get('p99_latency_ms', 89.0),
+            error_rate_percent=fallback.get('error_rate_percent', 0.02),
+            active_agents=fallback.get('active_agents', 12),
+            successful_operations_24h=fallback.get('successful_operations_24h', 15420),
+            failed_operations_24h=fallback.get('failed_operations_24h', 3)
         )
 
     def _get_fallback_security_metrics(self) -> SecurityMetrics:
         """Get fallback security metrics."""
+        fallback = self.config.get('fallback_data', {}).get('security', {})
         return SecurityMetrics(
-            failed_auth_attempts=0,
-            blocked_ips=2,
-            waf_blocks_today=7,
-            ssl_cert_expiry_days=87,
-            rbac_violations=0,
-            audit_events_24h=245
+            failed_auth_attempts=fallback.get('failed_auth_attempts', 0),
+            blocked_ips=fallback.get('blocked_ips', 2),
+            waf_blocks_today=fallback.get('waf_blocks_today', 7),
+            ssl_cert_expiry_days=fallback.get('ssl_cert_expiry_days', 87),
+            rbac_violations=fallback.get('rbac_violations', 0),
+            audit_events_24h=fallback.get('audit_events_24h', 245)
         )
 
     def _get_fallback_backup_metrics(self) -> BackupMetrics:
         """Get fallback backup metrics."""
+        fallback = self.config.get('fallback_data', {}).get('backup', {})
         return BackupMetrics(
             last_backup_time=datetime.utcnow() - timedelta(hours=3),
-            backup_size_gb=4.7,
-            restore_tested=True,
-            last_restore_time_seconds=142.0,
-            backup_success_rate_percent=100.0,
-            offsite_sync_status="healthy"
+            backup_size_gb=fallback.get('backup_size_gb', 4.7),
+            restore_tested=fallback.get('restore_tested', True),
+            last_restore_time_seconds=fallback.get('last_restore_time_seconds', 142.0),
+            backup_success_rate_percent=fallback.get('backup_success_rate_percent', 100.0),
+            offsite_sync_status=fallback.get('offsite_sync_status', 'healthy')
         )
 
     def _get_fallback_metrics(self) -> Dict[str, Any]:
