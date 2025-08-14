@@ -814,34 +814,50 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
         # Store in vector database
         vector_id = None
         if qdrant_client:
-            # Create embedding from content using proper embedding service
-            embedding = await _generate_embedding(request.content)
-            logger.info(f"Generated embedding with {len(embedding)} dimensions")
+            try:
+                logger.info("Generating embedding for vector storage...")
+                # Create embedding from content using proper embedding service
+                embedding = await _generate_embedding(request.content)
+                logger.info(f"Generated embedding with {len(embedding)} dimensions")
 
-            vector_id = qdrant_client.store_vector(
-                vector_id=context_id,
-                embedding=embedding,
-                metadata={
-                    "content": request.content,
-                    "type": request.type,
-                    "metadata": request.metadata,
-                }
-            )
+                logger.info("Storing vector in Qdrant...")
+                vector_id = qdrant_client.store_vector(
+                    vector_id=context_id,
+                    embedding=embedding,
+                    metadata={
+                        "content": request.content,
+                        "type": request.type,
+                        "metadata": request.metadata,
+                    }
+                )
+                logger.info(f"Successfully stored vector with ID: {vector_id}")
+            except Exception as vector_error:
+                logger.error(f"Vector storage failed: {vector_error}")
+                # Continue with graph storage even if vector storage fails
+                vector_id = None
 
         # Store in graph database
         graph_id = None
         if neo4j_client:
-            graph_id = neo4j_client.create_node(
-                label="Context",
-                properties={"id": context_id, "type": request.type, **request.content},
-            )
+            try:
+                logger.info("Storing context in Neo4j graph database...")
+                graph_id = neo4j_client.create_node(
+                    label="Context",
+                    properties={"id": context_id, "type": request.type, **request.content},
+                )
+                logger.info(f"Successfully created graph node with ID: {graph_id}")
 
-            # Create relationships if specified
-            if request.relationships:
-                for rel in request.relationships:
-                    neo4j_client.create_relationship(
-                        from_id=graph_id, to_id=rel["target"], rel_type=rel["type"]
-                    )
+                # Create relationships if specified
+                if request.relationships:
+                    for rel in request.relationships:
+                        neo4j_client.create_relationship(
+                            from_id=graph_id, to_id=rel["target"], rel_type=rel["type"]
+                        )
+                    logger.info(f"Created {len(request.relationships)} relationships")
+            except Exception as graph_error:
+                logger.error(f"Graph storage failed: {graph_error}")
+                # Continue even if graph storage fails
+                graph_id = None
 
         return {
             "success": True,
