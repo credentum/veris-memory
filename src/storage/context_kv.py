@@ -106,14 +106,15 @@ class ContextKV(BaseContextKV):
             bool: True if successful, False otherwise
         """
         try:
-            if not self.redis or not hasattr(self.redis, 'client'):
+            # Ensure connection is established
+            if not self.ensure_connected() or not self.redis_client:
                 return False
                 
-            # Use Redis client directly for compatibility
+            # Use Redis client directly for compatibility (matches base class pattern)
             if ex:
-                result = self.redis.client.set(key, value, ex=ex)
+                result = self.redis_client.set(key, value, ex=ex)
             else:
-                result = self.redis.client.set(key, value)
+                result = self.redis_client.set(key, value)
             return bool(result)
         except Exception as e:
             if self.verbose:
@@ -130,10 +131,11 @@ class ContextKV(BaseContextKV):
             str: Retrieved value or None
         """
         try:
-            if not self.redis or not hasattr(self.redis, 'client'):
+            # Ensure connection is established  
+            if not self.ensure_connected() or not self.redis_client:
                 return None
                 
-            result = self.redis.client.get(key)
+            result = self.redis_client.get(key)
             if result is None:
                 return None
             if isinstance(result, bytes):
@@ -154,10 +156,11 @@ class ContextKV(BaseContextKV):
             bool: True if key exists, False otherwise
         """
         try:
-            if not self.redis or not hasattr(self.redis, 'client'):
+            # Ensure connection is established
+            if not self.ensure_connected() or not self.redis_client:
                 return False
                 
-            result = self.redis.client.exists(key)
+            result = self.redis_client.exists(key)
             return bool(result)
         except Exception as e:
             if self.verbose:
@@ -174,12 +177,13 @@ class ContextKV(BaseContextKV):
             bool: True if connected successfully
         """
         try:
-            # Initialize Redis connection if not already done
-            if not self.redis:
-                self.initialize_redis_connection()
-            
-            # The base class should handle connection
-            return self.redis is not None
+            # Use base class connection establishment
+            result = self.ensure_connected()
+            if self.verbose and result:
+                print("✅ ContextKV Redis connection established")
+            elif self.verbose:
+                print("⚠️ ContextKV Redis connection failed")
+            return result and self.redis_client is not None
         except Exception as e:
             if self.verbose:
                 print(f"KV connect error: {e}")
