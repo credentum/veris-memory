@@ -190,23 +190,38 @@ class RestoreDrill:
             # 3. Start Redis service
             # 4. Verify data integrity
             
-            # Simulate restore time
+            # Simulate restore time with potential failure scenarios
             await asyncio.sleep(1)
             
-            # Mock verification
-            verification_details = {
-                'integrity_verified': True,
-                'keys_found': 3,
-                'sample_verification': 'PASS',
-                'verification_method': 'mock'
-            }
+            # Simulate occasional failures for realistic testing
+            if os.environ.get('MOCK_RESTORE_FAILURE') == 'redis':
+                raise Exception("Simulated Redis restore failure")
+            
+            # Mock verification with error handling
+            try:
+                backup_path = Path(backup_file)
+                if not backup_path.exists():
+                    raise FileNotFoundError(f"Backup file not found: {backup_file}")
+                    
+                verification_details = await self._mock_redis_verification(backup_path)
+                restored_size_gb = backup_path.stat().st_size / (1024**3)
+                
+            except (FileNotFoundError, PermissionError, OSError) as e:
+                logger.warning(f"Backup verification failed: {e}")
+                verification_details = {
+                    'integrity_verified': False,
+                    'error': str(e),
+                    'verification_method': 'mock_failed'
+                }
+                restored_size_gb = 0.0
             
             restore_end = datetime.utcnow()
             duration = (restore_end - restore_start).total_seconds()
             
-            # Calculate restored size
-            backup_path = Path(backup_file)
-            restored_size_gb = backup_path.stat().st_size / (1024**3) if backup_path.exists() else 0.0
+            # Check if restore exceeded target time
+            target_exceeded = duration > self.target_restore_time_seconds
+            if target_exceeded:
+                logger.warning(f"⚠️ Redis restore exceeded target time: {duration:.1f}s > {self.target_restore_time_seconds}s")
             
             logger.info(f"✅ Redis restore completed in {duration:.1f}s")
             
@@ -226,7 +241,20 @@ class RestoreDrill:
             restore_end = datetime.utcnow()
             duration = (restore_end - restore_start).total_seconds()
             
-            raise Exception(f"Redis restore failed: {e}")
+            logger.error(f"❌ Redis restore failed after {duration:.1f}s: {e}")
+            
+            return RestoreResult(
+                database_type='redis',
+                backup_file=str(backup_file),
+                restore_start_time=restore_start,
+                restore_end_time=restore_end,
+                restore_duration_seconds=duration,
+                success=False,
+                data_integrity_verified=False,
+                restored_size_gb=0.0,
+                verification_details={'error': str(e)},
+                error_message=str(e)
+            )
 
     async def _restore_qdrant(self, restore_start: datetime) -> RestoreResult:
         """Execute Qdrant snapshot restore drill (mock implementation)."""
@@ -411,14 +439,46 @@ class RestoreDrill:
             'target_compliance': result.restore_duration_seconds <= self.target_restore_time_seconds
         }
 
+    async def _mock_redis_verification(self, backup_path: Path) -> Dict[str, Any]:
+        """Mock Redis verification with realistic error scenarios."""
+        try:
+            # Simulate verification process
+            await asyncio.sleep(0.2)
+            
+            # Check file size for basic validation
+            file_size = backup_path.stat().st_size
+            if file_size < 10:  # Too small to be valid
+                raise ValueError("Backup file appears to be corrupted (too small)")
+            
+            # Simulate random verification failure for testing
+            if os.environ.get('MOCK_VERIFICATION_FAILURE') == 'redis':
+                raise Exception("Simulated verification failure")
+            
+            return {
+                'integrity_verified': True,
+                'keys_found': 3,
+                'sample_verification': 'PASS',
+                'verification_method': 'mock',
+                'backup_size_bytes': file_size
+            }
+            
+        except Exception as e:
+            return {
+                'integrity_verified': False,
+                'error': str(e),
+                'verification_method': 'mock_failed'
+            }
+
     async def _cleanup_restore_artifacts(self):
         """Clean up temporary restore artifacts."""
         try:
             if self.temp_restore_dir.exists():
                 shutil.rmtree(self.temp_restore_dir)
                 logger.info("🧹 Cleaned up restore drill artifacts")
-        except Exception as e:
+        except (PermissionError, OSError) as e:
             logger.warning(f"Failed to clean up restore artifacts: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error during cleanup: {e}")
 
 
 async def main():

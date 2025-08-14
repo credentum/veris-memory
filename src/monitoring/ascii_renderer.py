@@ -10,6 +10,8 @@ Provides beautiful ASCII dashboard rendering with:
 """
 
 import math
+import os
+import sys
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Union
 
@@ -19,14 +21,18 @@ class ASCIIRenderer:
     Renders dashboard metrics in beautiful ASCII format for human operators.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize ASCII renderer with configuration."""
-        self.config = config or {
+        default_config = {
             'width': 80,
             'use_color': True,
             'use_emoji': True,
             'progress_bar_width': 10
         }
+        self.config = config or default_config
+        
+        # Detect terminal capabilities and adjust config
+        self._detect_terminal_capabilities()
         
         # Color codes (if enabled)
         self.colors = {
@@ -40,8 +46,8 @@ class ASCIIRenderer:
             'magenta': '\033[95m'
         } if self.config['use_color'] else {k: '' for k in ['reset', 'bold', 'green', 'yellow', 'red', 'blue', 'cyan', 'magenta']}
 
-        # Emoji indicators (if enabled)
-        self.emojis = {
+        # Define emoji mappings
+        emoji_mappings = {
             'target': '🎯',
             'memory': '💾',
             'disk': '💽',
@@ -65,7 +71,10 @@ class ASCIIRenderer:
             'fire': '🚨',
             'shield': '🛡️',
             'lock': '🔒'
-        } if self.config['use_emoji'] else {k: '' for k in self.emojis}
+        }
+        
+        # Emoji indicators (if enabled)
+        self.emojis = emoji_mappings if self.config['use_emoji'] else {k: '' for k in emoji_mappings}
 
     def render_dashboard(self, metrics: Dict[str, Any], thresholds: Dict[str, Any]) -> str:
         """
@@ -115,6 +124,100 @@ class ASCIIRenderer:
         lines.append(self._render_footer())
         
         return '\n'.join(lines)
+
+    def _detect_terminal_capabilities(self) -> None:
+        """Detect terminal capabilities and adjust configuration accordingly."""
+        try:
+            # Check if we're in a terminal
+            if not sys.stdout.isatty():
+                self.config['use_color'] = False
+                self.config['use_emoji'] = False
+                return
+            
+            # Check for color support
+            if not self._supports_color():
+                self.config['use_color'] = False
+            
+            # Check for emoji support
+            if not self._supports_emoji():
+                self.config['use_emoji'] = False
+                
+            # Adjust width based on terminal size
+            terminal_width = self._get_terminal_width()
+            if terminal_width and terminal_width < self.config['width']:
+                self.config['width'] = max(60, terminal_width - 4)  # Leave some margin
+                
+        except Exception:
+            # Fall back to safe defaults on any detection error
+            self.config['use_color'] = False
+            self.config['use_emoji'] = False
+
+    def _supports_color(self) -> bool:
+        """Check if terminal supports color codes."""
+        try:
+            # Check common environment variables for color support
+            if os.environ.get('NO_COLOR'):
+                return False
+                
+            term = os.environ.get('TERM', '').lower()
+            if any(term.startswith(prefix) for prefix in ['xterm', 'screen', 'tmux', 'rxvt']):
+                return True
+                
+            colorterm = os.environ.get('COLORTERM', '').lower()
+            if colorterm in ['truecolor', '24bit', 'yes']:
+                return True
+                
+            # Check if ANSI color codes work by testing capability
+            if term and 'color' in term:
+                return True
+                
+            return False
+            
+        except Exception:
+            return False
+
+    def _supports_emoji(self) -> bool:
+        """Check if terminal supports emoji display."""
+        try:
+            # Check environment variables and locale
+            lang = os.environ.get('LANG', '').lower()
+            lc_all = os.environ.get('LC_ALL', '').lower()
+            
+            # UTF-8 environments generally support emoji
+            if any('utf' in var for var in [lang, lc_all]):
+                return True
+                
+            # Check terminal emulator
+            term_program = os.environ.get('TERM_PROGRAM', '').lower()
+            if term_program in ['iterm.app', 'hyper', 'vscode', 'terminus']:
+                return True
+                
+            # Windows Terminal and modern terminals
+            wt_session = os.environ.get('WT_SESSION')
+            if wt_session:
+                return True
+                
+            # Conservative fallback - assume emoji not supported
+            return False
+            
+        except Exception:
+            return False
+
+    def _get_terminal_width(self) -> Optional[int]:
+        """Get terminal width if available."""
+        try:
+            # Try to get terminal size
+            import shutil
+            return shutil.get_terminal_size().columns
+        except Exception:
+            try:
+                # Fallback to environment variables
+                columns = os.environ.get('COLUMNS')
+                if columns and columns.isdigit():
+                    return int(columns)
+            except Exception:
+                pass
+            return None
 
     def _render_header(self, title: str) -> str:
         """Render dashboard header with border."""

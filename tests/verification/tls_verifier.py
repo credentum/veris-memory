@@ -173,7 +173,7 @@ class TLSVerifier:
                     )
                     
         except ConnectionRefusedError:
-            logger.warning(f"Connection refused to {service_name} - service may not be running")
+            logger.warning(f"Connection refused to {service_name} at {host}:{port} - service may not be running")
             return TLSTestResult(
                 service_name=service_name,
                 host=host,
@@ -186,8 +186,8 @@ class TLSVerifier:
                 client_cert_required=False,
                 error_message="Connection refused - service not running"
             )
-        except Exception as e:
-            logger.error(f"TLS test failed for {service_name}: {e}")
+        except socket.timeout:
+            logger.warning(f"Connection timeout to {service_name} at {host}:{port}")
             return TLSTestResult(
                 service_name=service_name,
                 host=host,
@@ -198,7 +198,49 @@ class TLSVerifier:
                 cipher_suite=None,
                 protocol_version=None,
                 client_cert_required=False,
-                error_message=str(e)
+                error_message=f"Connection timeout after {self.config['connection_timeout_seconds']}s"
+            )
+        except ssl.SSLError as e:
+            logger.warning(f"SSL error for {service_name} at {host}:{port}: {e}")
+            return TLSTestResult(
+                service_name=service_name,
+                host=host,
+                port=port,
+                tls_enabled=True,  # SSL error means TLS is attempted
+                certificate_valid=False,
+                certificate_expires=None,
+                cipher_suite=None,
+                protocol_version=None,
+                client_cert_required=False,
+                error_message=f"SSL error: {str(e)}"
+            )
+        except socket.gaierror as e:
+            logger.error(f"DNS resolution failed for {service_name} at {host}:{port}: {e}")
+            return TLSTestResult(
+                service_name=service_name,
+                host=host,
+                port=port,
+                tls_enabled=False,
+                certificate_valid=False,
+                certificate_expires=None,
+                cipher_suite=None,
+                protocol_version=None,
+                client_cert_required=False,
+                error_message=f"DNS resolution failed: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"TLS test failed for {service_name} at {host}:{port}: {e}")
+            return TLSTestResult(
+                service_name=service_name,
+                host=host,
+                port=port,
+                tls_enabled=False,
+                certificate_valid=False,
+                certificate_expires=None,
+                cipher_suite=None,
+                protocol_version=None,
+                client_cert_required=False,
+                error_message=f"Unexpected error: {str(e)}"
             )
 
     def _generate_verification_summary(self, start_time: datetime, end_time: datetime, 

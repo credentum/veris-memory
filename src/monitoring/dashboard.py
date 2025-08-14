@@ -12,7 +12,7 @@ import time
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, Tuple, Callable
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -99,7 +99,7 @@ class UnifiedDashboard:
     for comprehensive Veris Memory monitoring.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize unified dashboard with configuration."""
         self.config = config or self._get_default_config()
         self.metrics_collector = MetricsCollector()
@@ -217,31 +217,22 @@ class UnifiedDashboard:
             return self._get_fallback_metrics()
 
     async def _collect_system_metrics(self) -> SystemMetrics:
-        """Collect system-level metrics."""
+        """Collect system-level metrics using existing MetricsCollector."""
         try:
-            import psutil
+            # Get metrics from the existing MetricsCollector time series
+            cpu_stats = self.metrics_collector.get_metric_stats("system_cpu", 1)
+            memory_stats = self.metrics_collector.get_metric_stats("system_memory", 1) 
+            disk_stats = self.metrics_collector.get_metric_stats("system_disk", 1)
             
-            # CPU metrics
-            cpu_percent = psutil.cpu_percent(interval=1)
+            # Use collected metrics if available, fallback to direct collection
+            cpu_percent = cpu_stats.get("avg", 0) if cpu_stats.get("count", 0) > 0 else self._get_direct_cpu()
+            memory_percent = memory_stats.get("avg", 0) if memory_stats.get("count", 0) > 0 else self._get_direct_memory()
+            disk_percent = disk_stats.get("avg", 0) if disk_stats.get("count", 0) > 0 else self._get_direct_disk()
             
-            # Memory metrics
-            memory = psutil.virtual_memory()
-            memory_total_gb = memory.total / (1024**3)
-            memory_used_gb = memory.used / (1024**3)
-            memory_percent = memory.percent
-            
-            # Disk metrics
-            disk = psutil.disk_usage('/')
-            disk_total_gb = disk.total / (1024**3)
-            disk_used_gb = disk.used / (1024**3)
-            disk_percent = (disk.used / disk.total) * 100
-            
-            # Load average
-            load_average = list(psutil.getloadavg())
-            
-            # Uptime
-            boot_time = psutil.boot_time()
-            uptime_hours = (time.time() - boot_time) / 3600
+            # Get additional system details that MetricsCollector doesn't track
+            memory_total_gb, memory_used_gb, load_average, uptime_hours = self._get_system_details()
+            disk_total_gb = self._get_disk_total_gb()
+            disk_used_gb = (disk_total_gb * disk_percent) / 100
 
             return SystemMetrics(
                 cpu_percent=round(cpu_percent, 1),
@@ -255,9 +246,64 @@ class UnifiedDashboard:
                 uptime_hours=round(uptime_hours, 1)
             )
 
-        except ImportError:
-            logger.warning("psutil not available, using fallback system metrics")
+        except Exception as e:
+            logger.warning(f"Error collecting system metrics from MetricsCollector: {e}")
             return self._get_fallback_system_metrics()
+
+    def _get_direct_cpu(self) -> float:
+        """Get CPU usage directly when MetricsCollector data is unavailable."""
+        try:
+            import psutil
+            return psutil.cpu_percent(interval=0.1)  # Shorter interval to avoid hanging
+        except ImportError:
+            return 0.0
+
+    def _get_direct_memory(self) -> float:
+        """Get memory usage directly when MetricsCollector data is unavailable."""
+        try:
+            import psutil
+            return psutil.virtual_memory().percent
+        except ImportError:
+            return 0.0
+
+    def _get_direct_disk(self) -> float:
+        """Get disk usage directly when MetricsCollector data is unavailable."""
+        try:
+            import psutil
+            disk = psutil.disk_usage('/')
+            return (disk.used / disk.total) * 100
+        except ImportError:
+            return 0.0
+
+    def _get_system_details(self) -> Tuple[float, float, List[float], float]:
+        """Get detailed system information not tracked by MetricsCollector."""
+        try:
+            import psutil
+            
+            # Memory details
+            memory = psutil.virtual_memory()
+            memory_total_gb = memory.total / (1024**3)
+            memory_used_gb = memory.used / (1024**3)
+            
+            # Load average
+            load_average = list(psutil.getloadavg())
+            
+            # Uptime
+            boot_time = psutil.boot_time()
+            uptime_hours = (time.time() - boot_time) / 3600
+            
+            return memory_total_gb, memory_used_gb, load_average, uptime_hours
+        except ImportError:
+            return 64.0, 22.0, [0.1, 0.2, 0.3], 100.0
+
+    def _get_disk_total_gb(self) -> float:
+        """Get disk total capacity."""
+        try:
+            import psutil
+            disk = psutil.disk_usage('/')
+            return disk.total / (1024**3)
+        except ImportError:
+            return 500.0
 
     async def _collect_service_metrics(self) -> List[ServiceMetrics]:
         """Collect service health metrics."""
@@ -475,7 +521,7 @@ class UnifiedDashboard:
             'backups': asdict(self._get_fallback_backup_metrics())
         }
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Clean shutdown of dashboard components."""
         self.metrics_collector.stop_collection()
         logger.info("UnifiedDashboard shutdown complete")
