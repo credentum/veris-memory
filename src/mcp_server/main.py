@@ -17,6 +17,32 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# Import secure error handling and MCP validation
+try:
+    from ..core.error_handler import (
+        create_error_response, 
+        handle_storage_error, 
+        handle_validation_error, 
+        handle_generic_error
+    )
+    from ..core.mcp_validation import (
+        validate_mcp_request,
+        validate_mcp_response,
+        get_mcp_validator
+    )
+except ImportError:
+    from core.error_handler import (
+        create_error_response, 
+        handle_storage_error, 
+        handle_validation_error, 
+        handle_generic_error
+    )
+    from core.mcp_validation import (
+        validate_mcp_request,
+        validate_mcp_response,
+        get_mcp_validator
+    )
+
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -306,8 +332,19 @@ class GetAgentStateRequest(BaseModel):
 
 @app.on_event("startup")
 async def startup_event() -> None:
-    """Initialize storage clients on startup."""
+    """Initialize storage clients and MCP validation on startup."""
     global neo4j_client, qdrant_client, kv_store
+    
+    # Initialize MCP contract validator
+    try:
+        validator = get_mcp_validator()
+        summary = validator.get_validation_summary()
+        print(f"✅ MCP Contract Validation initialized: {summary['contracts_loaded']} contracts loaded")
+        print(f"📋 Available MCP tools: {', '.join(summary['available_tools'])}")
+    except Exception as e:
+        print(f"⚠️ MCP validation initialization warning: {e}")
+        logger.warning(f"MCP validation setup warning: {e}")
+    
 
     # Validate configuration
     config_result = validate_all_configs()
@@ -818,13 +855,7 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
         import traceback
 
         print(f"Error storing context: {traceback.format_exc()}")
-        return {
-            "success": False,
-            "id": None,
-            "message": f"Failed to store context: {str(e)}",
-            "error_type": "unexpected_error",
-            "error": str(e)
-        }
+        return handle_generic_error(e, "store context")
 
 
 @app.post("/tools/retrieve_context")
@@ -899,13 +930,9 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
         import traceback
 
         print(f"Error retrieving context: {traceback.format_exc()}")
-        return {
-            "success": False,
-            "results": [],
-            "message": f"Failed to retrieve context: {str(e)}",
-            "error_type": "unexpected_error",
-            "error": str(e)
-        }
+        error_response = handle_generic_error(e, "retrieve context")
+        error_response["results"] = []
+        return error_response
 
 
 @app.post("/tools/query_graph")
@@ -937,12 +964,7 @@ async def query_graph(request: QueryGraphRequest) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "message": f"Failed to execute graph query: {str(e)}",
-            "error_type": "unexpected_error",
-            "error": str(e)
-        }
+        return handle_generic_error(e, "execute graph query")
 
 
 @app.post("/tools/update_scratchpad")
@@ -958,6 +980,13 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
     Returns:
         Dict containing success status, message, and operation details
     """
+    # Validate request against MCP contract
+    request_data = request.model_dump()
+    validation_errors = validate_mcp_request("update_scratchpad", request_data)
+    if validation_errors:
+        logger.warning(f"MCP contract validation failed: {validation_errors}")
+        # Continue processing - validation is for compliance monitoring
+    
     try:
         if not kv_store:
             raise HTTPException(status_code=503, detail="KV store not available")
@@ -977,30 +1006,8 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
             content_str = request.content
         try:
             success = kv_store.set(redis_key, content_str, ex=request.ttl)
-        except ConnectionError as e:
-            logger.error(f"Redis connection error: {e}")
-            return {
-                "success": False,
-                "error_type": "storage_unavailable",
-                "message": "Redis connection unavailable",
-                "error": str(e)
-            }
-        except TimeoutError as e:
-            logger.error(f"Redis timeout error: {e}")
-            return {
-                "success": False,
-                "error_type": "storage_error",
-                "message": "Redis operation timeout",
-                "error": str(e)
-            }
-        except Exception as redis_error:
-            logger.error(f"Redis operation error: {redis_error}")
-            return {
-                "success": False,
-                "error_type": "storage_exception",
-                "message": "Redis operation failed",
-                "error": str(redis_error)
-            }
+        except (ConnectionError, TimeoutError, Exception) as e:
+            return handle_storage_error(e, "update scratchpad")
         
         if success:
             return {
@@ -1021,13 +1028,7 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Scratchpad update error: {e}")
-        return {
-            "success": False,
-            "error_type": "unexpected_error",
-            "error": str(e),
-            "message": "Internal error updating scratchpad"
-        }
+        return handle_generic_error(e, "update scratchpad")
 
 
 @app.post("/tools/get_agent_state")
@@ -1043,6 +1044,13 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
     Returns:
         Dict containing success status, retrieved data, and available keys
     """
+    # Validate request against MCP contract
+    request_data = request.model_dump()
+    validation_errors = validate_mcp_request("get_agent_state", request_data)
+    if validation_errors:
+        logger.warning(f"MCP contract validation failed: {validation_errors}")
+        # Continue processing - validation is for compliance monitoring
+    
     try:
         if not kv_store:
             raise HTTPException(status_code=503, detail="KV store not available")
@@ -1052,22 +1060,10 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
             redis_key = f"{request.prefix}:{request.agent_id}:{request.key}"
             try:
                 value = kv_store.get(redis_key)
-            except ConnectionError as e:
-                logger.error(f"Redis connection error: {e}")
-                return {
-                    "success": False,
-                    "data": {},
-                    "error_type": "storage_unavailable",
-                    "message": "Redis connection unavailable"
-                }
-            except Exception as redis_error:
-                logger.error(f"Redis operation error: {redis_error}")
-                return {
-                    "success": False,
-                    "data": {},
-                    "error_type": "storage_exception",
-                    "message": "Redis operation failed"
-                }
+            except (ConnectionError, Exception) as e:
+                error_response = handle_storage_error(e, "get agent state")
+                error_response["data"] = {}
+                return error_response
             
             if value is None:
                 return {
@@ -1093,22 +1089,10 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
             pattern = f"{request.prefix}:{request.agent_id}:*"
             try:
                 keys = kv_store.keys(pattern)
-            except ConnectionError as e:
-                logger.error(f"Redis connection error: {e}")
-                return {
-                    "success": False,
-                    "data": {},
-                    "error_type": "storage_unavailable",
-                    "message": "Redis connection unavailable"
-                }
-            except Exception as redis_error:
-                logger.error(f"Redis operation error: {redis_error}")
-                return {
-                    "success": False,
-                    "data": {},
-                    "error_type": "storage_exception",
-                    "message": "Redis operation failed"
-                }
+            except (ConnectionError, Exception) as e:
+                error_response = handle_storage_error(e, "get agent state")
+                error_response["data"] = {}
+                return error_response
             
             if not keys:
                 return {
@@ -1142,14 +1126,9 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Agent state retrieval error: {e}")
-        return {
-            "success": False,
-            "data": {},
-            "message": "Internal error retrieving agent state",
-            "error_type": "unexpected_error",
-            "error": str(e)
-        }
+        error_response = handle_generic_error(e, "retrieve agent state")
+        error_response["data"] = {}
+        return error_response
 
 
 @app.get("/tools")
