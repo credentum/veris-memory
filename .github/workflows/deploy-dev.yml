@@ -4,7 +4,14 @@ on:
   push:
     branches: [main]
     paths:
+      - 'src/**'
       - 'context-store/**'
+      - 'schemas/**'
+      - 'contracts/**'
+      - 'requirements.txt'
+      - 'Dockerfile'
+      - 'docker-compose*.yml'
+      - '.env*'
       - '.github/workflows/deploy-dev.yml'
   workflow_dispatch:
     inputs:
@@ -348,7 +355,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOF'
             echo "🔍 Verifying DEV deployment..."
-            cd /opt/veris-memory/context-store
+            cd /opt/veris-memory
             
             # Show dev containers
             echo "Dev containers running:"
