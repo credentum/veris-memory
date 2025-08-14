@@ -284,10 +284,11 @@ class QueryGraphRequest(BaseModel):
 
 class UpdateScratchpadRequest(BaseModel):
     """Request model for update_scratchpad tool."""
-    agent_id: str = Field(..., description="Agent identifier")
-    key: str = Field(..., description="Scratchpad key")
-    value: Any = Field(..., description="Value to store")
-    ttl: int = Field(3600, ge=1, le=86400, description="Time to live in seconds")
+    agent_id: str = Field(..., description="Agent identifier", pattern=r"^[a-zA-Z0-9_-]{1,64}$")
+    key: str = Field(..., description="Scratchpad key", pattern=r"^[a-zA-Z0-9_.-]{1,128}$")
+    content: str = Field(..., description="Content to store in the scratchpad", min_length=1, max_length=100000)
+    mode: str = Field("overwrite", description="Update mode for the content", pattern=r"^(overwrite|append)$")
+    ttl: int = Field(3600, ge=60, le=86400, description="Time to live in seconds")
 
 
 class GetAgentStateRequest(BaseModel):
@@ -943,22 +944,56 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
         # Create namespaced key
         redis_key = f"scratchpad:{request.agent_id}:{request.key}"
         
-        # Store value with TTL
-        import json
-        value_str = json.dumps(request.value) if not isinstance(request.value, str) else request.value
-        success = kv_store.set(redis_key, value_str, ex=request.ttl)
+        # Store value with TTL based on mode
+        if request.mode == "append" and kv_store.exists(redis_key):
+            # Append mode: get existing content and append
+            existing_content = kv_store.get(redis_key) or ""
+            if isinstance(existing_content, bytes):
+                existing_content = existing_content.decode('utf-8')
+            content_str = f"{existing_content}\n{request.content}"
+        else:
+            # Overwrite mode or no existing content
+            content_str = request.content
+        try:
+            success = kv_store.set(redis_key, content_str, ex=request.ttl)
+        except ConnectionError as e:
+            logger.error(f"Redis connection error: {e}")
+            return {
+                "success": False,
+                "error_type": "storage_unavailable",
+                "message": "Redis connection unavailable",
+                "error": str(e)
+            }
+        except TimeoutError as e:
+            logger.error(f"Redis timeout error: {e}")
+            return {
+                "success": False,
+                "error_type": "storage_error",
+                "message": "Redis operation timeout",
+                "error": str(e)
+            }
+        except Exception as redis_error:
+            logger.error(f"Redis operation error: {redis_error}")
+            return {
+                "success": False,
+                "error_type": "storage_exception",
+                "message": "Redis operation failed",
+                "error": str(redis_error)
+            }
         
         if success:
             return {
                 "success": True,
                 "agent_id": request.agent_id,
-                "key": request.key,
+                "key": redis_key,
                 "ttl": request.ttl,
-                "message": "Scratchpad updated successfully"
+                "content_size": len(content_str),
+                "message": f"Scratchpad updated successfully (mode: {request.mode})"
             }
         else:
             return {
                 "success": False,
+                "error_type": "storage_error",
                 "message": "Failed to update scratchpad"
             }
             
@@ -968,6 +1003,7 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
         logger.error(f"Scratchpad update error: {e}")
         return {
             "success": False,
+            "error_type": "unexpected_error",
             "error": str(e),
             "message": "Internal error updating scratchpad"
         }
@@ -987,7 +1023,24 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
         # Build key pattern
         if request.key:
             redis_key = f"{request.prefix}:{request.agent_id}:{request.key}"
-            value = kv_store.get(redis_key)
+            try:
+                value = kv_store.get(redis_key)
+            except ConnectionError as e:
+                logger.error(f"Redis connection error: {e}")
+                return {
+                    "success": False,
+                    "data": {},
+                    "error_type": "storage_unavailable",
+                    "message": "Redis connection unavailable"
+                }
+            except Exception as redis_error:
+                logger.error(f"Redis operation error: {redis_error}")
+                return {
+                    "success": False,
+                    "data": {},
+                    "error_type": "storage_exception",
+                    "message": "Redis operation failed"
+                }
             
             if value is None:
                 return {
@@ -998,9 +1051,8 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
             
             # Parse JSON if possible
             try:
-                import json
                 data = json.loads(value) if isinstance(value, bytes) else value
-            except:
+            except json.JSONDecodeError:
                 data = value.decode('utf-8') if isinstance(value, bytes) else value
             
             return {
@@ -1012,7 +1064,24 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
         else:
             # Get all keys for agent
             pattern = f"{request.prefix}:{request.agent_id}:*"
-            keys = kv_store.keys(pattern)
+            try:
+                keys = kv_store.keys(pattern)
+            except ConnectionError as e:
+                logger.error(f"Redis connection error: {e}")
+                return {
+                    "success": False,
+                    "data": {},
+                    "error_type": "storage_unavailable",
+                    "message": "Redis connection unavailable"
+                }
+            except Exception as redis_error:
+                logger.error(f"Redis operation error: {redis_error}")
+                return {
+                    "success": False,
+                    "data": {},
+                    "error_type": "storage_exception",
+                    "message": "Redis operation failed"
+                }
             
             if not keys:
                 return {
@@ -1031,9 +1100,8 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
                 value = kv_store.get(key)
                 
                 try:
-                    import json
                     data[key_name] = json.loads(value) if isinstance(value, bytes) else value
-                except:
+                except json.JSONDecodeError:
                     data[key_name] = value.decode('utf-8') if isinstance(value, bytes) else value
             
             return {
