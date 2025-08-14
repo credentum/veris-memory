@@ -8,30 +8,38 @@ FROM python:3.11-slim@sha256:2ec5a4a5c3e919570f57675471f081d6299668d909feabd8d48
 # Build arguments
 ARG ENVIRONMENT=production
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
-
 # Set working directory
 WORKDIR /build
 
-# Copy requirements
+# Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        libc6-dev \
+        && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Python packages
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Final stage
 FROM python:3.11-slim@sha256:2ec5a4a5c3e919570f57675471f081d6299668d909feabd8d4803c6c61af666c
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    netcat-openbsd \
-    && rm -rf /var/lib/apt/lists/*
+# Install minimal runtime dependencies only
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        netcat-openbsd \
+        ca-certificates \
+        && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser
@@ -61,8 +69,10 @@ RUN mkdir -p /app/logs /app/data && \
 # Environment variables (will be overridden by docker-compose)
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONHASHSEED=random
 ENV MCP_SERVER_PORT=8000
 ENV LOG_LEVEL=info
+ENV ENVIRONMENT=production
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
