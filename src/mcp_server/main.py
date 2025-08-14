@@ -856,7 +856,7 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
         # Generate unique ID
         import uuid
 
-        context_id = f"ctx_{uuid.uuid4().hex[:12]}"
+        context_id = str(uuid.uuid4())
 
         # Store in vector database
         vector_id = None
@@ -889,7 +889,7 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
             try:
                 logger.info("Storing context in Neo4j graph database...")
                 graph_id = neo4j_client.create_node(
-                    label="Context",
+                    labels=["Context"],
                     properties={"id": context_id, "type": request.type, **request.content},
                 )
                 logger.info(f"Successfully created graph node with ID: {graph_id}")
@@ -948,7 +948,6 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                 collection_name = os.getenv("QDRANT_COLLECTION", "context_store")
 
                 vector_results = qdrant_client.search(
-                    collection_name=collection_name,
                     query_vector=query_vector,
                     limit=request.limit,
                 )
