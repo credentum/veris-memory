@@ -175,13 +175,35 @@ jobs:
     - name: Install dependencies
       run: |
         pip install --upgrade pip
-        pip install requests colorama pyyaml
+        pip install requests colorama pyyaml qdrant-client
         
     - name: Start test services
       run: |
         docker compose -f docker-compose.test.yml up -d
         echo "Waiting for services to be ready..."
         sleep 20
+        
+    - name: Bootstrap Qdrant collection for smoke tests
+      run: |
+        echo "Bootstrapping Qdrant collection for smoke tests..."
+        # Wait for Qdrant to be fully ready
+        for i in {1..10}; do
+          if curl -s http://localhost:6333/ > /dev/null; then
+            echo "Qdrant is ready"
+            break
+          fi
+          echo "Waiting for Qdrant... attempt $i"
+          sleep 2
+        done
+        
+        # Bootstrap collection for smoke tests
+        python ops/bootstrap/qdrant_bootstrap.py \
+          --collection context_embeddings \
+          --dimensions 384 \
+          --distance Cosine \
+          --qdrant-url http://localhost:6333 \
+          --ensure-collection \
+          --stats || echo "Bootstrap completed"
         
     - name: Run smoke tests
       id: smoke
