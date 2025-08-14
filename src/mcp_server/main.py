@@ -1021,8 +1021,22 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
             # Overwrite mode or no existing content
             content_str = request.content
         try:
+            # ENHANCED DEBUG LOGGING
+            print(f"🔍 MAIN: About to call kv_store.set()")
+            print(f"🔍 MAIN: redis_key='{redis_key}'")
+            print(f"🔍 MAIN: content_str='{content_str[:50]}...' (len={len(content_str)})")
+            print(f"🔍 MAIN: ttl={request.ttl}")
+            print(f"🔍 MAIN: kv_store object: {kv_store}")
+            print(f"🔍 MAIN: kv_store type: {type(kv_store)}")
+            
             success = kv_store.set(redis_key, content_str, ex=request.ttl)
+            
+            print(f"🔍 MAIN: kv_store.set() returned: {success} (type: {type(success)})")
+            
         except (ConnectionError, TimeoutError, Exception) as e:
+            print(f"❌ MAIN: EXCEPTION caught: {type(e).__name__}: {e}")
+            import traceback
+            print(f"❌ MAIN: Full exception traceback:\n{traceback.format_exc()}")
             return handle_storage_error(e, "update scratchpad")
         
         if success:
