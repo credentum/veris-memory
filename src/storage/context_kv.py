@@ -105,20 +105,41 @@ class ContextKV(BaseContextKV):
         Returns:
             bool: True if successful, False otherwise
         """
+        # ENHANCED DEBUG LOGGING
+        print(f"🔍 ContextKV.set() called with key='{key}', value='{value[:50]}...', ex={ex}")
+        
         try:
-            # Ensure connection is established
-            if not self.ensure_connected() or not self.redis_client:
+            # Check connection state
+            print(f"🔍 Checking connection... ensure_connected()...")
+            connection_ok = self.ensure_connected()
+            print(f"🔍 ensure_connected() returned: {connection_ok}")
+            
+            print(f"🔍 Checking self.redis_client: {self.redis_client}")
+            print(f"🔍 redis_client type: {type(self.redis_client)}")
+            
+            if not connection_ok or not self.redis_client:
+                print("❌ Connection failed or redis_client is None")
                 return False
                 
+            # Test Redis client methods exist
+            print(f"🔍 Redis client has 'set' method: {hasattr(self.redis_client, 'set')}")
+            
             # Use Redis client directly for compatibility (matches base class pattern)
+            print(f"🔍 Calling redis_client.set('{key}', '{value}', ex={ex})...")
             if ex:
                 result = self.redis_client.set(key, value, ex=ex)
             else:
                 result = self.redis_client.set(key, value)
-            return bool(result)
+                
+            print(f"🔍 Redis set result: {result} (type: {type(result)})")
+            final_result = bool(result)
+            print(f"🔍 Final return value: {final_result}")
+            return final_result
+            
         except Exception as e:
-            if self.verbose:
-                print(f"KV set error: {e}")
+            print(f"❌ EXCEPTION in ContextKV.set(): {type(e).__name__}: {e}")
+            import traceback
+            print(f"❌ Full traceback:\n{traceback.format_exc()}")
             return False
 
     def get(self, key: str) -> Optional[str]:
