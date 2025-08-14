@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0",
+  "tool_name": "update_scratchpad",
+  "description": "Update agent scratchpad with transient storage and TTL support",
+  "version": "1.0.0",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "agent_id": {
+        "type": "string",
+        "description": "Agent identifier for namespace isolation",
+        "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+        "examples": ["agent-123", "user_456", "bot-assistant"]
+      },
+      "key": {
+        "type": "string",
+        "description": "Scratchpad data key (not secret)",
+        "pattern": "^[a-zA-Z0-9_.-]{1,128}$",
+        "examples": ["working_memory", "current_task", "temp_data"]
+      },
+      "content": {
+        "type": "string",
+        "description": "Content to store in the scratchpad",
+        "minLength": 1,
+        "maxLength": 100000,
+        "examples": [
+          "Current task: analyze user requirements",
+          "Progress: completed step 1 of 5"
+        ]
+      },
+      "mode": {
+        "type": "string",
+        "description": "Update mode for the content",
+        "enum": ["overwrite", "append"],
+        "default": "overwrite",
+        "examples": ["overwrite", "append"]
+      },
+      "ttl": {
+        "type": "integer",
+        "description": "Time to live in seconds (auto-expiration)",
+        "minimum": 60,
+        "maximum": 86400,
+        "default": 3600,
+        "examples": [3600, 7200, 86400]
+      }
+    },
+    "required": ["agent_id", "key", "content"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation succeeded"
+      },
+      "message": {
+        "type": "string",
+        "description": "Success or error message"
+      },
+      "agent_id": {
+        "type": "string",
+        "description": "The agent identifier used"
+      },
+      "key": {
+        "type": "string",
+        "description": "The namespaced key used for storage"
+      },
+      "ttl": {
+        "type": "integer",
+        "description": "TTL applied in seconds"
+      },
+      "content_size": {
+        "type": "integer",
+        "description": "Size of stored content in bytes"
+      },
+      "error_type": {
+        "type": "string",
+        "description": "Classification of error type if operation failed",
+        "enum": [
+          "rate_limit",
+          "invalid_agent_id",
+          "invalid_key",
+          "invalid_content_type",
+          "content_too_large",
+          "invalid_ttl",
+          "invalid_mode",
+          "namespace_error",
+          "storage_unavailable",
+          "storage_error",
+          "storage_exception",
+          "missing_parameter",
+          "unexpected_error"
+        ]
+      },
+      "error": {
+        "type": "string",
+        "description": "Detailed error information if operation failed"
+      }
+    },
+    "required": ["success", "message"],
+    "additionalProperties": false
+  },
+  "namespace_isolation": {
+    "pattern": "scratchpad:{agent_id}:{key}",
+    "description": "Each agent has isolated namespace preventing cross-agent access",
+    "examples": [
+      "scratchpad:agent-123:working_memory",
+      "scratchpad:bot-assistant:current_task"
+    ]
+  },
+  "security_features": [
+    "Namespace isolation prevents cross-agent access",
+    "Agent ID validation ensures proper format",
+    "Content size limits prevent resource abuse",
+    "TTL ensures automatic cleanup of temporary data",
+    "Rate limiting prevents excessive usage",
+    "Input validation prevents injection attacks"
+  ],
+  "rate_limiting": {
+    "requests_per_minute": 120,
+    "requests_per_hour": 2000
+  },
+  "examples": {
+    "basic_usage": {
+      "input": {
+        "agent_id": "agent-123",
+        "key": "working_memory",
+        "content": "Analyzing user requirements for login system",
+        "ttl": 3600
+      },
+      "expected_output": {
+        "success": true,
+        "message": "Scratchpad updated successfully (mode: overwrite)",
+        "agent_id": "agent-123",
+        "key": "scratchpad:agent-123:working_memory",
+        "ttl": 3600,
+        "content_size": 45
+      }
+    },
+    "append_mode": {
+      "input": {
+        "agent_id": "agent-123",
+        "key": "progress_log",
+        "content": "Step 2: Completed validation",
+        "mode": "append",
+        "ttl": 7200
+      },
+      "expected_output": {
+        "success": true,
+        "message": "Scratchpad updated successfully (mode: append)",
+        "agent_id": "agent-123",
+        "key": "scratchpad:agent-123:progress_log",
+        "ttl": 7200,
+        "content_size": 78
+      }
+    },
+    "error_invalid_agent_id": {
+      "input": {
+        "agent_id": "invalid agent id",
+        "key": "test_data_key",
+        "content": "test"
+      },
+      "expected_output": {
+        "success": false,
+        "message": "Invalid agent ID format: invalid agent id",
+        "error_type": "invalid_agent_id"
+      }
+    },
+    "error_storage_unavailable": {
+      "input": {
+        "agent_id": "agent-123",
+        "key": "test_key",
+        "content": "test content"
+      },
+      "expected_output": {
+        "success": false,
+        "message": "Redis connection unavailable",
+        "error_type": "storage_unavailable",
+        "error": "Connection refused"
+      }
+    }
+  },
+  "implementation_notes": {
+    "storage_backend": "Redis with TTL support",
+    "key_format": "scratchpad:{agent_id}:{key}",
+    "append_behavior": "Appends content with newline separator when mode=append",
+    "overwrite_behavior": "Completely replaces existing content when mode=overwrite",
+    "error_handling": "Returns structured error responses with classification"
+  }
+}

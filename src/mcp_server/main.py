@@ -17,6 +17,32 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# Import secure error handling and MCP validation
+try:
+    from ..core.error_handler import (
+        create_error_response, 
+        handle_storage_error, 
+        handle_validation_error, 
+        handle_generic_error
+    )
+    from ..core.mcp_validation import (
+        validate_mcp_request,
+        validate_mcp_response,
+        get_mcp_validator
+    )
+except ImportError:
+    from core.error_handler import (
+        create_error_response, 
+        handle_storage_error, 
+        handle_validation_error, 
+        handle_generic_error
+    )
+    from core.mcp_validation import (
+        validate_mcp_request,
+        validate_mcp_response,
+        get_mcp_validator
+    )
+
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -282,10 +308,43 @@ class QueryGraphRequest(BaseModel):
     timeout: int = Field(5000, ge=1, le=30000)
 
 
+class UpdateScratchpadRequest(BaseModel):
+    """Request model for update_scratchpad tool.
+    
+    Defines the input schema for updating agent scratchpad data.
+    """
+    agent_id: str = Field(..., description="Agent identifier", pattern=r"^[a-zA-Z0-9_-]{1,64}$")
+    key: str = Field(..., description="Scratchpad key", pattern=r"^[a-zA-Z0-9_.-]{1,128}$")
+    content: str = Field(..., description="Content to store in the scratchpad", min_length=1, max_length=100000)
+    mode: str = Field("overwrite", description="Update mode for the content", pattern=r"^(overwrite|append)$")
+    ttl: int = Field(3600, ge=60, le=86400, description="Time to live in seconds")
+
+
+class GetAgentStateRequest(BaseModel):
+    """Request model for get_agent_state tool.
+    
+    Defines the input schema for retrieving agent state data.
+    """
+    agent_id: str = Field(..., description="Agent identifier")
+    key: Optional[str] = Field(None, description="Specific state key")
+    prefix: str = Field("state", description="State type prefix")
+
+
 @app.on_event("startup")
 async def startup_event() -> None:
-    """Initialize storage clients on startup."""
+    """Initialize storage clients and MCP validation on startup."""
     global neo4j_client, qdrant_client, kv_store
+    
+    # Initialize MCP contract validator
+    try:
+        validator = get_mcp_validator()
+        summary = validator.get_validation_summary()
+        print(f"✅ MCP Contract Validation initialized: {summary['contracts_loaded']} contracts loaded")
+        print(f"📋 Available MCP tools: {', '.join(summary['available_tools'])}")
+    except Exception as e:
+        print(f"⚠️ MCP validation initialization warning: {e}")
+        logger.warning(f"MCP validation setup warning: {e}")
+    
 
     # Validate configuration
     config_result = validate_all_configs()
@@ -314,7 +373,7 @@ async def startup_event() -> None:
             qdrant_initializer = VectorDBInitializer()
             if qdrant_initializer.connect():
                 # Get the actual Qdrant client for operations
-                qdrant_client = qdrant_initializer.client
+                qdrant_client = qdrant_initializer
                 print("✅ Qdrant connected successfully")
             else:
                 qdrant_client = None
@@ -760,14 +819,13 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
             logger.info(f"Generated embedding with {len(embedding)} dimensions")
 
             vector_id = qdrant_client.store_vector(
-                collection="context_store",
-                id=context_id,
-                vector=embedding,
-                payload={
+                vector_id=context_id,
+                embedding=embedding,
+                metadata={
                     "content": request.content,
                     "type": request.type,
                     "metadata": request.metadata,
-                },
+                }
             )
 
         # Store in graph database
@@ -797,11 +855,7 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
         import traceback
 
         print(f"Error storing context: {traceback.format_exc()}")
-        return {
-            "success": False,
-            "id": None,
-            "message": f"Failed to store context: {str(e)}",
-        }
+        return handle_generic_error(e, "store context")
 
 
 @app.post("/tools/retrieve_context")
@@ -876,11 +930,9 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
         import traceback
 
         print(f"Error retrieving context: {traceback.format_exc()}")
-        return {
-            "success": False,
-            "results": [],
-            "message": f"Failed to retrieve context: {str(e)}",
-        }
+        error_response = handle_generic_error(e, "retrieve context")
+        error_response["results"] = []
+        return error_response
 
 
 @app.post("/tools/query_graph")
@@ -901,8 +953,7 @@ async def query_graph(request: QueryGraphRequest) -> Dict[str, Any]:
 
         results = neo4j_client.query(
             request.query,
-            parameters=request.parameters,
-            timeout=request.timeout / 1000,  # Convert to seconds
+            parameters=request.parameters
         )
 
         return {
@@ -913,7 +964,171 @@ async def query_graph(request: QueryGraphRequest) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return handle_generic_error(e, "execute graph query")
+
+
+@app.post("/tools/update_scratchpad")
+async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[str, Any]:
+    """Update agent scratchpad with transient storage.
+    
+    Provides temporary storage for agent working memory with TTL support.
+    Supports both overwrite and append modes with namespace isolation.
+    
+    Args:
+        request: UpdateScratchpadRequest containing agent_id, key, content, mode, and ttl
+        
+    Returns:
+        Dict containing success status, message, and operation details
+    """
+    # Validate request against MCP contract
+    request_data = request.model_dump()
+    validation_errors = validate_mcp_request("update_scratchpad", request_data)
+    if validation_errors:
+        logger.warning(f"MCP contract validation failed: {validation_errors}")
+        # Continue processing - validation is for compliance monitoring
+    
+    try:
+        if not kv_store:
+            raise HTTPException(status_code=503, detail="KV store not available")
+        
+        # Create namespaced key
+        redis_key = f"scratchpad:{request.agent_id}:{request.key}"
+        
+        # Store value with TTL based on mode
+        if request.mode == "append" and kv_store.exists(redis_key):
+            # Append mode: get existing content and append
+            existing_content = kv_store.get(redis_key) or ""
+            if isinstance(existing_content, bytes):
+                existing_content = existing_content.decode('utf-8')
+            content_str = f"{existing_content}\n{request.content}"
+        else:
+            # Overwrite mode or no existing content
+            content_str = request.content
+        try:
+            success = kv_store.set(redis_key, content_str, ex=request.ttl)
+        except (ConnectionError, TimeoutError, Exception) as e:
+            return handle_storage_error(e, "update scratchpad")
+        
+        if success:
+            return {
+                "success": True,
+                "agent_id": request.agent_id,
+                "key": redis_key,
+                "ttl": request.ttl,
+                "content_size": len(content_str),
+                "message": f"Scratchpad updated successfully (mode: {request.mode})"
+            }
+        else:
+            return {
+                "success": False,
+                "error_type": "storage_error",
+                "message": "Failed to update scratchpad"
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        return handle_generic_error(e, "update scratchpad")
+
+
+@app.post("/tools/get_agent_state")
+async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, Any]:
+    """Retrieve agent state from storage.
+    
+    Returns agent-specific state data with namespace isolation.
+    Supports retrieving specific keys or all keys for an agent.
+    
+    Args:
+        request: GetAgentStateRequest containing agent_id, optional key, and prefix
+        
+    Returns:
+        Dict containing success status, retrieved data, and available keys
+    """
+    # Validate request against MCP contract
+    request_data = request.model_dump()
+    validation_errors = validate_mcp_request("get_agent_state", request_data)
+    if validation_errors:
+        logger.warning(f"MCP contract validation failed: {validation_errors}")
+        # Continue processing - validation is for compliance monitoring
+    
+    try:
+        if not kv_store:
+            raise HTTPException(status_code=503, detail="KV store not available")
+        
+        # Build key pattern
+        if request.key:
+            redis_key = f"{request.prefix}:{request.agent_id}:{request.key}"
+            try:
+                value = kv_store.get(redis_key)
+            except (ConnectionError, Exception) as e:
+                error_response = handle_storage_error(e, "get agent state")
+                error_response["data"] = {}
+                return error_response
+            
+            if value is None:
+                return {
+                    "success": False,
+                    "data": {},
+                    "message": f"No state found for key: {request.key}"
+                }
+            
+            # Parse JSON if possible
+            try:
+                data = json.loads(value) if isinstance(value, bytes) else value
+            except json.JSONDecodeError:
+                data = value.decode('utf-8') if isinstance(value, bytes) else value
+            
+            return {
+                "success": True,
+                "data": {request.key: data},
+                "agent_id": request.agent_id,
+                "message": "State retrieved successfully"
+            }
+        else:
+            # Get all keys for agent
+            pattern = f"{request.prefix}:{request.agent_id}:*"
+            try:
+                keys = kv_store.keys(pattern)
+            except (ConnectionError, Exception) as e:
+                error_response = handle_storage_error(e, "get agent state")
+                error_response["data"] = {}
+                return error_response
+            
+            if not keys:
+                return {
+                    "success": True,
+                    "data": {},
+                    "keys": [],
+                    "agent_id": request.agent_id,
+                    "message": "No state found for agent"
+                }
+            
+            # Retrieve all values
+            data = {}
+            for key in keys:
+                key_str = key.decode('utf-8') if isinstance(key, bytes) else key
+                key_name = key_str.split(':', 2)[-1]  # Extract key name
+                value = kv_store.get(key)
+                
+                try:
+                    data[key_name] = json.loads(value) if isinstance(value, bytes) else value
+                except json.JSONDecodeError:
+                    data[key_name] = value.decode('utf-8') if isinstance(value, bytes) else value
+            
+            return {
+                "success": True,
+                "data": data,
+                "keys": list(data.keys()),
+                "agent_id": request.agent_id,
+                "message": f"Retrieved {len(data)} state entries"
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_response = handle_generic_error(e, "retrieve agent state")
+        error_response["data"] = {}
+        return error_response
 
 
 @app.get("/tools")
