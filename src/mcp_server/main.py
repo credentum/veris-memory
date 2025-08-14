@@ -88,6 +88,13 @@ except ImportError as e:
     logger.warning(f"Failed to import KVStore: {e}")
     from ..storage.kv_store import ContextKV as KVStore
 
+# Import SimpleRedisClient for direct Redis operations
+try:
+    from ..storage.simple_redis import SimpleRedisClient
+except ImportError as e:
+    logger.warning(f"Failed to import SimpleRedisClient: {e}")
+    from storage.simple_redis import SimpleRedisClient
+
 try:
     from ..storage.neo4j_client import Neo4jInitializer as Neo4jClient
 except ImportError as e:
@@ -277,6 +284,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 neo4j_client = None
 qdrant_client = None
 kv_store = None
+simple_redis = None  # Direct Redis client for scratchpad operations
 
 
 class StoreContextRequest(BaseModel):
@@ -386,6 +394,14 @@ async def startup_event() -> None:
         redis_password = os.getenv("REDIS_PASSWORD")
         kv_store.connect(redis_password=redis_password)
         print("✅ Redis connected successfully")
+        
+        # Initialize SimpleRedisClient as a direct bypass for scratchpad operations
+        global simple_redis
+        simple_redis = SimpleRedisClient()
+        if simple_redis.connect(redis_password=redis_password):
+            print("✅ SimpleRedisClient connected successfully (scratchpad bypass)")
+        else:
+            print("⚠️ SimpleRedisClient connection failed, scratchpad operations may fail")
 
         print("✅ Storage initialization completed (services may be degraded)")
     except Exception as e:
@@ -1004,39 +1020,30 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
         # Continue processing - validation is for compliance monitoring
     
     try:
-        if not kv_store:
-            raise HTTPException(status_code=503, detail="KV store not available")
+        # Use SimpleRedisClient for direct, reliable Redis access
+        if not simple_redis:
+            raise HTTPException(status_code=503, detail="Redis client not available")
         
         # Create namespaced key
         redis_key = f"scratchpad:{request.agent_id}:{request.key}"
         
         # Store value with TTL based on mode
-        if request.mode == "append" and kv_store.exists(redis_key):
+        if request.mode == "append" and simple_redis.exists(redis_key):
             # Append mode: get existing content and append
-            existing_content = kv_store.get(redis_key) or ""
-            if isinstance(existing_content, bytes):
-                existing_content = existing_content.decode('utf-8')
+            existing_content = simple_redis.get(redis_key) or ""
             content_str = f"{existing_content}\n{request.content}"
         else:
             # Overwrite mode or no existing content
             content_str = request.content
+        
         try:
-            # ENHANCED DEBUG LOGGING
-            print(f"🔍 MAIN: About to call kv_store.set()")
-            print(f"🔍 MAIN: redis_key='{redis_key}'")
-            print(f"🔍 MAIN: content_str='{content_str[:50]}...' (len={len(content_str)})")
-            print(f"🔍 MAIN: ttl={request.ttl}")
-            print(f"🔍 MAIN: kv_store object: {kv_store}")
-            print(f"🔍 MAIN: kv_store type: {type(kv_store)}")
+            # Use simple_redis for direct Redis access
+            logger.info(f"Using SimpleRedisClient to store key: {redis_key}")
+            success = simple_redis.set(redis_key, content_str, ex=request.ttl)
+            logger.info(f"SimpleRedisClient.set() returned: {success}")
             
-            success = kv_store.set(redis_key, content_str, ex=request.ttl)
-            
-            print(f"🔍 MAIN: kv_store.set() returned: {success} (type: {type(success)})")
-            
-        except (ConnectionError, TimeoutError, Exception) as e:
-            print(f"❌ MAIN: EXCEPTION caught: {type(e).__name__}: {e}")
-            import traceback
-            print(f"❌ MAIN: Full exception traceback:\n{traceback.format_exc()}")
+        except Exception as e:
+            logger.error(f"SimpleRedisClient error: {type(e).__name__}: {e}")
             return handle_storage_error(e, "update scratchpad")
         
         if success:
@@ -1082,15 +1089,19 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
         # Continue processing - validation is for compliance monitoring
     
     try:
-        if not kv_store:
-            raise HTTPException(status_code=503, detail="KV store not available")
+        # Use SimpleRedisClient for direct, reliable Redis access
+        if not simple_redis:
+            raise HTTPException(status_code=503, detail="Redis client not available")
         
         # Build key pattern
         if request.key:
             redis_key = f"{request.prefix}:{request.agent_id}:{request.key}"
             try:
-                value = kv_store.get(redis_key)
-            except (ConnectionError, Exception) as e:
+                logger.info(f"Using SimpleRedisClient to get key: {redis_key}")
+                value = simple_redis.get(redis_key)
+                logger.info(f"SimpleRedisClient.get() returned value: {value is not None}")
+            except Exception as e:
+                logger.error(f"SimpleRedisClient error: {type(e).__name__}: {e}")
                 error_response = handle_storage_error(e, "get agent state")
                 error_response["data"] = {}
                 return error_response
@@ -1118,8 +1129,11 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
             # Get all keys for agent
             pattern = f"{request.prefix}:{request.agent_id}:*"
             try:
-                keys = kv_store.keys(pattern)
-            except (ConnectionError, Exception) as e:
+                logger.info(f"Using SimpleRedisClient to get keys matching: {pattern}")
+                keys = simple_redis.keys(pattern)
+                logger.info(f"SimpleRedisClient.keys() found {len(keys)} keys")
+            except Exception as e:
+                logger.error(f"SimpleRedisClient error: {type(e).__name__}: {e}")
                 error_response = handle_storage_error(e, "get agent state")
                 error_response["data"] = {}
                 return error_response
@@ -1138,7 +1152,7 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
             for key in keys:
                 key_str = key.decode('utf-8') if isinstance(key, bytes) else key
                 key_name = key_str.split(':', 2)[-1]  # Extract key name
-                value = kv_store.get(key)
+                value = simple_redis.get(key)
                 
                 try:
                     data[key_name] = json.loads(value) if isinstance(value, bytes) else value
