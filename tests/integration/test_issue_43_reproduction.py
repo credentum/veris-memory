@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 
 # Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from core.query_expansion import get_query_expander
 from core.qa_detector import get_qa_detector
