@@ -14,8 +14,8 @@ Usage: $0 COMMAND [OPTIONS]
 Commands:
   install-trivy          Install Trivy security scanner
   scan-base-images       Scan Ubuntu base images for vulnerabilities
-  scan-dockerfile        Scan Dockerfile.flyio for security issues
-  scan-built-image       Build and scan the complete Docker image
+  scan-dockerfile        Scan both dev and production Dockerfiles for security issues
+  scan-built-image       Build and scan both dev and production Docker images
   scan-dependencies      Scan Python dependencies for vulnerabilities
   full-scan             Run complete security audit
   help                  Show this help message
@@ -98,7 +98,7 @@ scan_dockerfile() {
     local format=${2:-table}
     local output_file=${3:-}
 
-    echo "Scanning Dockerfile for security misconfigurations..."
+    echo "Scanning Dockerfiles for security misconfigurations..."
 
     local trivy_cmd="trivy config --severity $severity --format $format"
 
@@ -106,8 +106,13 @@ scan_dockerfile() {
         trivy_cmd="$trivy_cmd --output $output_file"
     fi
 
-    echo "Running: $trivy_cmd $PROJECT_DIR/Dockerfile.flyio"
-    $trivy_cmd "$PROJECT_DIR/Dockerfile.flyio"
+    echo "\n=== Scanning Dev Dockerfile ==="
+    echo "Running: $trivy_cmd $PROJECT_DIR/docker/Dockerfile"
+    $trivy_cmd "$PROJECT_DIR/docker/Dockerfile"
+    
+    echo "\n=== Scanning Production Hetzner Dockerfile ==="
+    echo "Running: $trivy_cmd $PROJECT_DIR/docker/Dockerfile.hetzner"
+    $trivy_cmd "$PROJECT_DIR/docker/Dockerfile.hetzner"
 }
 
 scan_built_image() {
@@ -120,23 +125,35 @@ scan_built_image() {
 
     cd "$PROJECT_DIR"
 
-    # Build image
-    echo "Building veris-memory-scan:latest..."
-    docker build -t veris-memory-scan:latest -f Dockerfile.flyio .
+    # Build and scan dev image
+    echo "Building dev image (veris-memory-dev:latest)..."
+    docker build -t veris-memory-dev:latest -f docker/Dockerfile .
+    
+    echo "\n=== Scanning Dev Image ==="
+    local trivy_cmd_dev="trivy image --severity $severity --format $format"
+    if [ -n "$output_file" ]; then
+        trivy_cmd_dev="$trivy_cmd_dev --output ${output_file%.json}-dev.json"
+    fi
+    $trivy_cmd_dev veris-memory-dev:latest
+    
+    # Build and scan production image
+    echo "\nBuilding production image (veris-memory-prod:latest)..."
+    docker build -t veris-memory-prod:latest -f docker/Dockerfile.hetzner .
 
-    # Scan image
+    # Scan production image
+    echo "\n=== Scanning Production Image ==="
     local trivy_cmd="trivy image --severity $severity --format $format"
 
     if [ -n "$output_file" ]; then
-        trivy_cmd="$trivy_cmd --output $output_file"
+        trivy_cmd="$trivy_cmd --output ${output_file%.json}-prod.json"
     fi
 
     if [ "$fail_on_vuln" = "true" ]; then
         trivy_cmd="$trivy_cmd --exit-code 1"
     fi
 
-    echo "Running: $trivy_cmd veris-memory-scan:latest"
-    $trivy_cmd veris-memory-scan:latest
+    echo "Running: $trivy_cmd veris-memory-prod:latest"
+    $trivy_cmd veris-memory-prod:latest
 }
 
 scan_dependencies() {
