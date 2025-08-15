@@ -3,7 +3,7 @@
 set -e
 
 # Configuration
-MIN_COVERAGE=0.1  # Very low initial threshold
+MIN_COVERAGE=0.8  # Updated threshold based on current progress
 REPORT_FILE="coverage.json"
 
 # Colors
