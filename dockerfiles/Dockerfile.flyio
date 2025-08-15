@@ -118,7 +118,7 @@ COPY contracts/ ./contracts/
 # Copy configuration files
 COPY .ctxrc.yaml /app/.ctxrc.yaml
 COPY dockerfiles/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY start-services.sh /app/start-services.sh
+COPY scripts/start-services.sh /app/start-services.sh
 RUN chmod +x /app/start-services.sh
 
 # Copy monitoring and secrets management
