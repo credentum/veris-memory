@@ -813,6 +813,49 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                                 )
                             except Exception as rel_e:
                                 logger.warning(f"Failed to create relationship: {rel_e}")
+                        
+                        # Detect and create Q&A relationships if content is conversation
+                        try:
+                            from src.core.qa_detector import get_qa_detector
+                            qa_detector = get_qa_detector()
+                            
+                            # Check if content contains conversation messages
+                            if isinstance(content, dict) and "messages" in content:
+                                messages = content["messages"]
+                                if isinstance(messages, list):
+                                    qa_relationships = qa_detector.detect_qa_relationship(messages)
+                                    
+                                    # Store Q&A metadata in the context
+                                    if qa_relationships:
+                                        qa_metadata = {
+                                            "qa_pairs": len(qa_relationships),
+                                            "relationships": qa_relationships
+                                        }
+                                        
+                                        # Update node with Q&A metadata
+                                        update_query = """
+                                        MATCH (c:Context {id: $id})
+                                        SET c.qa_metadata = $qa_metadata
+                                        RETURN c
+                                        """
+                                        session.run(update_query, id=context_id, qa_metadata=json.dumps(qa_metadata))
+                                        logger.info(f"Added Q&A metadata: {len(qa_relationships)} relationships detected")
+                                        
+                                        # Extract and index factual statements for better retrieval
+                                        factual_statements = qa_detector.extract_factual_statements(messages)
+                                        if factual_statements:
+                                            fact_metadata = {
+                                                "factual_statements": factual_statements
+                                            }
+                                            update_query = """
+                                            MATCH (c:Context {id: $id})
+                                            SET c.fact_metadata = $fact_metadata
+                                            RETURN c
+                                            """
+                                            session.run(update_query, id=context_id, fact_metadata=json.dumps(fact_metadata))
+                                            logger.info(f"Indexed {len(factual_statements)} factual statements")
+                        except ImportError:
+                            logger.debug("Q&A detector not available, skipping relationship detection")
             except Exception as e:
                 logger.error(f"Failed to store in graph database: {e}")
                 graph_id = None
@@ -954,45 +997,77 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         # Use retrieval_mode if specified, otherwise fall back to search_mode
         effective_mode = retrieval_mode
 
+        # Apply query expansion to improve semantic matching
+        try:
+            from src.core.query_expansion import get_query_expander
+            query_expander = get_query_expander()
+            expanded_queries = query_expander.expand_query(query)
+            logger.info(f"Query expansion: '{query}' → {len(expanded_queries)} patterns")
+        except ImportError:
+            # Fallback if query expansion is not available
+            expanded_queries = [query]
+            logger.warning("Query expansion not available, using original query only")
+
         results = []
 
         if effective_mode in ["vector", "hybrid"] and qdrant_client and qdrant_client.client:
             try:
-                # Generate proper semantic embedding for query
-                if embedding_generator:
-                    query_vector = await embedding_generator.generate_embedding(query)
-                    logger.info("Generated semantic query embedding using configured model")
-                else:
-                    # Fallback to hash-based query embedding for development
-                    logger.warning(
-                        "No embedding generator available, using fallback method for query"
+                # Search with expanded queries for better recall
+                all_vector_results = []
+                
+                for expanded_query in expanded_queries:
+                    # Generate proper semantic embedding for each expanded query
+                    if embedding_generator:
+                        query_vector = await embedding_generator.generate_embedding(expanded_query)
+                        logger.debug(f"Generated semantic embedding for: '{expanded_query}'")
+                    else:
+                        # Fallback to hash-based query embedding for development
+                        import hashlib
+
+                        query_hash = hashlib.sha256(expanded_query.encode()).digest()
+
+                        # Get dimensions from Qdrant config or default
+                        dimensions = qdrant_client.config.get("qdrant", {}).get(
+                            "dimensions", Config.EMBEDDING_DIMENSIONS
+                        )
+                        query_vector = []
+                        for i in range(dimensions):
+                            byte_idx = i % len(query_hash)
+                            # Normalize to [-1, 1] for better vector space properties
+                            normalized_value = (float(query_hash[byte_idx]) / 255.0) * 2.0 - 1.0
+                            query_vector.append(normalized_value)
+
+                    # Use the collection name from config or default
+                    collection_name = qdrant_client.config.get("qdrant", {}).get(
+                        "collection_name", "project_context"
                     )
-                    import hashlib
 
-                    query_hash = hashlib.sha256(query.encode()).digest()
-
-                    # Get dimensions from Qdrant config or default
-                    dimensions = qdrant_client.config.get("qdrant", {}).get(
-                        "dimensions", Config.EMBEDDING_DIMENSIONS
+                    # Search with this expanded query
+                    query_results = qdrant_client.search(
+                        query_vector=query_vector,
+                        limit=limit,
+                        filter_dict=None,  # Can be enhanced later with type filtering
                     )
-                    query_vector = []
-                    for i in range(dimensions):
-                        byte_idx = i % len(query_hash)
-                        # Normalize to [-1, 1] for better vector space properties
-                        normalized_value = (float(query_hash[byte_idx]) / 255.0) * 2.0 - 1.0
-                        query_vector.append(normalized_value)
+                    
+                    # Add query source to results for debugging
+                    for result in query_results:
+                        result["expansion_query"] = expanded_query
+                    
+                    all_vector_results.extend(query_results)
 
-                # Use the collection name from config or default
-                collection_name = qdrant_client.config.get("qdrant", {}).get(
-                    "collection_name", "project_context"
-                )
-
-                # Use VectorDBInitializer.search method instead of direct client access
-                vector_results = qdrant_client.search(
-                    query_vector=query_vector,
-                    limit=limit,
-                    filter_dict=None,  # Can be enhanced later with type filtering
-                )
+                # Deduplicate results by ID while preserving best scores
+                seen_ids = {}
+                vector_results = []
+                for result in all_vector_results:
+                    result_id = result.get("id")
+                    if result_id not in seen_ids or result.get("score", 0) > seen_ids[result_id].get("score", 0):
+                        seen_ids[result_id] = result
+                
+                vector_results = list(seen_ids.values())
+                
+                # Sort by score and limit results
+                vector_results.sort(key=lambda x: x.get("score", 0), reverse=True)
+                vector_results = vector_results[:limit]
 
                 # Convert VectorDBInitializer results to our format
                 # vector_results is already in the correct format from VectorDBInitializer.search
@@ -1012,63 +1087,109 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
         if effective_mode in ["graph", "hybrid"] and neo4j_client and neo4j_client.driver:
             try:
-                # Perform graph search
+                # Perform graph search with expanded queries
+                all_graph_results = []
+                
                 with neo4j_client.driver.session(database=neo4j_client.database) as session:
-                    # Enhanced graph search with configurable hop distance and relationship filtering
-                    if effective_mode == "hybrid" or max_hops > 1:
-                        # Build relationship type filter
-                        rel_filter = ""
-                        if relationship_types:
-                            rel_types = "|".join(relationship_types)
-                            rel_filter = f":{rel_types}"
+                    for expanded_query in expanded_queries:
+                        # Enhanced graph search with Q&A relationship awareness
+                        if effective_mode == "hybrid" or max_hops > 1:
+                            # Build relationship type filter
+                            rel_filter = ""
+                            if relationship_types:
+                                rel_types = "|".join(relationship_types)
+                                rel_filter = f":{rel_types}"
+                            else:
+                                rel_filter = ""  # Allow all relationship types
+
+                            # Q&A-aware multi-hop traversal query
+                            cypher_query = f"""
+                            MATCH (n:Context)-[r{rel_filter}*1..{max_hops}]->(m)
+                            WHERE (n.type = $type OR $type = 'all')
+                            AND (n.content CONTAINS $query OR n.metadata CONTAINS $query OR
+                                 m.content CONTAINS $query OR m.metadata CONTAINS $query OR
+                                 n.qa_metadata CONTAINS $query OR n.fact_metadata CONTAINS $query OR
+                                 m.qa_metadata CONTAINS $query OR m.fact_metadata CONTAINS $query)
+                            RETURN DISTINCT m.id as id, m.type as type, m.content as content,
+                                   m.metadata as metadata, m.created_at as created_at,
+                                   m.qa_metadata as qa_metadata, m.fact_metadata as fact_metadata,
+                                   CASE 
+                                     WHEN m.qa_metadata IS NOT NULL OR m.fact_metadata IS NOT NULL THEN 2.0
+                                     ELSE 1.0 
+                                   END as qa_boost
+                            ORDER BY qa_boost DESC, m.created_at DESC
+                            LIMIT $limit
+                            """
                         else:
-                            rel_filter = ""  # Allow all relationship types
-
-                        # Multi-hop traversal query with configurable parameters
-                        cypher_query = f"""
-                        MATCH (n:Context)-[r{rel_filter}*1..{max_hops}]->(m)
-                        WHERE (n.type = $type OR $type = 'all')
-                        AND (n.content CONTAINS $query OR n.metadata CONTAINS $query OR
-                             m.content CONTAINS $query OR m.metadata CONTAINS $query)
-                        RETURN DISTINCT m.id as id, m.type as type, m.content as content,
-                               m.metadata as metadata, m.created_at as created_at
-                        LIMIT $limit
-                        """
-                    else:
-                        # Standard graph search for single-hop modes
-                        cypher_query = """
-                        MATCH (n:Context)
-                        WHERE (n.type = $type OR $type = 'all')
-                        AND (n.content CONTAINS $query OR n.metadata CONTAINS $query)
-                        RETURN n.id as id, n.type as type, n.content as content,
-                               n.metadata as metadata, n.created_at as created_at
-                        LIMIT $limit
-                        """
-                    query_result = neo4j_client.query(
-                        cypher_query,
-                        parameters={"type": context_type, "query": query, "limit": limit},
-                    )
-
-                    for record in query_result:
-                        try:
-                            content = json.loads(record["content"]) if record["content"] else {}
-                            metadata = json.loads(record["metadata"]) if record["metadata"] else {}
-                        except json.JSONDecodeError:
-                            content = record["content"]
-                            metadata = record["metadata"]
-
-                        results.append(
-                            {
-                                "id": record["id"],
-                                "type": record["type"],
-                                "content": content,
-                                "metadata": metadata,
-                                "created_at": (
-                                    str(record["created_at"]) if record["created_at"] else None
-                                ),
-                                "source": "graph",
-                            }
+                            # Q&A-aware standard graph search
+                            cypher_query = """
+                            MATCH (n:Context)
+                            WHERE (n.type = $type OR $type = 'all')
+                            AND (n.content CONTAINS $query OR n.metadata CONTAINS $query OR
+                                 n.qa_metadata CONTAINS $query OR n.fact_metadata CONTAINS $query)
+                            RETURN n.id as id, n.type as type, n.content as content,
+                                   n.metadata as metadata, n.created_at as created_at,
+                                   n.qa_metadata as qa_metadata, n.fact_metadata as fact_metadata,
+                                   CASE 
+                                     WHEN n.qa_metadata IS NOT NULL OR n.fact_metadata IS NOT NULL THEN 2.0
+                                     ELSE 1.0 
+                                   END as qa_boost
+                            ORDER BY qa_boost DESC, n.created_at DESC
+                            LIMIT $limit
+                            """
+                        
+                        query_result = neo4j_client.query(
+                            cypher_query,
+                            parameters={"type": context_type, "query": expanded_query, "limit": limit},
                         )
+                        
+                        # Process results from this expanded query
+                        for record in query_result:
+                            record_dict = dict(record)
+                            record_dict["expansion_query"] = expanded_query
+                            all_graph_results.append(record_dict)
+                
+                # Deduplicate graph results by ID
+                seen_graph_ids = set()
+                unique_graph_results = []
+                for record in all_graph_results:
+                    if record["id"] not in seen_graph_ids:
+                        seen_graph_ids.add(record["id"])
+                        unique_graph_results.append(record)
+                
+                # Process unique results
+                for record in unique_graph_results:
+                    try:
+                        content = json.loads(record["content"]) if record["content"] else {}
+                        metadata = json.loads(record["metadata"]) if record["metadata"] else {}
+                        qa_metadata = json.loads(record.get("qa_metadata", "{}")) if record.get("qa_metadata") else {}
+                        fact_metadata = json.loads(record.get("fact_metadata", "{}")) if record.get("fact_metadata") else {}
+                    except json.JSONDecodeError:
+                        content = record["content"]
+                        metadata = record["metadata"]
+                        qa_metadata = {}
+                        fact_metadata = {}
+
+                    result_item = {
+                        "id": record["id"],
+                        "type": record["type"],
+                        "content": content,
+                        "metadata": metadata,
+                        "created_at": (
+                            str(record["created_at"]) if record["created_at"] else None
+                        ),
+                        "source": "graph",
+                        "expansion_query": record.get("expansion_query", query),
+                        "qa_boost": record.get("qa_boost", 1.0),
+                    }
+                    
+                    # Add Q&A metadata if available
+                    if qa_metadata:
+                        result_item["qa_metadata"] = qa_metadata
+                    if fact_metadata:
+                        result_item["fact_metadata"] = fact_metadata
+                    
+                    results.append(result_item)
 
                 graph_results_count = len([r for r in results if r.get("source") == "graph"])
                 logger.info(f"Graph search returned {graph_results_count} results")
