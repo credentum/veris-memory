@@ -9,7 +9,7 @@ import urllib.parse
 import warnings
 from unittest.mock import patch
 
-from core.utils import (  # noqa: E402
+from src.core.utils import (  # noqa: E402
     get_environment,
     get_secure_connection_config,
     sanitize_error_message,

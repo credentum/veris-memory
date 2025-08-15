@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-from core.monitoring import MCPMetrics, MCPMonitor, MCPTracing
-from core.rate_limiter import MCPRateLimiter, SlidingWindowLimiter, TokenBucket
+from src.core.monitoring import MCPMetrics, MCPMonitor, MCPTracing
+from src.core.rate_limiter import MCPRateLimiter, SlidingWindowLimiter, TokenBucket
 
 
 # Fixture to clear prometheus metrics between tests
@@ -441,7 +441,7 @@ class TestModuleFunctions:
 
     def test_get_monitor(self):
         """Test get_monitor function."""
-        from core.monitoring import get_monitor
+        from src.core.monitoring import get_monitor
 
         monitor = get_monitor()
 
@@ -449,7 +449,7 @@ class TestModuleFunctions:
 
     def test_monitor_decorators(self):
         """Test monitor decorator functions."""
-        from core.monitoring import monitor_embedding, monitor_mcp_request, monitor_storage
+        from src.core.monitoring import monitor_embedding, monitor_mcp_request, monitor_storage
 
         @monitor_mcp_request("test")
         async def test_func1():
@@ -471,7 +471,7 @@ class TestModuleFunctions:
     @pytest.mark.asyncio
     async def test_rate_limit_check_function(self):
         """Test rate_limit_check function."""
-        from core.rate_limiter import rate_limit_check
+        from src.core.rate_limiter import rate_limit_check
 
         result = await rate_limit_check("store_context", {"agent_id": "test"})
 
