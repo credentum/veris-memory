@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union, Iterator
 from dataclasses import dataclass, asdict
 import logging
+from redis import Redis
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +231,7 @@ class FactStore:
         """
         Search facts by value content (for debugging/admin).
         
-        Returns list of (attribute, fact) tuples.
+        Returns list of (attribute, fact) Tuples.
         """
         facts = self.get_user_facts(namespace, user_id)
         matches = []
