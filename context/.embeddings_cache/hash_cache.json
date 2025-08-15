@@ -1,16 +1,16 @@
 {
-  "/tmp/tmpe1wvr52_/test1.yaml": {
+  "/tmp/tmpb5d5lla2/test1.yaml": {
     "document_id": "doc1",
     "content_hash": "3dbc6e8e03f0fe31f761d334a251924b14ae0efa220bc817db6b7005e697ad03",
     "embedding_hash": "9a04781069052282acb2e95529c7f5bcd85149ab2ec559c550dce80b81ceb04e",
     "vector_id": "doc1-9a047810",
-    "last_embedded": "2025-08-15T22:03:29.978389"
+    "last_embedded": "2025-08-15T23:36:40.803316"
   },
-  "/tmp/tmpe1wvr52_/test2.yaml": {
+  "/tmp/tmpb5d5lla2/test2.yaml": {
     "document_id": "doc2",
     "content_hash": "70a4122146af2ec3a572ad281d63e45165ec229b98f65f1cec45130b4991029b",
     "embedding_hash": "9a04781069052282acb2e95529c7f5bcd85149ab2ec559c550dce80b81ceb04e",
     "vector_id": "doc2-9a047810",
-    "last_embedded": "2025-08-15T22:03:29.978747"
+    "last_embedded": "2025-08-15T23:36:40.803888"
   }
 }
