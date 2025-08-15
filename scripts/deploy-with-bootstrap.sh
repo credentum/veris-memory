@@ -84,7 +84,7 @@ if [ ! -f "production_locked_config.yaml" ]; then
     error "production_locked_config.yaml not found!"
 fi
 
-if [ ! -f "dockerfiles/docker-compose.yml" ] && [ ! -f "dockerfiles/docker-compose.prod.yml" ]; then
+if [ ! -f "docker-compose.yml" ] && [ ! -f "docker-compose.prod.yml" ]; then
     warning "No docker-compose file found"
 fi
 
@@ -148,10 +148,10 @@ if [ "$DRY_RUN" = true ]; then
     echo "   [DRY RUN] Would deploy Docker services"
 else
     # Check which compose file to use
-    if [ -f "dockerfiles/docker-compose.prod.yml" ]; then
-        COMPOSE_FILE="dockerfiles/docker-compose.prod.yml"
-    elif [ -f "dockerfiles/docker-compose.yml" ]; then
-        COMPOSE_FILE="dockerfiles/docker-compose.yml"
+    if [ -f "docker-compose.prod.yml" ]; then
+        COMPOSE_FILE="docker-compose.prod.yml"
+    elif [ -f "docker-compose.yml" ]; then
+        COMPOSE_FILE="docker-compose.yml"
     else
         error "No docker-compose file found in dockerfiles/ directory!"
     fi

@@ -124,15 +124,15 @@ set -euo pipefail
 cd "$REMOTE_DIR"
 
 # Use the simple compose file for core services
-if [ -f "dockerfiles/docker-compose.simple.yml" ]; then
-    echo "Starting services with dockerfiles/docker-compose.simple.yml..."
-    docker-compose -f dockerfiles/docker-compose.simple.yml up -d
+if [ -f "docker-compose.simple.yml" ]; then
+    echo "Starting services with docker-compose.simple.yml..."
+    docker-compose -f docker-compose.simple.yml up -d
     
     # Wait for services to be ready
     echo "Waiting for services to start..."
     sleep 15
 else
-    error "dockerfiles/docker-compose.simple.yml not found!"
+    error "docker-compose.simple.yml not found!"
 fi
 EOF
     
