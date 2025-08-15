@@ -5,7 +5,7 @@ services:
   context-store:
     build:
       context: .
-      dockerfile: dockerfiles/Dockerfile
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -32,7 +32,7 @@ services:
   qdrant:
     build:
       context: .
-      dockerfile: dockerfiles/Dockerfile.qdrant
+      dockerfile: Dockerfile.qdrant
     image: veris-memory/qdrant:v1.9.6-healthcheck
     platform: linux/amd64
     ports:
