@@ -5,7 +5,7 @@ services:
   context-store:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: docker/Dockerfile
     container_name: veris-memory-prod-api
     ports:
       - "127.0.0.1:8001:8000"  # Production API on 8001

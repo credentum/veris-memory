@@ -5,7 +5,7 @@ services:
   context-store:
     build:
       context: .
-      dockerfile: Dockerfile.hetzner
+      dockerfile: docker/Dockerfile.hetzner
     ports:
       - "127.0.0.1:8000:8000" # Only bind to localhost for Tailscale access
     environment:
@@ -183,7 +183,7 @@ services:
   hardware-monitor:
     build:
       context: .
-      dockerfile: Dockerfile.hetzner
+      dockerfile: docker/Dockerfile.hetzner
     command: ["/app/monitoring/hardware-monitor.sh"]
     volumes:
       - /raid1/docker-data/monitoring:/app/monitoring/data
@@ -207,7 +207,7 @@ services:
   backup-service:
     build:
       context: .
-      dockerfile: Dockerfile.hetzner
+      dockerfile: docker/Dockerfile.hetzner
     command: ["/app/backup/raid1-backup.sh"]
     volumes:
       - /raid1/docker-data:/raid1/docker-data:ro
