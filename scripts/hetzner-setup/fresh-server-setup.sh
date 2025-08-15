@@ -283,7 +283,7 @@ log "🚀 Step 9: Context Store Service Deployment"
 cd "$INSTALL_DIR"
 
 # Create simplified compose file for reliable deployment
-cat > docker-compose.simple.yml << 'EOF'
+cat > docker/docker-compose.simple.yml << 'EOF'
 version: "3.8"
 
 services:
@@ -328,7 +328,7 @@ services:
 EOF
 
 # Start services
-docker-compose -f docker-compose.simple.yml up -d
+docker-compose -f docker/docker-compose.simple.yml up -d
 log "✅ Context Store services started"
 
 # 10. Health Check

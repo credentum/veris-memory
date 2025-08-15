@@ -80,8 +80,8 @@ if [ "$DRY_RUN" = true ]; then
 fi
 
 # Check if required files exist
-if [ ! -f "production_locked_config.yaml" ]; then
-    error "production_locked_config.yaml not found!"
+if [ ! -f "config/production_locked_config.yaml" ]; then
+    error "config/production_locked_config.yaml not found!"
 fi
 
 if [ ! -f "docker-compose.yml" ] && [ ! -f "docker-compose.prod.yml" ]; then
@@ -100,7 +100,7 @@ if [ "$SKIP_MANIFEST_CHECK" = false ]; then
     else
         if [ -f "ops/verify/manifest_verifier.py" ]; then
             python ops/verify/manifest_verifier.py \
-                --config production_locked_config.yaml \
+                --config config/production_locked_config.yaml \
                 --qdrant-url "$QDRANT_URL" \
                 --collection "$COLLECTION_NAME" || {
                     error "Manifest verification failed!"
@@ -153,7 +153,7 @@ else
     elif [ -f "docker-compose.yml" ]; then
         COMPOSE_FILE="docker-compose.yml"
     else
-        error "No docker-compose file found!"
+        error "No docker-compose file found in dockerfiles/ directory!"
     fi
     
     echo "   Using compose file: $COMPOSE_FILE"

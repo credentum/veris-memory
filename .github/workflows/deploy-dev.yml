@@ -5,11 +5,10 @@ on:
     branches: [main]
     paths:
       - 'src/**'
-      - 'context-store/**'
       - 'schemas/**'
       - 'contracts/**'
       - 'requirements.txt'
-      - 'Dockerfile'
+      - 'dockerfiles/Dockerfile*'
       - 'docker-compose*.yml'
       - '.env*'
       - '.github/workflows/deploy-dev.yml'
