@@ -43,6 +43,11 @@ try:
     from src.storage.fact_ranker import FactAwareRanker
     from src.core.query_rewriter import FactQueryRewriter
     from src.middleware.scope_validator import ScopeValidator, ScopeMiddleware
+    # Phase 3: Graph integration imports
+    from src.storage.graph_enhancer import GraphSignalEnhancer
+    from src.storage.graph_fact_store import GraphFactStore
+    from src.storage.hybrid_scorer import HybridScorer, ScoringMode
+    from src.core.graph_query_expander import GraphQueryExpander
 except ImportError:
     # Fallback for different import contexts
     import sys
@@ -91,6 +96,11 @@ fact_ranker = FactAwareRanker()
 query_rewriter = FactQueryRewriter()
 scope_validator = ScopeValidator()
 scope_middleware = None
+# Phase 3: Graph integration instances
+graph_fact_store = None
+graph_enhancer = None
+hybrid_scorer = None
+graph_query_expander = None
 
 # Global security and namespace instances
 cypher_validator = CypherValidator()
@@ -247,15 +257,49 @@ async def initialize_storage_clients() -> Dict[str, Any]:
             if kv_store and kv_store.redis_client:
                 fact_store = FactStore(kv_store.redis_client)
                 scope_middleware = ScopeMiddleware(scope_validator)
+                
+                # Phase 3: Initialize graph integration
+                try:
+                    # Initialize graph enhancer with Neo4j client
+                    graph_enhancer = GraphSignalEnhancer(neo4j_client, config)
+                    
+                    # Initialize graph-enabled fact store
+                    graph_fact_store = GraphFactStore(fact_store, neo4j_client)
+                    
+                    # Initialize hybrid scorer
+                    hybrid_scorer = HybridScorer(fact_ranker, graph_enhancer, config)
+                    
+                    # Initialize graph query expander
+                    graph_query_expander = GraphQueryExpander(
+                        neo4j_client, intent_classifier, query_rewriter, config
+                    )
+                    
+                    logger.info("✅ Graph integration initialized")
+                except Exception as graph_error:
+                    logger.warning(f"⚠️ Graph integration failed: {graph_error}")
+                    # Fallback to non-graph mode
+                    graph_enhancer = None
+                    graph_fact_store = None
+                    hybrid_scorer = HybridScorer(fact_ranker, None, config)
+                    graph_query_expander = None
+                
                 logger.info("✅ Fact system initialized")
             else:
                 fact_store = None
                 scope_middleware = None
+                graph_fact_store = None
+                graph_enhancer = None
+                hybrid_scorer = None
+                graph_query_expander = None
                 logger.warning("⚠️ Fact system disabled: Redis not available")
         except Exception as e:
             logger.error(f"❌ Failed to initialize fact system: {e}")
             fact_store = None
             scope_middleware = None
+            graph_fact_store = None
+            graph_enhancer = None
+            hybrid_scorer = None
+            graph_query_expander = None
 
         logger.info("✅ Storage clients initialization completed")
 
@@ -1232,10 +1276,11 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "error_type": "invalid_parameter",
             }
 
-        # Phase 2 Enhancement: Query analysis and expansion
+        # Phase 2 & 3 Enhancement: Query analysis and expansion
         original_query = query
         enhanced_queries = [query]  # Start with original query
         intent_result = None
+        query_expansion_metadata = {}
         
         try:
             # Classify query intent
@@ -1249,8 +1294,27 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 enhanced_queries.extend(additional_queries)
                 logger.info(f"Generated {len(additional_queries)} query variants for fact lookup")
             
+            # Phase 3: Graph-enhanced query expansion
+            if graph_query_expander:
+                try:
+                    expansion_result = graph_query_expander.expand_query(query)
+                    graph_expanded_queries = [eq.query for eq in expansion_result.expanded_queries]
+                    enhanced_queries.extend(graph_expanded_queries)
+                    
+                    # Store expansion metadata for response
+                    query_expansion_metadata = {
+                        'strategy_used': expansion_result.expansion_metadata.get('strategy_used', 'none'),
+                        'entities_found': expansion_result.expansion_metadata.get('entities_found', 0),
+                        'graph_expansions': len(graph_expanded_queries),
+                        'detected_entities': expansion_result.extracted_entities
+                    }
+                    
+                    logger.info(f"Generated {len(graph_expanded_queries)} graph-enhanced query expansions")
+                except Exception as graph_exp_error:
+                    logger.warning(f"Graph query expansion failed: {graph_exp_error}")
+            
             # Limit total queries to avoid performance issues
-            enhanced_queries = enhanced_queries[:4]  # Original + up to 3 variants
+            enhanced_queries = enhanced_queries[:6]  # Original + up to 5 variants (fact + graph)
             
         except Exception as e:
             logger.warning(f"Query enhancement failed: {e}")
@@ -1325,8 +1389,46 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                             "metadata": result.get("payload", {})
                         })
                     
-                    # Apply fact-aware ranking
-                    ranked_results = fact_ranker.apply_fact_ranking(ranking_input, original_query)
+                    # Apply hybrid scoring if available, otherwise fall back to fact-aware ranking
+                    if hybrid_scorer:
+                        # Classify intent for scoring mode selection
+                        intent_result = intent_classifier.classify(original_query)
+                        
+                        # Apply hybrid scoring with graph integration
+                        hybrid_scores = hybrid_scorer.compute_hybrid_score(
+                            query=original_query,
+                            results=ranking_input,
+                            intent=intent_result.intent
+                        )
+                        
+                        # Convert hybrid scores back to ranking results format
+                        ranked_results = []
+                        for hybrid_score in hybrid_scores:
+                            # Find the original ranking input item
+                            result_id = hybrid_score.metadata.get('result_id', '')
+                            original_item = None
+                            for item in ranking_input:
+                                if item.get('id', str(ranking_input.index(item))) == result_id:
+                                    original_item = item
+                                    break
+                            
+                            if original_item:
+                                # Create a ranking result-like object
+                                from types import SimpleNamespace
+                                ranking_result = SimpleNamespace()
+                                ranking_result.content = original_item['content']
+                                ranking_result.final_score = hybrid_score.final_score
+                                ranking_result.fact_boost = hybrid_score.fact_pattern_score
+                                ranking_result.content_type = SimpleNamespace()
+                                ranking_result.content_type.value = "hybrid_enhanced"
+                                ranking_result.matched_patterns = [hybrid_score.explanation]
+                                ranking_result.metadata = {**original_item.get('metadata', {}), **hybrid_score.metadata}
+                                ranked_results.append(ranking_result)
+                        
+                        logger.info(f"Applied hybrid scoring to {len(ranked_results)} results")
+                    else:
+                        # Fallback to fact-aware ranking only
+                        ranked_results = fact_ranker.apply_fact_ranking(ranking_input, original_query)
                     
                     # Convert back and deduplicate by ID
                     seen_ids = set()
@@ -1484,6 +1586,11 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "intent_detected": intent_result.intent.value if intent_result else "unknown",
                 "fact_attribute": intent_result.attribute if intent_result else None,
                 "query_variants_used": len(enhanced_queries),
+            },
+            "phase3_enhancements": {
+                "graph_expansion_enabled": graph_query_expander is not None,
+                "hybrid_scoring_enabled": hybrid_scorer is not None,
+                "graph_expansion_metadata": query_expansion_metadata,
                 "original_query": original_query,
                 "enhanced_queries": enhanced_queries[:3] if len(enhanced_queries) > 1 else [],
                 "fact_aware_ranking_applied": any("fact_boost" in r for r in enhanced_results)
@@ -2340,8 +2447,9 @@ async def store_fact_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         
         # Check for manual fact storage
         if arguments.get("attribute") and arguments.get("value"):
-            # Manual fact storage
-            fact_store.store_fact(
+            # Manual fact storage - use graph fact store if available
+            active_fact_store = graph_fact_store if graph_fact_store else fact_store
+            active_fact_store.store_fact(
                 namespace=scope.namespace,
                 user_id=scope.user_id,
                 attribute=arguments["attribute"],
@@ -2355,7 +2463,9 @@ async def store_fact_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
             stored_facts = []
             
             for fact in extracted_facts:
-                fact_store.store_fact(
+                # Use graph fact store if available for automatic extraction too
+                active_fact_store = graph_fact_store if graph_fact_store else fact_store
+                active_fact_store.store_fact(
                     namespace=scope.namespace,
                     user_id=scope.user_id,
                     attribute=fact.attribute,
