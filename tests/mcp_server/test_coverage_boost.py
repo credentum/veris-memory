@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from mcp_server.server import (
+from src.mcp_server.server import (
     call_tool,
     cleanup_storage_clients,
     get_health_status,

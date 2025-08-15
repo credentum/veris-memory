@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from mcp_server.server import detect_communities_tool, retrieve_context_tool
+from src.mcp_server.server import detect_communities_tool, retrieve_context_tool
 
 
 class TestGraphRAGIntegration:
