@@ -80,7 +80,7 @@ jobs:
         echo ""
         
         python ops/verify/manifest_verifier.py \
-          --config production_locked_config.yaml \
+          --config config/production_locked_config.yaml \
           --qdrant-url http://localhost:6333 \
           --collection context_embeddings \
           2>&1 | tee verification.log
@@ -142,8 +142,8 @@ jobs:
         echo "Checking dimension consistency across configs..."
         
         # Extract dimensions from various configs
-        PROD_DIM=$(grep -E "dim.*:" production_locked_config.yaml | grep -oE "[0-9]+" || echo "not found")
-        CTXRC_DIM=$(grep -E "dimensions:" .ctxrc.yaml | grep -oE "[0-9]+" || echo "not found")
+        PROD_DIM=$(grep -E "dim.*:" config/production_locked_config.yaml | grep -oE "[0-9]+" || echo "not found")
+        CTXRC_DIM=$(grep -E "dimensions:" config/.ctxrc.yaml | grep -oE "[0-9]+" || echo "not found")
         
         echo "Production config: $PROD_DIM dimensions"
         echo "Context RC: $CTXRC_DIM dimensions"
