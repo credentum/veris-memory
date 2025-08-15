@@ -30,7 +30,7 @@ echo "================================================"
 if [ "$ENVIRONMENT" = "dev" ]; then
     echo -e "${YELLOW}📦 Deploying to DEVELOPMENT environment${NC}"
     PROJECT_NAME="veris-memory-dev"
-    COMPOSE_FILE="dockerfiles/docker-compose.yml"  # Use standard compose for dev
+    COMPOSE_FILE="docker-compose.yml"  # Use standard compose for dev
     ENV_FILE=".env.dev"
     API_PORT=8000        # Standard ports for dev (what we test with)
     QDRANT_PORT=6333
@@ -41,7 +41,7 @@ if [ "$ENVIRONMENT" = "dev" ]; then
 else
     echo -e "${GREEN}📦 Deploying to PRODUCTION environment${NC}"
     PROJECT_NAME="veris-memory-prod"
-    COMPOSE_FILE="dockerfiles/docker-compose.prod.yml"  # Separate compose for prod
+    COMPOSE_FILE="docker-compose.prod.yml"  # Separate compose for prod
     ENV_FILE=".env"
     API_PORT=8001        # Alternate ports for production
     QDRANT_PORT=6334
@@ -52,8 +52,8 @@ else
 fi
 
 # Check if we're in the right directory
-if [ ! -f "dockerfiles/docker-compose.yml" ]; then
-    echo -e "${RED}❌ Error: dockerfiles/docker-compose.yml not found${NC}"
+if [ ! -f "docker-compose.yml" ]; then
+    echo -e "${RED}❌ Error: docker-compose.yml not found${NC}"
     echo "Please run this script from the veris-memory root directory"
     exit 1
 fi
@@ -81,7 +81,7 @@ fi
 if [ ! -f "$COMPOSE_FILE" ] && [ "$ENVIRONMENT" = "prod" ]; then
     echo -e "${YELLOW}⚠️  Warning: $COMPOSE_FILE not found, creating from template${NC}"
     # Create prod compose file if it doesn't exist
-    cat > dockerfiles/docker-compose.prod.yml << 'EOF'
+    cat > docker-compose.prod.yml << 'EOF'
 version: "3.8"
 
 services:

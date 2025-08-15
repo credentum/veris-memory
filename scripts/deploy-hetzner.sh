@@ -84,12 +84,12 @@ docker-compose -p veris-memory down --remove-orphans 2>/dev/null || true
 docker-compose -p context-store down --remove-orphans 2>/dev/null || true
 
 # Use the appropriate compose file
-if [ -f "dockerfiles/docker-compose.hetzner.yml" ]; then
-    COMPOSE_FILE="dockerfiles/docker-compose.hetzner.yml"
+if [ -f "docker-compose.hetzner.yml" ]; then
+    COMPOSE_FILE="docker-compose.hetzner.yml"
     DOCKERFILE="dockerfiles/Dockerfile.hetzner"
     echo -e "${GREEN}✅ Using Hetzner-specific configuration${NC}"
 else
-    COMPOSE_FILE="dockerfiles/docker-compose.yml"
+    COMPOSE_FILE="docker-compose.yml"
     DOCKERFILE="dockerfiles/Dockerfile"
     echo -e "${YELLOW}⚠️  Using standard configuration (Hetzner config not found)${NC}"
 fi
