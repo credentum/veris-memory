@@ -107,12 +107,12 @@ scan_dockerfile() {
     fi
 
     echo "\n=== Scanning Dev Dockerfile ==="
-    echo "Running: $trivy_cmd $PROJECT_DIR/docker/Dockerfile"
-    $trivy_cmd "$PROJECT_DIR/docker/Dockerfile"
+    echo "Running: $trivy_cmd $PROJECT_DIR/dockerfiles/Dockerfile"
+    $trivy_cmd "$PROJECT_DIR/dockerfiles/Dockerfile"
     
     echo "\n=== Scanning Production Hetzner Dockerfile ==="
-    echo "Running: $trivy_cmd $PROJECT_DIR/docker/Dockerfile.hetzner"
-    $trivy_cmd "$PROJECT_DIR/docker/Dockerfile.hetzner"
+    echo "Running: $trivy_cmd $PROJECT_DIR/dockerfiles/Dockerfile.hetzner"
+    $trivy_cmd "$PROJECT_DIR/dockerfiles/Dockerfile.hetzner"
 }
 
 scan_built_image() {
@@ -127,7 +127,7 @@ scan_built_image() {
 
     # Build and scan dev image
     echo "Building dev image (veris-memory-dev:latest)..."
-    docker build -t veris-memory-dev:latest -f docker/Dockerfile .
+    docker build -t veris-memory-dev:latest -f dockerfiles/Dockerfile .
     
     echo "\n=== Scanning Dev Image ==="
     local trivy_cmd_dev="trivy image --severity $severity --format $format"
@@ -138,7 +138,7 @@ scan_built_image() {
     
     # Build and scan production image
     echo "\nBuilding production image (veris-memory-prod:latest)..."
-    docker build -t veris-memory-prod:latest -f docker/Dockerfile.hetzner .
+    docker build -t veris-memory-prod:latest -f dockerfiles/Dockerfile.hetzner .
 
     # Scan production image
     echo "\n=== Scanning Production Image ==="
