@@ -44,8 +44,9 @@ except ImportError:
     )
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # Configure logging for import failures
@@ -111,6 +112,18 @@ except ImportError as e:
 
     QdrantClientLib = None
 from ..validators.config_validator import validate_all_configs
+
+# Import monitoring dashboard components
+try:
+    from ..monitoring.dashboard import UnifiedDashboard
+    from ..monitoring.streaming import MetricsStreamer
+    DASHBOARD_AVAILABLE = True
+    logger.info("Dashboard monitoring components available")
+except ImportError as e:
+    logger.warning(f"Dashboard monitoring not available: {e}")
+    DASHBOARD_AVAILABLE = False
+    UnifiedDashboard = None
+    MetricsStreamer = None
 
 # Global embedding model instance
 _embedding_model: Optional[SentenceTransformer] = None
@@ -286,6 +299,10 @@ qdrant_client = None
 kv_store = None
 simple_redis = None  # Direct Redis client for scratchpad operations
 
+# Global dashboard components
+dashboard = None
+websocket_connections = set()  # Track WebSocket connections
+
 
 class StoreContextRequest(BaseModel):
     """Request model for store_context tool."""
@@ -341,7 +358,7 @@ class GetAgentStateRequest(BaseModel):
 @app.on_event("startup")
 async def startup_event() -> None:
     """Initialize storage clients and MCP validation on startup."""
-    global neo4j_client, qdrant_client, kv_store
+    global neo4j_client, qdrant_client, kv_store, dashboard
     
     # Initialize MCP contract validator
     try:
@@ -404,6 +421,18 @@ async def startup_event() -> None:
             print("⚠️ SimpleRedisClient connection failed, scratchpad operations may fail")
 
         print("✅ Storage initialization completed (services may be degraded)")
+        
+        # Initialize dashboard monitoring if available
+        if DASHBOARD_AVAILABLE:
+            try:
+                dashboard = UnifiedDashboard()
+                print("✅ Dashboard monitoring initialized")
+            except Exception as e:
+                print(f"⚠️ Dashboard initialization failed: {e}")
+                dashboard = None
+        else:
+            print("⚠️ Dashboard monitoring not available")
+            
     except Exception as e:
         print(f"❌ Critical failure in storage initialization: {e}")
         raise
@@ -416,8 +445,10 @@ async def shutdown_event() -> None:
         neo4j_client.close()
     if kv_store:
         kv_store.close()
+    if dashboard:
+        await dashboard.shutdown()
 
-    print("Storage clients closed")
+    print("Storage clients and dashboard closed")
 
 
 @app.get("/")
@@ -825,7 +856,7 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
         # Generate unique ID
         import uuid
 
-        context_id = f"ctx_{uuid.uuid4().hex[:12]}"
+        context_id = str(uuid.uuid4())
 
         # Store in vector database
         vector_id = None
@@ -858,7 +889,7 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
             try:
                 logger.info("Storing context in Neo4j graph database...")
                 graph_id = neo4j_client.create_node(
-                    label="Context",
+                    labels=["Context"],
                     properties={"id": context_id, "type": request.type, **request.content},
                 )
                 logger.info(f"Successfully created graph node with ID: {graph_id}")
@@ -917,7 +948,6 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                 collection_name = os.getenv("QDRANT_COLLECTION", "context_store")
 
                 vector_results = qdrant_client.search(
-                    collection_name=collection_name,
                     query_vector=query_vector,
                     limit=request.limit,
                 )
@@ -1204,6 +1234,250 @@ async def list_tools() -> Dict[str, Any]:
                 continue
 
     return {"tools": tools, "server_version": "1.0.0"}
+
+
+# Dashboard API Endpoints
+@app.get("/api/dashboard")
+async def get_dashboard_json():
+    """Get complete dashboard data in JSON format."""
+    if not dashboard:
+        raise HTTPException(status_code=503, detail="Dashboard not available")
+    
+    try:
+        metrics = await dashboard.collect_all_metrics()
+        return {
+            "success": True,
+            "format": "json",
+            "timestamp": time.time(),
+            "data": metrics
+        }
+    except Exception as e:
+        logger.error(f"Failed to get dashboard JSON: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dashboard/ascii", response_class=PlainTextResponse)
+async def get_dashboard_ascii():
+    """Get dashboard in ASCII format for human reading."""
+    if not dashboard:
+        return "Dashboard Error: Dashboard not available"
+    
+    try:
+        metrics = await dashboard.collect_all_metrics()
+        ascii_output = dashboard.generate_ascii_dashboard(metrics)
+        return ascii_output
+    except Exception as e:
+        logger.error(f"Failed to get dashboard ASCII: {e}")
+        return f"Dashboard Error: {str(e)}"
+
+
+@app.get("/api/dashboard/system")
+async def get_system_metrics():
+    """Get system metrics only."""
+    if not dashboard:
+        raise HTTPException(status_code=503, detail="Dashboard not available")
+    
+    try:
+        metrics = await dashboard.collect_all_metrics()
+        return {
+            "success": True,
+            "type": "system_metrics",
+            "timestamp": time.time(),
+            "data": metrics.get("system", {})
+        }
+    except Exception as e:
+        logger.error(f"Failed to get system metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dashboard/services")
+async def get_service_metrics():
+    """Get service health metrics only."""
+    if not dashboard:
+        raise HTTPException(status_code=503, detail="Dashboard not available")
+    
+    try:
+        metrics = await dashboard.collect_all_metrics()
+        return {
+            "success": True,
+            "type": "service_metrics",
+            "timestamp": time.time(),
+            "data": metrics.get("services", [])
+        }
+    except Exception as e:
+        logger.error(f"Failed to get service metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dashboard/security")
+async def get_security_metrics():
+    """Get security metrics only."""
+    if not dashboard:
+        raise HTTPException(status_code=503, detail="Dashboard not available")
+    
+    try:
+        metrics = await dashboard.collect_all_metrics()
+        return {
+            "success": True,
+            "type": "security_metrics",
+            "timestamp": time.time(),
+            "data": metrics.get("security", {})
+        }
+    except Exception as e:
+        logger.error(f"Failed to get security metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dashboard/refresh")
+async def refresh_dashboard():
+    """Force refresh of dashboard metrics."""
+    if not dashboard:
+        raise HTTPException(status_code=503, detail="Dashboard not available")
+    
+    try:
+        metrics = await dashboard.collect_all_metrics(force_refresh=True)
+        
+        # Broadcast update to all WebSocket connections
+        await _broadcast_to_websockets({
+            "type": "force_refresh",
+            "timestamp": time.time(),
+            "data": metrics
+        })
+        
+        return {
+            "success": True,
+            "message": "Dashboard metrics refreshed",
+            "timestamp": time.time(),
+            "websocket_notifications_sent": len(websocket_connections)
+        }
+    except Exception as e:
+        logger.error(f"Failed to refresh dashboard: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dashboard/health")
+async def dashboard_health():
+    """Dashboard API health check."""
+    try:
+        dashboard_healthy = dashboard is not None and dashboard.last_update is not None
+        websocket_healthy = len(websocket_connections) <= 100  # Max connections
+        overall_healthy = dashboard_healthy and websocket_healthy
+        
+        return {
+            "success": True,
+            "healthy": overall_healthy,
+            "timestamp": time.time(),
+            "components": {
+                "dashboard": {
+                    "healthy": dashboard_healthy,
+                    "last_update": dashboard.last_update.isoformat() if dashboard and dashboard.last_update else None
+                },
+                "websockets": {
+                    "healthy": websocket_healthy,
+                    "active_connections": len(websocket_connections),
+                    "max_connections": 100
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get API health: {e}")
+        return {
+            "success": False,
+            "healthy": False,
+            "error": str(e),
+            "timestamp": time.time()
+        }
+
+
+@app.websocket("/ws/dashboard")
+async def websocket_dashboard(websocket: WebSocket):
+    """WebSocket endpoint for real-time dashboard streaming."""
+    await websocket.accept()
+    websocket_connections.add(websocket)
+    
+    try:
+        logger.info(f"WebSocket connected ({len(websocket_connections)} total)")
+        
+        if len(websocket_connections) > 100:  # Max connections
+            await websocket.close(code=1008, reason="Max connections exceeded")
+            return
+
+        # Send initial dashboard data
+        if dashboard:
+            metrics = await dashboard.collect_all_metrics(force_refresh=True)
+            await websocket.send_json({
+                "type": "initial_data",
+                "timestamp": time.time(),
+                "data": metrics
+            })
+
+        # Start streaming updates
+        await _stream_dashboard_updates(websocket)
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        await websocket.close(code=1011, reason="Internal error")
+    finally:
+        websocket_connections.discard(websocket)
+
+
+async def _stream_dashboard_updates(websocket: WebSocket):
+    """Stream dashboard updates to WebSocket client."""
+    update_interval = 5  # seconds
+    heartbeat_interval = 30  # seconds
+    
+    last_heartbeat = time.time()
+    
+    try:
+        while True:
+            if dashboard:
+                # Collect current metrics
+                metrics = await dashboard.collect_all_metrics()
+                
+                # Send update
+                update_message = {
+                    "type": "dashboard_update",
+                    "timestamp": time.time(),
+                    "data": metrics
+                }
+                
+                await websocket.send_json(update_message)
+                
+                # Send heartbeat if needed
+                now = time.time()
+                if (now - last_heartbeat) >= heartbeat_interval:
+                    await websocket.send_json({
+                        "type": "heartbeat",
+                        "timestamp": now
+                    })
+                    last_heartbeat = now
+            
+            # Wait for next update
+            await asyncio.sleep(update_interval)
+            
+    except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected during streaming")
+    except Exception as e:
+        logger.error(f"Streaming error: {e}")
+
+
+async def _broadcast_to_websockets(message: Dict[str, Any]):
+    """Broadcast message to all connected WebSocket clients."""
+    if not websocket_connections:
+        return
+    
+    # Create list of connections to avoid modification during iteration
+    connections = list(websocket_connections)
+    
+    for websocket in connections:
+        try:
+            await websocket.send_json(message)
+        except Exception as e:
+            logger.warning(f"Failed to send WebSocket message: {e}")
+            # Remove failed connection
+            websocket_connections.discard(websocket)
 
 
 if __name__ == "__main__":
