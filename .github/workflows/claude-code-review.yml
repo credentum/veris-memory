@@ -144,7 +144,7 @@ jobs:
           use_sticky_comment: true
           # Tools Claude may invoke during review
           allowed_tools: |
-            Bash(pytest --cov=src --cov-report=term --cov-report=json -m "not integration and not e2e"),
+            Bash(./scripts/run-tests.sh ci),
             Bash(pre-commit run --all-files --config .pre-commit-config.yaml),
             Bash(python -m src.validators.config_validator),
             Bash(yamale -s schemas/ context/),
@@ -367,8 +367,8 @@ jobs:
             echo "COVERAGE_FAILED=false" >> $GITHUB_ENV
             echo "INFRASTRUCTURE_PR=true" >> $GITHUB_ENV
           else
-            # Run coverage and capture output (exclude integration/e2e tests like main test workflow)
-            echo "Running coverage analysis..."
+            # Run coverage using unified test runner with parallel execution (consistent with local development)
+            echo "Running coverage analysis with parallel execution..."
 
             # Ensure dependencies are available
             if ! python -c "import gnupg" 2>/dev/null; then
@@ -382,8 +382,8 @@ jobs:
             fi
 
             # Run tests with better error handling
-            if pytest tests/ --cov=src --cov-report=term --cov-report=json -m "not integration and not e2e" --tb=short; then
-              echo "✓ Tests completed successfully"
+            if ./scripts/run-tests.sh ci; then
+              echo "✓ Tests completed successfully using unified test runner"
             else
               echo "⚠️ Some tests failed, but coverage may still be available"
             fi
