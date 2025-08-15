@@ -8,9 +8,8 @@ user facts in a structured key-value format with lineage tracking.
 import json
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Iterator
 from dataclasses import dataclass, asdict
-from redis import Redis
 import logging
 
 logger = logging.getLogger(__name__)

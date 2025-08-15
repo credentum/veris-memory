@@ -78,7 +78,7 @@ class EntityExtractor:
     high-precision entity recognition in personal fact domains.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         # Fact-specific entity patterns with high precision
         self.entity_patterns = {
             EntityType.PERSON: [

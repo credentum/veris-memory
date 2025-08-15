@@ -45,7 +45,7 @@ class ScoringWeights:
     gamma_graph: float      # Graph signal weight
     fact_boost: float       # Additional fact pattern boost
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate weights sum to reasonable range."""
         total = self.alpha_dense + self.beta_lexical + self.gamma_graph
         if not (0.8 <= total <= 1.2):

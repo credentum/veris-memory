@@ -44,7 +44,7 @@ class FactAwareRanker:
     declarative statements over questions in search results.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Declarative patterns that should be boosted (answer-like content)
         self.boost_patterns = [
             # Personal identity declarations

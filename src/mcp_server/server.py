@@ -1354,15 +1354,19 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                             normalized_value = (float(query_hash[byte_idx]) / 255.0) * 2.0 - 1.0
                             query_vector.append(normalized_value)
 
-                    # Search with each query variant
+                    # Search with each query variant - run async for better performance
                     collection_name = qdrant_client.config.get("qdrant", {}).get(
                         "collection_name", "project_context"
                     )
 
-                    variant_results = qdrant_client.search(
-                        query_vector=query_vector,
-                        limit=limit * 2,  # Get more results for better ranking
-                        filter_dict=None,
+                    # Run vector search asynchronously to avoid blocking
+                    variant_results = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: qdrant_client.search(
+                            query_vector=query_vector,
+                            limit=limit * 2,  # Get more results for better ranking
+                            filter_dict=None,
+                        )
                     )
                     
                     # Add query source tracking
@@ -1428,7 +1432,11 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                         logger.info(f"Applied hybrid scoring to {len(ranked_results)} results")
                     else:
                         # Fallback to fact-aware ranking only
-                        ranked_results = fact_ranker.apply_fact_ranking(ranking_input, original_query)
+                        # Apply fact ranking asynchronously for large result sets
+                        ranked_results = await asyncio.get_event_loop().run_in_executor(
+                            None,
+                            lambda: fact_ranker.apply_fact_ranking(ranking_input, original_query)
+                        )
                     
                     # Convert back and deduplicate by ID
                     seen_ids = set()
@@ -1500,9 +1508,13 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                                n.metadata as metadata, n.created_at as created_at
                         LIMIT $limit
                         """
-                    query_result = neo4j_client.query(
-                        cypher_query,
-                        parameters={"type": context_type, "query": query, "limit": limit},
+                    # Run graph query asynchronously to avoid blocking
+                    query_result = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: neo4j_client.query(
+                            cypher_query,
+                            parameters={"type": context_type, "query": query, "limit": limit},
+                        )
                     )
 
                     for record in query_result:
@@ -2449,35 +2461,72 @@ async def store_fact_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         if arguments.get("attribute") and arguments.get("value"):
             # Manual fact storage - use graph fact store if available
             active_fact_store = graph_fact_store if graph_fact_store else fact_store
-            active_fact_store.store_fact(
-                namespace=scope.namespace,
-                user_id=scope.user_id,
-                attribute=arguments["attribute"],
-                value=arguments["value"],
-                source_turn_id=source_turn_id
-            )
-            stored_facts = [{"attribute": arguments["attribute"], "value": arguments["value"]}]
-        else:
-            # Automatic fact extraction
-            extracted_facts = fact_extractor.extract_facts_from_text(text, source_turn_id)
-            stored_facts = []
             
-            for fact in extracted_facts:
-                # Use graph fact store if available for automatic extraction too
-                active_fact_store = graph_fact_store if graph_fact_store else fact_store
-                active_fact_store.store_fact(
-                    namespace=scope.namespace,
-                    user_id=scope.user_id,
-                    attribute=fact.attribute,
-                    value=fact.value,
-                    confidence=fact.confidence,
-                    source_turn_id=source_turn_id
+            # Run potentially long-running storage operation asynchronously
+            try:
+                await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: active_fact_store.store_fact(
+                        namespace=scope.namespace,
+                        user_id=scope.user_id,
+                        attribute=arguments["attribute"],
+                        value=arguments["value"],
+                        source_turn_id=source_turn_id
+                    )
                 )
-                stored_facts.append({
-                    "attribute": fact.attribute,
-                    "value": fact.value,
-                    "confidence": fact.confidence
-                })
+                stored_facts = [{"attribute": arguments["attribute"], "value": arguments["value"]}]
+            except Exception as e:
+                logger.error(f"Error storing fact: {e}")
+                return {
+                    "success": False,
+                    "message": f"Failed to store fact: {str(e)}",
+                    "error_type": "storage_error"
+                }
+        else:
+            # Automatic fact extraction - run async for long-running operations
+            try:
+                # Extract facts asynchronously for long texts
+                extracted_facts = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: fact_extractor.extract_facts_from_text(text, source_turn_id)
+                )
+                stored_facts = []
+                
+                # Store each fact asynchronously
+                active_fact_store = graph_fact_store if graph_fact_store else fact_store
+                store_tasks = []
+                
+                for fact in extracted_facts:
+                    # Create async task for each fact storage operation
+                    task = asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda f=fact: active_fact_store.store_fact(
+                            namespace=scope.namespace,
+                            user_id=scope.user_id,
+                            attribute=f.attribute,
+                            value=f.value,
+                            confidence=f.confidence,
+                            source_turn_id=source_turn_id
+                        )
+                    )
+                    store_tasks.append(task)
+                    stored_facts.append({
+                        "attribute": fact.attribute,
+                        "value": fact.value,
+                        "confidence": fact.confidence
+                    })
+                
+                # Wait for all storage operations to complete
+                if store_tasks:
+                    await asyncio.gather(*store_tasks)
+                    
+            except Exception as e:
+                logger.error(f"Error in automatic fact extraction: {e}")
+                return {
+                    "success": False,
+                    "message": f"Failed to extract and store facts: {str(e)}",
+                    "error_type": "extraction_error"
+                }
 
         logger.info(f"Stored {len(stored_facts)} facts for {scope.namespace}:{scope.user_id}")
         
@@ -2694,8 +2743,11 @@ async def delete_user_facts_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "error_type": "confirmation_required",
             }
 
-        # Delete all facts for user
-        deleted_count = fact_store.delete_user_facts(scope.namespace, scope.user_id)
+        # Delete all facts for user - run async for potentially large deletions
+        deleted_count = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: fact_store.delete_user_facts(scope.namespace, scope.user_id)
+        )
         
         logger.info(f"Deleted {deleted_count} fact entries for {scope.namespace}:{scope.user_id}")
         
