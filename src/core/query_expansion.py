@@ -8,7 +8,7 @@ into multiple search patterns that can find semantically related answers.
 
 import logging
 import re
-from typing import List, Set, Dict, Any
+from typing import List, Set, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class QueryExpander:
     """Expands queries to improve retrieval of semantically related content."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the query expander with predefined patterns."""
         # Question patterns and their corresponding answer patterns
         self.question_answer_patterns = {

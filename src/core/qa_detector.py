@@ -8,7 +8,7 @@ explicit relationships between questions and their answers.
 
 import logging
 import re
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Set
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class QADetector:
     """Detects question-answer patterns in conversation contexts."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the Q&A detector with pattern definitions."""
         # Question patterns that indicate a user is asking for information
         self.question_patterns = [
@@ -55,7 +55,7 @@ class QADetector:
         ]
         
         # Question words that indicate information seeking
-        self.question_words = {"what", "who", "where", "when", "how", "why", "which", "whose"}
+        self.question_words: Set[str] = {"what", "who", "where", "when", "how", "why", "which", "whose"}
     
     def detect_qa_relationship(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Detect Q&A relationships in a conversation thread.
@@ -208,7 +208,7 @@ class QADetector:
         
         return min(confidence, 1.0)
     
-    def _extract_keywords(self, text: str) -> set:
+    def _extract_keywords(self, text: str) -> Set[str]:
         """Extract relevant keywords from text.
         
         Args:

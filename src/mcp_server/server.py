@@ -816,46 +816,12 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                         
                         # Detect and create Q&A relationships if content is conversation
                         try:
-                            from src.core.qa_detector import get_qa_detector
-                            qa_detector = get_qa_detector()
-                            
-                            # Check if content contains conversation messages
-                            if isinstance(content, dict) and "messages" in content:
-                                messages = content["messages"]
-                                if isinstance(messages, list):
-                                    qa_relationships = qa_detector.detect_qa_relationship(messages)
-                                    
-                                    # Store Q&A metadata in the context
-                                    if qa_relationships:
-                                        qa_metadata = {
-                                            "qa_pairs": len(qa_relationships),
-                                            "relationships": qa_relationships
-                                        }
-                                        
-                                        # Update node with Q&A metadata
-                                        update_query = """
-                                        MATCH (c:Context {id: $id})
-                                        SET c.qa_metadata = $qa_metadata
-                                        RETURN c
-                                        """
-                                        session.run(update_query, id=context_id, qa_metadata=json.dumps(qa_metadata))
-                                        logger.info(f"Added Q&A metadata: {len(qa_relationships)} relationships detected")
-                                        
-                                        # Extract and index factual statements for better retrieval
-                                        factual_statements = qa_detector.extract_factual_statements(messages)
-                                        if factual_statements:
-                                            fact_metadata = {
-                                                "factual_statements": factual_statements
-                                            }
-                                            update_query = """
-                                            MATCH (c:Context {id: $id})
-                                            SET c.fact_metadata = $fact_metadata
-                                            RETURN c
-                                            """
-                                            session.run(update_query, id=context_id, fact_metadata=json.dumps(fact_metadata))
-                                            logger.info(f"Indexed {len(factual_statements)} factual statements")
+                            from src.core.qa_handlers import detect_and_store_qa_metadata
+                            success, qa_metadata = detect_and_store_qa_metadata(content, context_id, session)
+                            if success and qa_metadata:
+                                logger.debug(f"Successfully stored Q&A metadata for context {context_id}")
                         except ImportError:
-                            logger.debug("Q&A detector not available, skipping relationship detection")
+                            logger.debug("Q&A handlers not available, skipping relationship detection")
             except Exception as e:
                 logger.error(f"Failed to store in graph database: {e}")
                 graph_id = None
@@ -999,14 +965,12 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
         # Apply query expansion to improve semantic matching
         try:
-            from src.core.query_expansion import get_query_expander
-            query_expander = get_query_expander()
-            expanded_queries = query_expander.expand_query(query)
-            logger.info(f"Query expansion: '{query}' → {len(expanded_queries)} patterns")
+            from src.core.qa_handlers import expand_query_patterns
+            expanded_queries = expand_query_patterns(query)
         except ImportError:
             # Fallback if query expansion is not available
             expanded_queries = [query]
-            logger.warning("Query expansion not available, using original query only")
+            logger.warning("Q&A handlers not available, using original query only")
 
         results = []
 
@@ -1218,6 +1182,13 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
             graphrag_metadata[
                 "community_info"
             ] = "Community detection available via detect_communities tool"
+
+        # Process results with Q&A awareness
+        try:
+            from src.core.qa_handlers import process_enhanced_search_results
+            enhanced_results = process_enhanced_search_results(enhanced_results, query)
+        except ImportError:
+            logger.debug("Q&A handlers not available for result processing")
 
         # Apply reranking to improve precision
         reranker_config = qdrant_client.config.get("reranker", {}) if qdrant_client else {}
