@@ -58,6 +58,25 @@ if [ ! -f "docker/docker-compose.yml" ]; then
     exit 1
 fi
 
+# CRITICAL: Verify dockerfile exists to prevent path truncation issue
+echo -e "${BLUE}🔍 Verifying dockerfile paths...${NC}"
+if [ ! -f "docker/Dockerfile" ]; then
+    echo -e "${RED}❌ Error: docker/Dockerfile not found${NC}"
+    echo "Expected path: $(pwd)/docker/Dockerfile"
+    ls -la docker/ || true
+    exit 1
+fi
+echo "  ✓ docker/Dockerfile exists"
+
+# Additional verification for production dockerfile if needed
+if [ "$ENVIRONMENT" = "prod" ] && grep -q "Dockerfile.flyio" "$COMPOSE_FILE" 2>/dev/null; then
+    if [ ! -f "docker/Dockerfile.flyio" ]; then
+        echo -e "${RED}❌ Error: docker/Dockerfile.flyio not found${NC}"
+        exit 1
+    fi
+    echo "  ✓ docker/Dockerfile.flyio exists"
+fi
+
 # Check if environment-specific compose file exists
 if [ ! -f "$COMPOSE_FILE" ] && [ "$ENVIRONMENT" = "prod" ]; then
     echo -e "${YELLOW}⚠️  Warning: $COMPOSE_FILE not found, creating from template${NC}"
@@ -229,9 +248,9 @@ echo -e "${YELLOW}🛑 Performing robust container cleanup for $ENVIRONMENT...${
 echo -e "${BLUE}📊 Current Docker state before cleanup:${NC}"
 docker ps --format "table {{.Names}}\t{{.Status}}" | grep "$PROJECT_NAME" || echo "  No $PROJECT_NAME containers running"
 
-# Method 1: Stop using docker-compose
-echo "  → Attempting docker-compose down..."
-docker-compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
+# Method 1: Stop using docker compose (modern syntax)
+echo "  → Attempting docker compose down..."
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
 
 # Method 2: Force remove containers by project name
 echo "  → Force removing containers by project name..."
@@ -311,7 +330,26 @@ fi
 
 # Build and start services
 echo -e "${GREEN}🚀 Starting $ENVIRONMENT services...${NC}"
-docker-compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build
+echo -e "${BLUE}🔍 DEBUG: Using docker compose command with:${NC}"
+echo "  → Project: $PROJECT_NAME"
+echo "  → Compose file: $COMPOSE_FILE"
+echo "  → Full command: docker compose -p \"$PROJECT_NAME\" -f \"$COMPOSE_FILE\" up -d --build"
+
+# Try modern docker compose syntax first, fallback to legacy if needed
+if ! docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build; then
+    echo -e "${YELLOW}⚠️  Modern docker compose failed, trying legacy docker-compose...${NC}"
+    if ! docker-compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build; then
+        echo -e "${RED}❌ Both docker compose and docker-compose failed!${NC}"
+        echo "Debugging information:"
+        echo "  → Docker version: $(docker --version 2>/dev/null || echo 'Not found')"
+        echo "  → Docker compose version: $(docker compose version 2>/dev/null || echo 'Not found')"
+        echo "  → Legacy docker-compose version: $(docker-compose --version 2>/dev/null || echo 'Not found')"
+        echo "  → Current directory: $(pwd)"
+        echo "  → Compose file exists: $(test -f "$COMPOSE_FILE" && echo 'Yes' || echo 'No')"
+        echo "  → Dockerfile exists: $(test -f 'docker/Dockerfile' && echo 'Yes' || echo 'No')"
+        exit 1
+    fi
+fi
 
 # Wait for services to be healthy
 echo -e "${BLUE}⏳ Waiting for $ENVIRONMENT services to be healthy...${NC}"
@@ -331,7 +369,7 @@ done
 if [ $count -ge $timeout ]; then
     echo -e "${RED}❌ $ENVIRONMENT services failed to become healthy${NC}"
     echo "Showing logs from last 50 lines:"
-    docker-compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" logs --tail=50
+    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" logs --tail=50
     exit 1
 fi
 
@@ -377,7 +415,7 @@ fi
 # Show running containers
 echo ""
 echo -e "${BLUE}📊 $ENVIRONMENT containers running:${NC}"
-docker-compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" ps
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" ps
 
 # Generate deployment report
 echo ""
