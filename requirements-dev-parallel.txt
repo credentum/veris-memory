@@ -1,0 +1,10 @@
+# Include existing dev dependencies  
+-r requirements-dev.txt
+
+# Parallel test execution
+pytest-xdist>=3.8.0
+pytest-forked>=1.6.0
+
+# Test performance monitoring
+pytest-benchmark>=4.0.0
+pytest-timeout>=2.3.1
