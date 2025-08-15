@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.ssl_config import (  # noqa: E402
+from src.core.ssl_config import (  # noqa: E402
     SSLConfigManager,
     create_ssl_context,
     get_production_ssl_recommendations,

@@ -10,7 +10,7 @@ from unittest.mock import patch
 import yaml
 from click.testing import CliRunner
 
-from validators.config_validator import main, validate_all_configs  # noqa: E402
+from src.validators.config_validator import main, validate_all_configs  # noqa: E402
 
 
 class TestCompleteConfig:

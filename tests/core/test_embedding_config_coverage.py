@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from core.embedding_config import (  # noqa: E402
+from src.core.embedding_config import (  # noqa: E402
     EmbeddingConfig,
     EmbeddingGenerator,
     create_embedding_generator,

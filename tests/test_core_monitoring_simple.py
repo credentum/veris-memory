@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from core.monitoring import (
+from src.core.monitoring import (
     MCPMetrics,
     MCPMonitor,
     MCPTracing,

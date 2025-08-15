@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import yaml
 
-from validators.config_validator import (  # noqa: E402
+from src.validators.config_validator import (  # noqa: E402
     ConfigValidationError,
     ConfigValidator,
     validate_all_configs,
@@ -296,7 +296,7 @@ class TestMainFunction:
     @patch("validators.config_validator.click.echo")
     def test_main_default(self, mock_echo, mock_validate):
         """Test main function with default arguments."""
-        from validators.config_validator import main
+        from src.validators.config_validator import main
 
         mock_validate.return_value = {
             "valid": True,
@@ -314,7 +314,7 @@ class TestMainFunction:
     @patch("validators.config_validator.sys.exit")
     def test_main_strict_mode_failure(self, mock_exit, mock_echo, mock_validate):
         """Test main function in strict mode with validation failure."""
-        from validators.config_validator import main
+        from src.validators.config_validator import main
 
         mock_validate.return_value = {
             "valid": False,
@@ -330,7 +330,7 @@ class TestMainFunction:
     @patch("validators.config_validator.click.echo")
     def test_main_with_warnings(self, mock_echo, mock_validate):
         """Test main function with warnings."""
-        from validators.config_validator import main
+        from src.validators.config_validator import main
 
         mock_validate.return_value = {
             "valid": True,

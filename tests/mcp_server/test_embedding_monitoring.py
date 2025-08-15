@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from core.embedding_config import EmbeddingGenerator, create_embedding_generator
-from core.monitoring import MCPMetrics, MCPMonitor, MCPTracing
-from core.rate_limiter import MCPRateLimiter, SlidingWindowLimiter, TokenBucket, rate_limit_check
+from src.core.embedding_config import EmbeddingGenerator, create_embedding_generator
+from src.core.monitoring import MCPMetrics, MCPMonitor, MCPTracing
+from src.core.rate_limiter import MCPRateLimiter, SlidingWindowLimiter, TokenBucket, rate_limit_check
 
 
 class TestEmbeddingConfiguration:
@@ -49,7 +49,7 @@ class TestEmbeddingConfiguration:
     @pytest.mark.asyncio
     async def test_embedding_generator_openai_embedding(self):
         """Test OpenAI embedding generation with fallback to development."""
-        from core.embedding_config import EmbeddingConfig
+        from src.core.embedding_config import EmbeddingConfig
 
         config_data = {
             "embedding": {
@@ -72,7 +72,7 @@ class TestEmbeddingConfiguration:
     @pytest.mark.asyncio
     async def test_embedding_generator_development_embedding(self):
         """Test development embedding generation."""
-        from core.embedding_config import EmbeddingConfig
+        from src.core.embedding_config import EmbeddingConfig
 
         config_data = {"embeddings": {"provider": "development"}}
 
