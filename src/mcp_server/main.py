@@ -397,6 +397,13 @@ async def startup_event() -> None:
         try:
             qdrant_initializer = VectorDBInitializer()
             if qdrant_initializer.connect():
+                # Auto-create collection if it doesn't exist
+                try:
+                    qdrant_initializer.create_collection(force=False)
+                    print("✅ Qdrant collection verified/created")
+                except Exception as collection_error:
+                    print(f"⚠️ Qdrant collection setup failed: {collection_error}")
+                
                 # Get the actual Qdrant client for operations
                 qdrant_client = qdrant_initializer
                 print("✅ Qdrant connected successfully")
@@ -888,9 +895,19 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
         if neo4j_client:
             try:
                 logger.info("Storing context in Neo4j graph database...")
+                # Flatten nested objects for Neo4j compatibility
+                flattened_properties = {"id": context_id, "type": request.type}
+                
+                # Handle request.content safely - convert nested objects to JSON strings
+                for key, value in request.content.items():
+                    if isinstance(value, (dict, list)):
+                        flattened_properties[f"{key}_json"] = json.dumps(value)
+                    else:
+                        flattened_properties[key] = value
+                
                 graph_id = neo4j_client.create_node(
                     labels=["Context"],
-                    properties={"id": context_id, "type": request.type, **request.content},
+                    properties=flattened_properties,
                 )
                 logger.info(f"Successfully created graph node with ID: {graph_id}")
 
@@ -933,19 +950,11 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
         results = []
 
         if request.search_mode in ["vector", "hybrid"] and qdrant_client:
-            # Perform vector search using hash-based embedding
-            import hashlib
-
-            query_hash = hashlib.sha256(request.query.encode()).digest()
-            query_vector = []
-            embedding_dim = Config.EMBEDDING_DIMENSIONS
-            for i in range(embedding_dim):
-                byte_idx = i % len(query_hash)
-                query_vector.append(float(query_hash[byte_idx]) / 255.0)
-
+            # Perform vector search using semantic embeddings
             try:
-                # Get collection name from config (default: context_store)
-                collection_name = os.getenv("QDRANT_COLLECTION", "context_store")
+                # Generate semantic embedding for query (same as storage)
+                query_vector = await _generate_embedding(request.query)
+                logger.info(f"Generated query embedding with {len(query_vector)} dimensions")
 
                 vector_results = qdrant_client.search(
                     query_vector=query_vector,
@@ -962,6 +971,7 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                             "source": "vector",
                         }
                     )
+                logger.info(f"Vector search found {len(vector_results)} results")
 
             except Exception as e:
                 logger.warning(f"Vector search failed: {e}")
