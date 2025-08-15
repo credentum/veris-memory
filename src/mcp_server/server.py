@@ -35,6 +35,11 @@ try:
     from src.storage.reranker import get_reranker
     from src.validators.config_validator import validate_all_configs
     from src.security.input_validator import InputValidator, ContentTypeValidator
+    # Fact system imports
+    from src.storage.fact_store import FactStore
+    from src.core.intent_classifier import IntentClassifier, IntentType
+    from src.core.fact_extractor import FactExtractor
+    from src.middleware.scope_validator import ScopeValidator, ScopeMiddleware
 except ImportError:
     # Fallback for different import contexts
     import sys
@@ -52,6 +57,11 @@ except ImportError:
     from storage.reranker import get_reranker
     from validators.config_validator import validate_all_configs
     from security.input_validator import InputValidator, ContentTypeValidator
+    # Fact system imports
+    from storage.fact_store import FactStore
+    from core.intent_classifier import IntentClassifier, IntentType
+    from core.fact_extractor import FactExtractor
+    from middleware.scope_validator import ScopeValidator, ScopeMiddleware
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -65,6 +75,13 @@ neo4j_client = None
 qdrant_client = None
 kv_store = None
 embedding_generator = None
+
+# Global fact system instances
+fact_store = None
+intent_classifier = IntentClassifier()
+fact_extractor = FactExtractor()
+scope_validator = ScopeValidator()
+scope_middleware = None
 
 # Global security and namespace instances
 cypher_validator = CypherValidator()
@@ -84,7 +101,7 @@ except ImportError as e:
 
 async def initialize_storage_clients() -> Dict[str, Any]:
     """Initialize storage clients with SSL/TLS support."""
-    global neo4j_client, qdrant_client, kv_store, embedding_generator
+    global neo4j_client, qdrant_client, kv_store, embedding_generator, fact_store, scope_middleware
 
     try:
         # Validate configuration
@@ -216,6 +233,21 @@ async def initialize_storage_clients() -> Dict[str, Any]:
             logger.error(f"❌ Failed to initialize embedding generator: {e}")
             embedding_generator = None
 
+        # Initialize fact system
+        try:
+            if kv_store and kv_store.redis_client:
+                fact_store = FactStore(kv_store.redis_client)
+                scope_middleware = ScopeMiddleware(scope_validator)
+                logger.info("✅ Fact system initialized")
+            else:
+                fact_store = None
+                scope_middleware = None
+                logger.warning("⚠️ Fact system disabled: Redis not available")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize fact system: {e}")
+            fact_store = None
+            scope_middleware = None
+
         logger.info("✅ Storage clients initialization completed")
 
         return {
@@ -224,6 +256,7 @@ async def initialize_storage_clients() -> Dict[str, Any]:
             "qdrant_initialized": qdrant_client is not None,
             "kv_store_initialized": kv_store is not None,
             "embedding_initialized": embedding_generator is not None,
+            "fact_system_initialized": fact_store is not None,
             "message": "Storage clients initialized successfully",
         }
 
@@ -241,6 +274,7 @@ async def initialize_storage_clients() -> Dict[str, Any]:
             "qdrant_initialized": False,
             "kv_store_initialized": False,
             "embedding_initialized": False,
+            "fact_system_initialized": False,
             "message": f"Failed to initialize storage clients: {str(e)}",
         }
 
@@ -577,6 +611,135 @@ async def list_tools() -> List[Tool]:
                 "required": ["tool_name"],
             },
         ),
+        Tool(
+            name="store_fact",
+            description="Store a structured fact with automatic extraction and validation",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Text containing facts to extract and store",
+                    },
+                    "namespace": {
+                        "type": "string",
+                        "description": "Agent/namespace identifier for isolation",
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier for fact ownership",
+                    },
+                    "source_turn_id": {
+                        "type": "string",
+                        "description": "Source conversation turn identifier",
+                    },
+                    "attribute": {
+                        "type": "string",
+                        "description": "Specific fact attribute (optional, for manual storage)",
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "Fact value (optional, for manual storage)",
+                    },
+                },
+                "required": ["text", "namespace", "user_id"],
+            },
+        ),
+        Tool(
+            name="retrieve_fact",
+            description="Retrieve stored facts using intent classification and deterministic lookup",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Fact query (e.g., 'What's my name?')",
+                    },
+                    "namespace": {
+                        "type": "string",
+                        "description": "Agent/namespace identifier",
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier",
+                    },
+                    "attribute": {
+                        "type": "string",
+                        "description": "Specific fact attribute to retrieve (optional)",
+                    },
+                    "fallback_to_context": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Fall back to context search if fact not found",
+                    },
+                },
+                "required": ["query", "namespace", "user_id"],
+            },
+        ),
+        Tool(
+            name="list_user_facts",
+            description="List all stored facts for a user",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "namespace": {
+                        "type": "string",
+                        "description": "Agent/namespace identifier",
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier",
+                    },
+                    "include_history": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Include fact update history",
+                    },
+                },
+                "required": ["namespace", "user_id"],
+            },
+        ),
+        Tool(
+            name="delete_user_facts",
+            description="Delete all facts for a user (forget-me functionality)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "namespace": {
+                        "type": "string",
+                        "description": "Agent/namespace identifier",
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier",
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "description": "Confirmation required for deletion",
+                    },
+                },
+                "required": ["namespace", "user_id", "confirm"],
+            },
+        ),
+        Tool(
+            name="classify_intent",
+            description="Classify query intent for debugging and development",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Query text to classify",
+                    },
+                    "include_explanation": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Include detailed classification explanation",
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
     ]
 
 
@@ -619,6 +782,26 @@ async def call_tool(
 
     elif name == "get_tool_info":
         result = await get_tool_info_tool(arguments)
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "store_fact":
+        result = await store_fact_tool(arguments)
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "retrieve_fact":
+        result = await retrieve_fact_tool(arguments)
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "list_user_facts":
+        result = await list_user_facts_tool(arguments)
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "delete_user_facts":
+        result = await delete_user_facts_tool(arguments)
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "classify_intent":
+        result = await classify_intent_tool(arguments)
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     else:
@@ -1946,6 +2129,342 @@ async def get_tool_info_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "success": False,
             "message": f"Tool info retrieval failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def store_fact_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Store facts with automatic extraction and validation."""
+    if not fact_store or not scope_middleware:
+        return {
+            "success": False,
+            "message": "Fact system not initialized",
+            "error_type": "system_unavailable",
+        }
+
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("store_fact")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        # Process request through scope middleware
+        processed_request = scope_middleware.process_request("store_fact", arguments)
+        scope = processed_request["_validated_scope"]
+
+        text = arguments.get("text", "")
+        source_turn_id = arguments.get("source_turn_id", "")
+        
+        # Check for manual fact storage
+        if arguments.get("attribute") and arguments.get("value"):
+            # Manual fact storage
+            fact_store.store_fact(
+                namespace=scope.namespace,
+                user_id=scope.user_id,
+                attribute=arguments["attribute"],
+                value=arguments["value"],
+                source_turn_id=source_turn_id
+            )
+            stored_facts = [{"attribute": arguments["attribute"], "value": arguments["value"]}]
+        else:
+            # Automatic fact extraction
+            extracted_facts = fact_extractor.extract_facts_from_text(text, source_turn_id)
+            stored_facts = []
+            
+            for fact in extracted_facts:
+                fact_store.store_fact(
+                    namespace=scope.namespace,
+                    user_id=scope.user_id,
+                    attribute=fact.attribute,
+                    value=fact.value,
+                    confidence=fact.confidence,
+                    source_turn_id=source_turn_id
+                )
+                stored_facts.append({
+                    "attribute": fact.attribute,
+                    "value": fact.value,
+                    "confidence": fact.confidence
+                })
+
+        logger.info(f"Stored {len(stored_facts)} facts for {scope.namespace}:{scope.user_id}")
+        
+        return {
+            "success": True,
+            "message": f"Stored {len(stored_facts)} facts successfully",
+            "stored_facts": stored_facts,
+            "namespace": scope.namespace,
+            "user_id": scope.user_id
+        }
+
+    except Exception as e:
+        logger.error(f"Error in store_fact_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Fact storage failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def retrieve_fact_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Retrieve facts using intent classification and deterministic lookup."""
+    if not fact_store or not scope_middleware:
+        return {
+            "success": False,
+            "message": "Fact system not initialized",
+            "error_type": "system_unavailable",
+        }
+
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("retrieve_fact")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        # Process request through scope middleware
+        processed_request = scope_middleware.process_request("retrieve_fact", arguments)
+        scope = processed_request["_validated_scope"]
+
+        query = arguments.get("query", "")
+        attribute = arguments.get("attribute")
+        fallback_to_context = arguments.get("fallback_to_context", True)
+
+        # Classify intent
+        intent_result = intent_classifier.classify(query)
+        
+        if attribute:
+            # Direct attribute lookup
+            fact = fact_store.get_fact(scope.namespace, scope.user_id, attribute)
+            if fact:
+                return {
+                    "success": True,
+                    "message": "Fact retrieved successfully",
+                    "fact": {
+                        "attribute": fact.attribute,
+                        "value": fact.value,
+                        "confidence": fact.confidence,
+                        "updated_at": fact.updated_at
+                    },
+                    "intent": intent_result.intent.value,
+                    "method": "direct_lookup"
+                }
+        elif intent_result.attribute:
+            # Intent-based lookup
+            fact = fact_store.get_fact(scope.namespace, scope.user_id, intent_result.attribute)
+            if fact:
+                return {
+                    "success": True,
+                    "message": "Fact retrieved successfully",
+                    "fact": {
+                        "attribute": fact.attribute,
+                        "value": fact.value,
+                        "confidence": fact.confidence,
+                        "updated_at": fact.updated_at
+                    },
+                    "intent": intent_result.intent.value,
+                    "method": "intent_lookup"
+                }
+
+        # Fact not found
+        if fallback_to_context:
+            # Fall back to context search
+            context_args = {
+                "query": query,
+                "limit": 5,
+                "search_mode": "hybrid"
+            }
+            context_result = await retrieve_context_tool(context_args)
+            
+            return {
+                "success": True,
+                "message": "Fact not found, returned context search results",
+                "fact": None,
+                "intent": intent_result.intent.value,
+                "method": "context_fallback",
+                "context_results": context_result.get("results", [])
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Fact not found",
+                "fact": None,
+                "intent": intent_result.intent.value,
+                "method": "fact_lookup_only"
+            }
+
+    except Exception as e:
+        logger.error(f"Error in retrieve_fact_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Fact retrieval failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def list_user_facts_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """List all stored facts for a user."""
+    if not fact_store or not scope_middleware:
+        return {
+            "success": False,
+            "message": "Fact system not initialized",
+            "error_type": "system_unavailable",
+        }
+
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("list_user_facts")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        # Process request through scope middleware
+        processed_request = scope_middleware.process_request("list_facts", arguments)
+        scope = processed_request["_validated_scope"]
+
+        include_history = arguments.get("include_history", False)
+
+        # Get all facts for user
+        user_facts = fact_store.get_user_facts(scope.namespace, scope.user_id)
+        
+        facts_data = []
+        for attribute, fact in user_facts.items():
+            fact_data = {
+                "attribute": fact.attribute,
+                "value": fact.value,
+                "confidence": fact.confidence,
+                "updated_at": fact.updated_at,
+                "provenance": fact.provenance,
+                "source_turn_id": fact.source_turn_id
+            }
+            
+            if include_history:
+                history = fact_store.get_fact_history(scope.namespace, scope.user_id, attribute)
+                fact_data["history"] = history
+            
+            facts_data.append(fact_data)
+
+        logger.info(f"Listed {len(facts_data)} facts for {scope.namespace}:{scope.user_id}")
+        
+        return {
+            "success": True,
+            "message": f"Found {len(facts_data)} facts",
+            "facts": facts_data,
+            "namespace": scope.namespace,
+            "user_id": scope.user_id,
+            "include_history": include_history
+        }
+
+    except Exception as e:
+        logger.error(f"Error in list_user_facts_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Fact listing failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def delete_user_facts_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Delete all facts for a user (forget-me functionality)."""
+    if not fact_store or not scope_middleware:
+        return {
+            "success": False,
+            "message": "Fact system not initialized",
+            "error_type": "system_unavailable",
+        }
+
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("delete_user_facts")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        # Process request through scope middleware
+        processed_request = scope_middleware.process_request("delete_fact", arguments)
+        scope = processed_request["_validated_scope"]
+
+        confirm = arguments.get("confirm", False)
+        
+        if not confirm:
+            return {
+                "success": False,
+                "message": "Deletion requires explicit confirmation",
+                "error_type": "confirmation_required",
+            }
+
+        # Delete all facts for user
+        deleted_count = fact_store.delete_user_facts(scope.namespace, scope.user_id)
+        
+        logger.info(f"Deleted {deleted_count} fact entries for {scope.namespace}:{scope.user_id}")
+        
+        return {
+            "success": True,
+            "message": f"Deleted {deleted_count} fact entries successfully",
+            "deleted_count": deleted_count,
+            "namespace": scope.namespace,
+            "user_id": scope.user_id
+        }
+
+    except Exception as e:
+        logger.error(f"Error in delete_user_facts_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Fact deletion failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def classify_intent_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Classify query intent for debugging and development."""
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("classify_intent")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        query = arguments.get("query", "")
+        include_explanation = arguments.get("include_explanation", False)
+
+        if include_explanation:
+            result = intent_classifier.explain_classification(query)
+        else:
+            intent_result = intent_classifier.classify(query)
+            result = {
+                "query": query,
+                "intent": intent_result.intent.value,
+                "confidence": intent_result.confidence,
+                "attribute": intent_result.attribute,
+                "reasoning": intent_result.reasoning
+            }
+
+        return {
+            "success": True,
+            "message": "Intent classification completed",
+            "classification": result
+        }
+
+    except Exception as e:
+        logger.error(f"Error in classify_intent_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Intent classification failed: {str(e)}",
             "error_type": "execution_error",
         }
 
