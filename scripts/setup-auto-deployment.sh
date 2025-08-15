@@ -32,8 +32,8 @@ echo "🔗 Synchronizing Neo4j password with Docker containers..."
 if docker ps | grep -q neo4j; then
     echo "⚠️  Neo4j container running with potentially different password - restarting..."
     export NEO4J_PASSWORD="$NEO4J_PASSWORD"
-    docker-compose -f docker-compose.simple.yml down neo4j || true
-    docker-compose -f docker-compose.simple.yml up -d neo4j
+    docker-compose -f docker/docker-compose.simple.yml down neo4j || true
+    docker-compose -f docker/docker-compose.simple.yml up -d neo4j
     echo "⏳ Waiting for Neo4j to restart with new password..."
     sleep 15
 fi
@@ -51,7 +51,7 @@ sudo chown -R $(whoami):$(whoami) /raid1/docker-data/ || true
 
 # Start infrastructure services (Docker Compose)
 echo "🐳 Starting infrastructure services..."
-docker-compose -f docker-compose.simple.yml up -d redis neo4j qdrant
+docker-compose -f docker/docker-compose.simple.yml up -d redis neo4j qdrant
 
 # Start main application service
 echo "⚡ Starting main application service..."
@@ -72,7 +72,7 @@ done
 echo ""
 echo "📊 Deployment Status:"
 echo "Infrastructure services:"
-docker-compose -f docker-compose.simple.yml ps
+docker-compose -f docker/docker-compose.simple.yml ps
 
 echo ""
 echo "Main application service:"
