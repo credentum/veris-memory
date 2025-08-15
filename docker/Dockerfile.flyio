@@ -117,14 +117,14 @@ COPY contracts/ ./contracts/
 
 # Copy configuration files
 COPY .ctxrc.yaml /app/.ctxrc.yaml
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY start-services.sh /app/start-services.sh
 RUN chmod +x /app/start-services.sh
 
 # Copy monitoring and secrets management
 COPY monitoring/ /app/monitoring/
-COPY secrets/ /app/secrets/
-RUN chmod +x /app/monitoring/*.sh /app/secrets/*.sh
+# COPY secrets/ /app/secrets/  # Optional - directory may not exist
+RUN chmod +x /app/monitoring/*.sh
 
 # Configure Redis (create user-writable config in /app)
 RUN mkdir -p /app/config \
