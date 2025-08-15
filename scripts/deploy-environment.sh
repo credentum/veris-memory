@@ -30,7 +30,7 @@ echo "================================================"
 if [ "$ENVIRONMENT" = "dev" ]; then
     echo -e "${YELLOW}📦 Deploying to DEVELOPMENT environment${NC}"
     PROJECT_NAME="veris-memory-dev"
-    COMPOSE_FILE="docker/docker-compose.yml"  # Use standard compose for dev
+    COMPOSE_FILE="dockerfiles/docker-compose.yml"  # Use standard compose for dev
     ENV_FILE=".env.dev"
     API_PORT=8000        # Standard ports for dev (what we test with)
     QDRANT_PORT=6333
@@ -41,7 +41,7 @@ if [ "$ENVIRONMENT" = "dev" ]; then
 else
     echo -e "${GREEN}📦 Deploying to PRODUCTION environment${NC}"
     PROJECT_NAME="veris-memory-prod"
-    COMPOSE_FILE="docker/docker-compose.prod.yml"  # Separate compose for prod
+    COMPOSE_FILE="dockerfiles/docker-compose.prod.yml"  # Separate compose for prod
     ENV_FILE=".env"
     API_PORT=8001        # Alternate ports for production
     QDRANT_PORT=6334
@@ -52,36 +52,36 @@ else
 fi
 
 # Check if we're in the right directory
-if [ ! -f "docker/docker-compose.yml" ]; then
-    echo -e "${RED}❌ Error: docker/docker-compose.yml not found${NC}"
+if [ ! -f "dockerfiles/docker-compose.yml" ]; then
+    echo -e "${RED}❌ Error: dockerfiles/docker-compose.yml not found${NC}"
     echo "Please run this script from the veris-memory root directory"
     exit 1
 fi
 
 # CRITICAL: Verify dockerfile exists to prevent path truncation issue
 echo -e "${BLUE}🔍 Verifying dockerfile paths...${NC}"
-if [ ! -f "docker/Dockerfile" ]; then
-    echo -e "${RED}❌ Error: docker/Dockerfile not found${NC}"
-    echo "Expected path: $(pwd)/docker/Dockerfile"
-    ls -la docker/ || true
+if [ ! -f "dockerfiles/Dockerfile" ]; then
+    echo -e "${RED}❌ Error: dockerfiles/Dockerfile not found${NC}"
+    echo "Expected path: $(pwd)/dockerfiles/Dockerfile"
+    ls -la dockerfiles/ || true
     exit 1
 fi
-echo "  ✓ docker/Dockerfile exists"
+echo "  ✓ dockerfiles/Dockerfile exists"
 
 # Additional verification for production dockerfile if needed
 if [ "$ENVIRONMENT" = "prod" ] && grep -q "Dockerfile.flyio" "$COMPOSE_FILE" 2>/dev/null; then
-    if [ ! -f "docker/Dockerfile.flyio" ]; then
-        echo -e "${RED}❌ Error: docker/Dockerfile.flyio not found${NC}"
+    if [ ! -f "dockerfiles/Dockerfile.flyio" ]; then
+        echo -e "${RED}❌ Error: dockerfiles/Dockerfile.flyio not found${NC}"
         exit 1
     fi
-    echo "  ✓ docker/Dockerfile.flyio exists"
+    echo "  ✓ dockerfiles/Dockerfile.flyio exists"
 fi
 
 # Check if environment-specific compose file exists
 if [ ! -f "$COMPOSE_FILE" ] && [ "$ENVIRONMENT" = "prod" ]; then
     echo -e "${YELLOW}⚠️  Warning: $COMPOSE_FILE not found, creating from template${NC}"
     # Create prod compose file if it doesn't exist
-    cat > docker/docker-compose.prod.yml << 'EOF'
+    cat > dockerfiles/docker-compose.prod.yml << 'EOF'
 version: "3.8"
 
 services:
@@ -89,7 +89,7 @@ services:
   context-store:
     build:
       context: .
-      dockerfile: docker/Dockerfile.flyio
+      dockerfile: dockerfiles/Dockerfile.flyio
     container_name: veris-memory-prod-api
     ports:
       - "127.0.0.1:8001:8000"  # Prod API on 8001
@@ -346,7 +346,7 @@ if ! docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build; then
         echo "  → Legacy docker-compose version: $(docker-compose --version 2>/dev/null || echo 'Not found')"
         echo "  → Current directory: $(pwd)"
         echo "  → Compose file exists: $(test -f "$COMPOSE_FILE" && echo 'Yes' || echo 'No')"
-        echo "  → Dockerfile exists: $(test -f 'docker/Dockerfile' && echo 'Yes' || echo 'No')"
+        echo "  → Dockerfile exists: $(test -f 'dockerfiles/Dockerfile' && echo 'Yes' || echo 'No')"
         exit 1
     fi
 fi

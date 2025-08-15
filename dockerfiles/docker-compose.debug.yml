@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  # Simple test service to debug Docker path issues
+  debug-test:
+    build:
+      context: .
+      dockerfile: ./dockerfiles/Dockerfile
+    container_name: veris-memory-debug-test
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=true
+    restart: "no"
+    networks:
+      - debug-network
+
+networks:
+  debug-network:
+    driver: bridge
