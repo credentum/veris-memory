@@ -1,0 +1,282 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Fact Storage MCP Tool Contracts",
+  "description": "JSON schema contracts for fact storage and retrieval tools in the MCP server",
+  "version": "1.0.0",
+  "tools": {
+    "store_fact_tool": {
+      "name": "store_fact_tool",
+      "description": "Store a personal fact with enhanced metadata and privacy controls",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string",
+            "description": "Isolation namespace for the fact",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "user_id": {
+            "type": "string", 
+            "description": "User identifier",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "attribute": {
+            "type": "string",
+            "description": "Fact attribute (e.g., name, email, preferences.food)",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "value": {
+            "description": "Fact value (any type)",
+            "oneOf": [
+              {"type": "string"},
+              {"type": "number"},
+              {"type": "boolean"},
+              {"type": "object"},
+              {"type": "array"}
+            ]
+          },
+          "confidence": {
+            "type": "number",
+            "description": "Confidence score between 0.0 and 1.0",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "default": 1.0
+          },
+          "source_turn_id": {
+            "type": "string",
+            "description": "Source conversation turn identifier",
+            "default": ""
+          },
+          "provenance": {
+            "type": "string",
+            "description": "Source of the fact",
+            "enum": ["user_input", "conversation", "document", "external_api", "inferred"],
+            "default": "user_input"
+          }
+        },
+        "required": ["namespace", "user_id", "attribute", "value"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the fact was stored successfully"
+          },
+          "message": {
+            "type": "string",
+            "description": "Status message"
+          },
+          "fact_metadata": {
+            "type": "object",
+            "properties": {
+              "privacy_classification": {
+                "type": "string",
+                "enum": ["public", "internal", "confidential", "restricted"]
+              },
+              "pii_detected": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "entities_extracted": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {"type": "string"},
+                    "type": {"type": "string"},
+                    "confidence": {"type": "number"}
+                  }
+                }
+              },
+              "graph_nodes_created": {
+                "type": "number",
+                "description": "Number of graph nodes created"
+              }
+            }
+          }
+        },
+        "required": ["success", "message"]
+      }
+    },
+    "retrieve_context_tool": {
+      "name": "retrieve_context_tool", 
+      "description": "Retrieve relevant context with enhanced fact recall capabilities",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string",
+            "description": "Isolation namespace",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User identifier", 
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "query": {
+            "type": "string",
+            "description": "Query for context retrieval",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results to return",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10
+          },
+          "include_metadata": {
+            "type": "boolean",
+            "description": "Include detailed metadata in response",
+            "default": false
+          },
+          "privacy_level": {
+            "type": "string",
+            "description": "Maximum privacy level to include in results",
+            "enum": ["public", "internal", "confidential", "restricted"],
+            "default": "confidential"
+          }
+        },
+        "required": ["namespace", "user_id", "query"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object", 
+              "properties": {
+                "content": {
+                  "type": "string",
+                  "description": "Retrieved content"
+                },
+                "score": {
+                  "type": "number",
+                  "description": "Relevance score"
+                },
+                "source": {
+                  "type": "string",
+                  "description": "Source of the content"
+                },
+                "metadata": {
+                  "type": "object",
+                  "properties": {
+                    "fact_type": {"type": "string"},
+                    "confidence": {"type": "number"},
+                    "privacy_classification": {"type": "string"},
+                    "entities": {"type": "array"},
+                    "graph_signals": {"type": "object"},
+                    "scoring_details": {
+                      "type": "object",
+                      "properties": {
+                        "vector_score": {"type": "number"},
+                        "lexical_score": {"type": "number"},
+                        "graph_score": {"type": "number"},
+                        "fact_pattern_score": {"type": "number"},
+                        "final_score": {"type": "number"},
+                        "scoring_mode": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              },
+              "required": ["content", "score"]
+            }
+          },
+          "query_metadata": {
+            "type": "object",
+            "properties": {
+              "intent_detected": {"type": "string"},
+              "entities_extracted": {"type": "array"},
+              "query_expansions": {"type": "array"},
+              "total_results": {"type": "number"},
+              "search_strategy": {"type": "string"},
+              "performance_metrics": {
+                "type": "object",
+                "properties": {
+                  "total_time_ms": {"type": "number"},
+                  "retrieval_time_ms": {"type": "number"},
+                  "scoring_time_ms": {"type": "number"},
+                  "privacy_processing_ms": {"type": "number"}
+                }
+              }
+            }
+          }
+        },
+        "required": ["results"]
+      }
+    },
+    "delete_facts_tool": {
+      "name": "delete_facts_tool",
+      "description": "Delete user facts with privacy compliance",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string",
+            "description": "Isolation namespace",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User identifier",
+            "minLength": 1, 
+            "maxLength": 100
+          },
+          "attribute": {
+            "type": "string",
+            "description": "Specific attribute to delete (optional - if not provided, deletes all user facts)",
+            "maxLength": 200
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for deletion (for audit trail)",
+            "enum": ["user_request", "retention_policy", "privacy_compliance", "data_correction", "gdpr_erasure"],
+            "default": "user_request"
+          }
+        },
+        "required": ["namespace", "user_id"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether deletion was successful"
+          },
+          "deleted_count": {
+            "type": "integer",
+            "description": "Number of facts deleted"
+          },
+          "message": {
+            "type": "string",
+            "description": "Status message"
+          },
+          "audit_entry": {
+            "type": "object",
+            "properties": {
+              "deletion_id": {"type": "string"},
+              "timestamp": {"type": "string"},
+              "reason": {"type": "string"},
+              "compliance_status": {"type": "string"}
+            }
+          }
+        },
+        "required": ["success", "deleted_count", "message"]
+      }
+    }
+  }
+}

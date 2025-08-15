@@ -35,6 +35,19 @@ try:
     from src.storage.reranker import get_reranker
     from src.validators.config_validator import validate_all_configs
     from src.security.input_validator import InputValidator, ContentTypeValidator
+    # Fact system imports
+    from src.storage.fact_store import FactStore
+    from src.core.intent_classifier import IntentClassifier, IntentType
+    from src.core.fact_extractor import FactExtractor
+    from src.core.qa_generator import QAPairGenerator
+    from src.storage.fact_ranker import FactAwareRanker
+    from src.core.query_rewriter import FactQueryRewriter
+    from src.middleware.scope_validator import ScopeValidator, ScopeMiddleware
+    # Phase 3: Graph integration imports
+    from src.storage.graph_enhancer import GraphSignalEnhancer
+    from src.storage.graph_fact_store import GraphFactStore
+    from src.storage.hybrid_scorer import HybridScorer, ScoringMode
+    from src.core.graph_query_expander import GraphQueryExpander
 except ImportError:
     # Fallback for different import contexts
     import sys
@@ -52,6 +65,14 @@ except ImportError:
     from storage.reranker import get_reranker
     from validators.config_validator import validate_all_configs
     from security.input_validator import InputValidator, ContentTypeValidator
+    # Fact system imports
+    from storage.fact_store import FactStore
+    from core.intent_classifier import IntentClassifier, IntentType
+    from core.fact_extractor import FactExtractor
+    from core.qa_generator import QAPairGenerator
+    from storage.fact_ranker import FactAwareRanker
+    from core.query_rewriter import FactQueryRewriter
+    from middleware.scope_validator import ScopeValidator, ScopeMiddleware
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -65,6 +86,21 @@ neo4j_client = None
 qdrant_client = None
 kv_store = None
 embedding_generator = None
+
+# Global fact system instances
+fact_store = None
+intent_classifier = IntentClassifier()
+fact_extractor = FactExtractor()
+qa_generator = QAPairGenerator()
+fact_ranker = FactAwareRanker()
+query_rewriter = FactQueryRewriter()
+scope_validator = ScopeValidator()
+scope_middleware = None
+# Phase 3: Graph integration instances
+graph_fact_store = None
+graph_enhancer = None
+hybrid_scorer = None
+graph_query_expander = None
 
 # Global security and namespace instances
 cypher_validator = CypherValidator()
@@ -84,7 +120,7 @@ except ImportError as e:
 
 async def initialize_storage_clients() -> Dict[str, Any]:
     """Initialize storage clients with SSL/TLS support."""
-    global neo4j_client, qdrant_client, kv_store, embedding_generator
+    global neo4j_client, qdrant_client, kv_store, embedding_generator, fact_store, scope_middleware
 
     try:
         # Validate configuration
@@ -216,6 +252,55 @@ async def initialize_storage_clients() -> Dict[str, Any]:
             logger.error(f"❌ Failed to initialize embedding generator: {e}")
             embedding_generator = None
 
+        # Initialize fact system
+        try:
+            if kv_store and kv_store.redis_client:
+                fact_store = FactStore(kv_store.redis_client)
+                scope_middleware = ScopeMiddleware(scope_validator)
+                
+                # Phase 3: Initialize graph integration
+                try:
+                    # Initialize graph enhancer with Neo4j client
+                    graph_enhancer = GraphSignalEnhancer(neo4j_client, config)
+                    
+                    # Initialize graph-enabled fact store
+                    graph_fact_store = GraphFactStore(fact_store, neo4j_client)
+                    
+                    # Initialize hybrid scorer
+                    hybrid_scorer = HybridScorer(fact_ranker, graph_enhancer, config)
+                    
+                    # Initialize graph query expander
+                    graph_query_expander = GraphQueryExpander(
+                        neo4j_client, intent_classifier, query_rewriter, config
+                    )
+                    
+                    logger.info("✅ Graph integration initialized")
+                except Exception as graph_error:
+                    logger.warning(f"⚠️ Graph integration failed: {graph_error}")
+                    # Fallback to non-graph mode
+                    graph_enhancer = None
+                    graph_fact_store = None
+                    hybrid_scorer = HybridScorer(fact_ranker, None, config)
+                    graph_query_expander = None
+                
+                logger.info("✅ Fact system initialized")
+            else:
+                fact_store = None
+                scope_middleware = None
+                graph_fact_store = None
+                graph_enhancer = None
+                hybrid_scorer = None
+                graph_query_expander = None
+                logger.warning("⚠️ Fact system disabled: Redis not available")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize fact system: {e}")
+            fact_store = None
+            scope_middleware = None
+            graph_fact_store = None
+            graph_enhancer = None
+            hybrid_scorer = None
+            graph_query_expander = None
+
         logger.info("✅ Storage clients initialization completed")
 
         return {
@@ -224,6 +309,7 @@ async def initialize_storage_clients() -> Dict[str, Any]:
             "qdrant_initialized": qdrant_client is not None,
             "kv_store_initialized": kv_store is not None,
             "embedding_initialized": embedding_generator is not None,
+            "fact_system_initialized": fact_store is not None,
             "message": "Storage clients initialized successfully",
         }
 
@@ -241,6 +327,7 @@ async def initialize_storage_clients() -> Dict[str, Any]:
             "qdrant_initialized": False,
             "kv_store_initialized": False,
             "embedding_initialized": False,
+            "fact_system_initialized": False,
             "message": f"Failed to initialize storage clients: {str(e)}",
         }
 
@@ -577,6 +664,135 @@ async def list_tools() -> List[Tool]:
                 "required": ["tool_name"],
             },
         ),
+        Tool(
+            name="store_fact",
+            description="Store a structured fact with automatic extraction and validation",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Text containing facts to extract and store",
+                    },
+                    "namespace": {
+                        "type": "string",
+                        "description": "Agent/namespace identifier for isolation",
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier for fact ownership",
+                    },
+                    "source_turn_id": {
+                        "type": "string",
+                        "description": "Source conversation turn identifier",
+                    },
+                    "attribute": {
+                        "type": "string",
+                        "description": "Specific fact attribute (optional, for manual storage)",
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "Fact value (optional, for manual storage)",
+                    },
+                },
+                "required": ["text", "namespace", "user_id"],
+            },
+        ),
+        Tool(
+            name="retrieve_fact",
+            description="Retrieve stored facts using intent classification and deterministic lookup",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Fact query (e.g., 'What's my name?')",
+                    },
+                    "namespace": {
+                        "type": "string",
+                        "description": "Agent/namespace identifier",
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier",
+                    },
+                    "attribute": {
+                        "type": "string",
+                        "description": "Specific fact attribute to retrieve (optional)",
+                    },
+                    "fallback_to_context": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Fall back to context search if fact not found",
+                    },
+                },
+                "required": ["query", "namespace", "user_id"],
+            },
+        ),
+        Tool(
+            name="list_user_facts",
+            description="List all stored facts for a user",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "namespace": {
+                        "type": "string",
+                        "description": "Agent/namespace identifier",
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier",
+                    },
+                    "include_history": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Include fact update history",
+                    },
+                },
+                "required": ["namespace", "user_id"],
+            },
+        ),
+        Tool(
+            name="delete_user_facts",
+            description="Delete all facts for a user (forget-me functionality)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "namespace": {
+                        "type": "string",
+                        "description": "Agent/namespace identifier",
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier",
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "description": "Confirmation required for deletion",
+                    },
+                },
+                "required": ["namespace", "user_id", "confirm"],
+            },
+        ),
+        Tool(
+            name="classify_intent",
+            description="Classify query intent for debugging and development",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Query text to classify",
+                    },
+                    "include_explanation": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Include detailed classification explanation",
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
     ]
 
 
@@ -619,6 +835,26 @@ async def call_tool(
 
     elif name == "get_tool_info":
         result = await get_tool_info_tool(arguments)
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "store_fact":
+        result = await store_fact_tool(arguments)
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "retrieve_fact":
+        result = await retrieve_fact_tool(arguments)
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "list_user_facts":
+        result = await list_user_facts_tool(arguments)
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "delete_user_facts":
+        result = await delete_user_facts_tool(arguments)
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "classify_intent":
+        result = await classify_intent_tool(arguments)
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     else:
@@ -712,6 +948,47 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "error_type": type_validation.error,
             }
 
+        # Generate Q&A pairs for enhanced fact retrieval (Phase 2 enhancement)
+        qa_pairs_generated = []
+        stitched_units = []
+        try:
+            # Extract text content for Q&A generation
+            if isinstance(content, dict):
+                # Try to extract meaningful text from various fields
+                text_fields = []
+                for key, value in content.items():
+                    if isinstance(value, str) and len(value.strip()) > 10:
+                        text_fields.append(value.strip())
+                
+                combined_text = " ".join(text_fields)
+                
+                if combined_text and len(combined_text) > 20:
+                    # Generate Q&A pairs from the content
+                    qa_pairs = qa_generator.generate_qa_pairs_from_statement(combined_text)
+                    qa_pairs_generated = qa_pairs
+                    
+                    # Create stitched units for joint indexing
+                    for qa_pair in qa_pairs:
+                        stitched_unit = qa_generator.create_stitched_unit(qa_pair)
+                        stitched_units.append(stitched_unit)
+                    
+                    logger.info(f"Generated {len(qa_pairs)} Q&A pairs and {len(stitched_units)} stitched units")
+            
+            elif isinstance(content, str) and len(content.strip()) > 20:
+                # Direct string content
+                qa_pairs = qa_generator.generate_qa_pairs_from_statement(content.strip())
+                qa_pairs_generated = qa_pairs
+                
+                for qa_pair in qa_pairs:
+                    stitched_unit = qa_generator.create_stitched_unit(qa_pair)
+                    stitched_units.append(stitched_unit)
+                
+                logger.info(f"Generated {len(qa_pairs)} Q&A pairs and {len(stitched_units)} stitched units")
+        
+        except Exception as e:
+            logger.warning(f"Q&A generation failed: {e}")
+            # Continue with normal storage even if Q&A generation fails
+
         # Store in vector database
         vector_id = None
         if qdrant_client and qdrant_client.client:
@@ -760,6 +1037,55 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 )
                 vector_id = context_id
                 logger.info(f"Stored vector with ID: {vector_id}")
+                
+                # Store stitched Q&A units as additional vectors (Phase 2 enhancement)
+                qa_vector_ids = []
+                for i, stitched_unit in enumerate(stitched_units):
+                    try:
+                        qa_id = f"{context_id}_qa_{i}"
+                        qa_content = stitched_unit.content
+                        
+                        if embedding_generator:
+                            qa_embedding = await embedding_generator.generate_embedding(qa_content)
+                        else:
+                            # Fallback hash-based embedding
+                            import hashlib
+                            hash_obj = hashlib.sha256(qa_content.encode())
+                            hash_bytes = hash_obj.digest()
+                            dimensions = qdrant_client.config.get("qdrant", {}).get(
+                                "dimensions", Config.EMBEDDING_DIMENSIONS
+                            )
+                            qa_embedding = []
+                            for j in range(dimensions):
+                                byte_idx = j % len(hash_bytes)
+                                normalized_value = (float(hash_bytes[byte_idx]) / 255.0) * 2.0 - 1.0
+                                qa_embedding.append(normalized_value)
+                        
+                        # Store Q&A unit with enhanced metadata
+                        qa_metadata = {
+                            "content": qa_content,
+                            "type": "qa_pair",
+                            "question": stitched_unit.question,
+                            "answer": stitched_unit.answer,
+                            "fact_attribute": stitched_unit.fact_attribute,
+                            "confidence": stitched_unit.confidence,
+                            "parent_context_id": context_id,
+                            "metadata": stitched_unit.metadata
+                        }
+                        
+                        qdrant_client.store_vector(
+                            vector_id=qa_id,
+                            embedding=qa_embedding,
+                            metadata=qa_metadata,
+                        )
+                        qa_vector_ids.append(qa_id)
+                        
+                    except Exception as qa_e:
+                        logger.warning(f"Failed to store Q&A unit {i}: {qa_e}")
+                
+                if qa_vector_ids:
+                    logger.info(f"Stored {len(qa_vector_ids)} Q&A vector units")
+                    
             except Exception as e:
                 logger.error(f"Failed to store vector: {e}")
                 vector_id = None
@@ -845,6 +1171,11 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "vector": "success" if vector_id else "failed",
                 "graph": "success" if graph_id else "failed",
             },
+            "qa_enhancement": {
+                "qa_pairs_generated": len(qa_pairs_generated),
+                "stitched_units_stored": len(stitched_units),
+                "fact_attributes": [pair.fact_attribute for pair in qa_pairs_generated] if qa_pairs_generated else []
+            }
         }
 
     except Exception as e:
@@ -945,6 +1276,50 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "error_type": "invalid_parameter",
             }
 
+        # Phase 2 & 3 Enhancement: Query analysis and expansion
+        original_query = query
+        enhanced_queries = [query]  # Start with original query
+        intent_result = None
+        query_expansion_metadata = {}
+        
+        try:
+            # Classify query intent
+            intent_result = intent_classifier.classify(query)
+            logger.debug(f"Query intent: {intent_result.intent.value}, attribute: {intent_result.attribute}")
+            
+            # Generate query rewrites for better recall
+            if intent_result.intent == IntentType.FACT_LOOKUP:
+                rewritten_queries = query_rewriter.rewrite_fact_query(query, intent_result.attribute)
+                additional_queries = [rq.query for rq in rewritten_queries]
+                enhanced_queries.extend(additional_queries)
+                logger.info(f"Generated {len(additional_queries)} query variants for fact lookup")
+            
+            # Phase 3: Graph-enhanced query expansion
+            if graph_query_expander:
+                try:
+                    expansion_result = graph_query_expander.expand_query(query)
+                    graph_expanded_queries = [eq.query for eq in expansion_result.expanded_queries]
+                    enhanced_queries.extend(graph_expanded_queries)
+                    
+                    # Store expansion metadata for response
+                    query_expansion_metadata = {
+                        'strategy_used': expansion_result.expansion_metadata.get('strategy_used', 'none'),
+                        'entities_found': expansion_result.expansion_metadata.get('entities_found', 0),
+                        'graph_expansions': len(graph_expanded_queries),
+                        'detected_entities': expansion_result.extracted_entities
+                    }
+                    
+                    logger.info(f"Generated {len(graph_expanded_queries)} graph-enhanced query expansions")
+                except Exception as graph_exp_error:
+                    logger.warning(f"Graph query expansion failed: {graph_exp_error}")
+            
+            # Limit total queries to avoid performance issues
+            enhanced_queries = enhanced_queries[:6]  # Original + up to 5 variants (fact + graph)
+            
+        except Exception as e:
+            logger.warning(f"Query enhancement failed: {e}")
+            # Continue with original query
+
         # New GraphRAG parameters
         max_hops = arguments.get("max_hops", 2)
         relationship_types = arguments.get("relationship_types", None)
@@ -958,55 +1333,144 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
         if effective_mode in ["vector", "hybrid"] and qdrant_client and qdrant_client.client:
             try:
-                # Generate proper semantic embedding for query
-                if embedding_generator:
-                    query_vector = await embedding_generator.generate_embedding(query)
-                    logger.info("Generated semantic query embedding using configured model")
-                else:
-                    # Fallback to hash-based query embedding for development
-                    logger.warning(
-                        "No embedding generator available, using fallback method for query"
+                # Phase 2 Enhancement: Multi-query vector search with fact-aware ranking
+                all_vector_results = []
+                
+                for enhanced_query in enhanced_queries:
+                    # Generate proper semantic embedding for each query variant
+                    if embedding_generator:
+                        query_vector = await embedding_generator.generate_embedding(enhanced_query)
+                        logger.debug(f"Generated embedding for query: {enhanced_query[:50]}...")
+                    else:
+                        # Fallback to hash-based query embedding for development
+                        import hashlib
+                        query_hash = hashlib.sha256(enhanced_query.encode()).digest()
+                        dimensions = qdrant_client.config.get("qdrant", {}).get(
+                            "dimensions", Config.EMBEDDING_DIMENSIONS
+                        )
+                        query_vector = []
+                        for i in range(dimensions):
+                            byte_idx = i % len(query_hash)
+                            normalized_value = (float(query_hash[byte_idx]) / 255.0) * 2.0 - 1.0
+                            query_vector.append(normalized_value)
+
+                    # Search with each query variant - run async for better performance
+                    collection_name = qdrant_client.config.get("qdrant", {}).get(
+                        "collection_name", "project_context"
                     )
-                    import hashlib
 
-                    query_hash = hashlib.sha256(query.encode()).digest()
-
-                    # Get dimensions from Qdrant config or default
-                    dimensions = qdrant_client.config.get("qdrant", {}).get(
-                        "dimensions", Config.EMBEDDING_DIMENSIONS
+                    # Run vector search asynchronously to avoid blocking
+                    variant_results = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: qdrant_client.search(
+                            query_vector=query_vector,
+                            limit=limit * 2,  # Get more results for better ranking
+                            filter_dict=None,
+                        )
                     )
-                    query_vector = []
-                    for i in range(dimensions):
-                        byte_idx = i % len(query_hash)
-                        # Normalize to [-1, 1] for better vector space properties
-                        normalized_value = (float(query_hash[byte_idx]) / 255.0) * 2.0 - 1.0
-                        query_vector.append(normalized_value)
+                    
+                    # Add query source tracking
+                    for result in variant_results:
+                        result["query_variant"] = enhanced_query
+                        result["is_original_query"] = enhanced_query == original_query
+                    
+                    all_vector_results.extend(variant_results)
 
-                # Use the collection name from config or default
-                collection_name = qdrant_client.config.get("qdrant", {}).get(
-                    "collection_name", "project_context"
-                )
-
-                # Use VectorDBInitializer.search method instead of direct client access
-                vector_results = qdrant_client.search(
-                    query_vector=query_vector,
-                    limit=limit,
-                    filter_dict=None,  # Can be enhanced later with type filtering
-                )
-
-                # Convert VectorDBInitializer results to our format
-                # vector_results is already in the correct format from VectorDBInitializer.search
-                for result in vector_results:
-                    results.append(
-                        {
-                            "id": result["id"],
+                # Apply fact-aware ranking to combined results
+                if all_vector_results:
+                    # Convert to format expected by fact ranker
+                    ranking_input = []
+                    for result in all_vector_results:
+                        content = ""
+                        if "content" in result.get("payload", {}):
+                            content = str(result["payload"]["content"])
+                        elif "payload" in result:
+                            content = str(result["payload"])
+                        
+                        ranking_input.append({
+                            "content": content,
                             "score": result["score"],
-                            "source": "vector",
-                            "payload": result["payload"],
-                        }
-                    )
+                            "metadata": result.get("payload", {})
+                        })
+                    
+                    # Apply hybrid scoring if available, otherwise fall back to fact-aware ranking
+                    if hybrid_scorer:
+                        # Classify intent for scoring mode selection
+                        intent_result = intent_classifier.classify(original_query)
+                        
+                        # Apply hybrid scoring with graph integration
+                        hybrid_scores = hybrid_scorer.compute_hybrid_score(
+                            query=original_query,
+                            results=ranking_input,
+                            intent=intent_result.intent
+                        )
+                        
+                        # Convert hybrid scores back to ranking results format
+                        ranked_results = []
+                        for hybrid_score in hybrid_scores:
+                            # Find the original ranking input item
+                            result_id = hybrid_score.metadata.get('result_id', '')
+                            original_item = None
+                            for item in ranking_input:
+                                if item.get('id', str(ranking_input.index(item))) == result_id:
+                                    original_item = item
+                                    break
+                            
+                            if original_item:
+                                # Create a ranking result-like object
+                                from types import SimpleNamespace
+                                ranking_result = SimpleNamespace()
+                                ranking_result.content = original_item['content']
+                                ranking_result.final_score = hybrid_score.final_score
+                                ranking_result.fact_boost = hybrid_score.fact_pattern_score
+                                ranking_result.content_type = SimpleNamespace()
+                                ranking_result.content_type.value = "hybrid_enhanced"
+                                ranking_result.matched_patterns = [hybrid_score.explanation]
+                                ranking_result.metadata = {**original_item.get('metadata', {}), **hybrid_score.metadata}
+                                ranked_results.append(ranking_result)
+                        
+                        logger.info(f"Applied hybrid scoring to {len(ranked_results)} results")
+                    else:
+                        # Fallback to fact-aware ranking only
+                        # Apply fact ranking asynchronously for large result sets
+                        ranked_results = await asyncio.get_event_loop().run_in_executor(
+                            None,
+                            lambda: fact_ranker.apply_fact_ranking(ranking_input, original_query)
+                        )
+                    
+                    # Convert back and deduplicate by ID
+                    seen_ids = set()
+                    for i, ranked_result in enumerate(ranked_results):
+                        if i >= limit:  # Respect the limit
+                            break
+                        
+                        # Find corresponding original result
+                        original_result = all_vector_results[ranking_input.index({
+                            "content": ranked_result.content,
+                            "score": ranked_result.original_score,
+                            "metadata": ranked_result.metadata
+                        })]
+                        
+                        result_id = original_result["id"]
+                        if result_id not in seen_ids:
+                            seen_ids.add(result_id)
+                            results.append({
+                                "id": result_id,
+                                "score": ranked_result.final_score,
+                                "original_score": ranked_result.original_score,
+                                "fact_boost": ranked_result.fact_boost,
+                                "content_type": ranked_result.content_type.value,
+                                "source": "vector_enhanced",
+                                "payload": original_result.get("payload", {}),
+                                "query_variant": original_result.get("query_variant", ""),
+                                "ranking_patterns": ranked_result.matched_patterns
+                            })
+                    
+                    logger.info(f"Applied fact-aware ranking to {len(all_vector_results)} vector results, returned {len(results)}")
+                else:
+                    logger.warning("No vector results found for enhanced queries")
 
-                logger.info(f"Vector search returned {len(vector_results)} results")
+                logger.info(f"Enhanced vector search completed")
             except Exception as e:
                 logger.error(f"Vector search failed: {e}")
 
@@ -1044,9 +1508,13 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                                n.metadata as metadata, n.created_at as created_at
                         LIMIT $limit
                         """
-                    query_result = neo4j_client.query(
-                        cypher_query,
-                        parameters={"type": context_type, "query": query, "limit": limit},
+                    # Run graph query asynchronously to avoid blocking
+                    query_result = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: neo4j_client.query(
+                            cypher_query,
+                            parameters={"type": context_type, "query": query, "limit": limit},
+                        )
                     )
 
                     for record in query_result:
@@ -1126,6 +1594,19 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
             "retrieval_mode_used": effective_mode,
             "graphrag_metadata": graphrag_metadata,
             "message": f"Found {len(enhanced_results)} matching contexts using GraphRAG-enhanced {'reranked ' if reranker.enabled else ''}search",
+            "phase2_enhancements": {
+                "intent_detected": intent_result.intent.value if intent_result else "unknown",
+                "fact_attribute": intent_result.attribute if intent_result else None,
+                "query_variants_used": len(enhanced_queries),
+            },
+            "phase3_enhancements": {
+                "graph_expansion_enabled": graph_query_expander is not None,
+                "hybrid_scoring_enabled": hybrid_scorer is not None,
+                "graph_expansion_metadata": query_expansion_metadata,
+                "original_query": original_query,
+                "enhanced_queries": enhanced_queries[:3] if len(enhanced_queries) > 1 else [],
+                "fact_aware_ranking_applied": any("fact_boost" in r for r in enhanced_results)
+            }
         }
 
     except Exception as e:
@@ -1946,6 +2427,385 @@ async def get_tool_info_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "success": False,
             "message": f"Tool info retrieval failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def store_fact_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Store facts with automatic extraction and validation."""
+    if not fact_store or not scope_middleware:
+        return {
+            "success": False,
+            "message": "Fact system not initialized",
+            "error_type": "system_unavailable",
+        }
+
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("store_fact")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        # Process request through scope middleware
+        processed_request = scope_middleware.process_request("store_fact", arguments)
+        scope = processed_request["_validated_scope"]
+
+        text = arguments.get("text", "")
+        source_turn_id = arguments.get("source_turn_id", "")
+        
+        # Check for manual fact storage
+        if arguments.get("attribute") and arguments.get("value"):
+            # Manual fact storage - use graph fact store if available
+            active_fact_store = graph_fact_store if graph_fact_store else fact_store
+            
+            # Run potentially long-running storage operation asynchronously
+            try:
+                await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: active_fact_store.store_fact(
+                        namespace=scope.namespace,
+                        user_id=scope.user_id,
+                        attribute=arguments["attribute"],
+                        value=arguments["value"],
+                        source_turn_id=source_turn_id
+                    )
+                )
+                stored_facts = [{"attribute": arguments["attribute"], "value": arguments["value"]}]
+            except Exception as e:
+                logger.error(f"Error storing fact: {e}")
+                return {
+                    "success": False,
+                    "message": f"Failed to store fact: {str(e)}",
+                    "error_type": "storage_error"
+                }
+        else:
+            # Automatic fact extraction - run async for long-running operations
+            try:
+                # Extract facts asynchronously for long texts
+                extracted_facts = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: fact_extractor.extract_facts_from_text(text, source_turn_id)
+                )
+                stored_facts = []
+                
+                # Store each fact asynchronously
+                active_fact_store = graph_fact_store if graph_fact_store else fact_store
+                store_tasks = []
+                
+                for fact in extracted_facts:
+                    # Create async task for each fact storage operation
+                    task = asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda f=fact: active_fact_store.store_fact(
+                            namespace=scope.namespace,
+                            user_id=scope.user_id,
+                            attribute=f.attribute,
+                            value=f.value,
+                            confidence=f.confidence,
+                            source_turn_id=source_turn_id
+                        )
+                    )
+                    store_tasks.append(task)
+                    stored_facts.append({
+                        "attribute": fact.attribute,
+                        "value": fact.value,
+                        "confidence": fact.confidence
+                    })
+                
+                # Wait for all storage operations to complete
+                if store_tasks:
+                    await asyncio.gather(*store_tasks)
+                    
+            except Exception as e:
+                logger.error(f"Error in automatic fact extraction: {e}")
+                return {
+                    "success": False,
+                    "message": f"Failed to extract and store facts: {str(e)}",
+                    "error_type": "extraction_error"
+                }
+
+        logger.info(f"Stored {len(stored_facts)} facts for {scope.namespace}:{scope.user_id}")
+        
+        return {
+            "success": True,
+            "message": f"Stored {len(stored_facts)} facts successfully",
+            "stored_facts": stored_facts,
+            "namespace": scope.namespace,
+            "user_id": scope.user_id
+        }
+
+    except Exception as e:
+        logger.error(f"Error in store_fact_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Fact storage failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def retrieve_fact_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Retrieve facts using intent classification and deterministic lookup."""
+    if not fact_store or not scope_middleware:
+        return {
+            "success": False,
+            "message": "Fact system not initialized",
+            "error_type": "system_unavailable",
+        }
+
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("retrieve_fact")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        # Process request through scope middleware
+        processed_request = scope_middleware.process_request("retrieve_fact", arguments)
+        scope = processed_request["_validated_scope"]
+
+        query = arguments.get("query", "")
+        attribute = arguments.get("attribute")
+        fallback_to_context = arguments.get("fallback_to_context", True)
+
+        # Classify intent
+        intent_result = intent_classifier.classify(query)
+        
+        if attribute:
+            # Direct attribute lookup
+            fact = fact_store.get_fact(scope.namespace, scope.user_id, attribute)
+            if fact:
+                return {
+                    "success": True,
+                    "message": "Fact retrieved successfully",
+                    "fact": {
+                        "attribute": fact.attribute,
+                        "value": fact.value,
+                        "confidence": fact.confidence,
+                        "updated_at": fact.updated_at
+                    },
+                    "intent": intent_result.intent.value,
+                    "method": "direct_lookup"
+                }
+        elif intent_result.attribute:
+            # Intent-based lookup
+            fact = fact_store.get_fact(scope.namespace, scope.user_id, intent_result.attribute)
+            if fact:
+                return {
+                    "success": True,
+                    "message": "Fact retrieved successfully",
+                    "fact": {
+                        "attribute": fact.attribute,
+                        "value": fact.value,
+                        "confidence": fact.confidence,
+                        "updated_at": fact.updated_at
+                    },
+                    "intent": intent_result.intent.value,
+                    "method": "intent_lookup"
+                }
+
+        # Fact not found
+        if fallback_to_context:
+            # Fall back to context search
+            context_args = {
+                "query": query,
+                "limit": 5,
+                "search_mode": "hybrid"
+            }
+            context_result = await retrieve_context_tool(context_args)
+            
+            return {
+                "success": True,
+                "message": "Fact not found, returned context search results",
+                "fact": None,
+                "intent": intent_result.intent.value,
+                "method": "context_fallback",
+                "context_results": context_result.get("results", [])
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Fact not found",
+                "fact": None,
+                "intent": intent_result.intent.value,
+                "method": "fact_lookup_only"
+            }
+
+    except Exception as e:
+        logger.error(f"Error in retrieve_fact_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Fact retrieval failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def list_user_facts_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """List all stored facts for a user."""
+    if not fact_store or not scope_middleware:
+        return {
+            "success": False,
+            "message": "Fact system not initialized",
+            "error_type": "system_unavailable",
+        }
+
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("list_user_facts")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        # Process request through scope middleware
+        processed_request = scope_middleware.process_request("list_facts", arguments)
+        scope = processed_request["_validated_scope"]
+
+        include_history = arguments.get("include_history", False)
+
+        # Get all facts for user
+        user_facts = fact_store.get_user_facts(scope.namespace, scope.user_id)
+        
+        facts_data = []
+        for attribute, fact in user_facts.items():
+            fact_data = {
+                "attribute": fact.attribute,
+                "value": fact.value,
+                "confidence": fact.confidence,
+                "updated_at": fact.updated_at,
+                "provenance": fact.provenance,
+                "source_turn_id": fact.source_turn_id
+            }
+            
+            if include_history:
+                history = fact_store.get_fact_history(scope.namespace, scope.user_id, attribute)
+                fact_data["history"] = history
+            
+            facts_data.append(fact_data)
+
+        logger.info(f"Listed {len(facts_data)} facts for {scope.namespace}:{scope.user_id}")
+        
+        return {
+            "success": True,
+            "message": f"Found {len(facts_data)} facts",
+            "facts": facts_data,
+            "namespace": scope.namespace,
+            "user_id": scope.user_id,
+            "include_history": include_history
+        }
+
+    except Exception as e:
+        logger.error(f"Error in list_user_facts_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Fact listing failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def delete_user_facts_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Delete all facts for a user (forget-me functionality)."""
+    if not fact_store or not scope_middleware:
+        return {
+            "success": False,
+            "message": "Fact system not initialized",
+            "error_type": "system_unavailable",
+        }
+
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("delete_user_facts")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        # Process request through scope middleware
+        processed_request = scope_middleware.process_request("delete_fact", arguments)
+        scope = processed_request["_validated_scope"]
+
+        confirm = arguments.get("confirm", False)
+        
+        if not confirm:
+            return {
+                "success": False,
+                "message": "Deletion requires explicit confirmation",
+                "error_type": "confirmation_required",
+            }
+
+        # Delete all facts for user - run async for potentially large deletions
+        deleted_count = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: fact_store.delete_user_facts(scope.namespace, scope.user_id)
+        )
+        
+        logger.info(f"Deleted {deleted_count} fact entries for {scope.namespace}:{scope.user_id}")
+        
+        return {
+            "success": True,
+            "message": f"Deleted {deleted_count} fact entries successfully",
+            "deleted_count": deleted_count,
+            "namespace": scope.namespace,
+            "user_id": scope.user_id
+        }
+
+    except Exception as e:
+        logger.error(f"Error in delete_user_facts_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Fact deletion failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def classify_intent_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Classify query intent for debugging and development."""
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("classify_intent")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        query = arguments.get("query", "")
+        include_explanation = arguments.get("include_explanation", False)
+
+        if include_explanation:
+            result = intent_classifier.explain_classification(query)
+        else:
+            intent_result = intent_classifier.classify(query)
+            result = {
+                "query": query,
+                "intent": intent_result.intent.value,
+                "confidence": intent_result.confidence,
+                "attribute": intent_result.attribute,
+                "reasoning": intent_result.reasoning
+            }
+
+        return {
+            "success": True,
+            "message": "Intent classification completed",
+            "classification": result
+        }
+
+    except Exception as e:
+        logger.error(f"Error in classify_intent_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Intent classification failed: {str(e)}",
             "error_type": "execution_error",
         }
 
