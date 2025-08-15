@@ -138,10 +138,10 @@ jobs:
               fi
               
               # Use appropriate compose file
-              if [ -f "docker/docker-compose.hetzner.yml" ]; then
-                COMPOSE_FILE="docker/docker-compose.hetzner.yml"
+              if [ -f "dockerfiles/docker-compose.hetzner.yml" ]; then
+                COMPOSE_FILE="dockerfiles/docker-compose.hetzner.yml"
               else
-                COMPOSE_FILE="docker/docker-compose.yml"
+                COMPOSE_FILE="dockerfiles/docker-compose.yml"
               fi
               
               # Build and start production services

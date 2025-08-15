@@ -8,8 +8,8 @@ on:
       - 'schemas/**'
       - 'contracts/**'
       - 'requirements.txt'
-      - 'docker/Dockerfile*'
-      - 'docker/docker-compose*.yml'
+      - 'dockerfiles/Dockerfile*'
+      - 'dockerfiles/docker-compose*.yml'
       - '.env*'
       - '.github/workflows/deploy-dev.yml'
   workflow_dispatch:
@@ -190,7 +190,7 @@ jobs:
               done
               
               # Dev uses standard docker compose file
-              COMPOSE_FILE="docker/docker-compose.yml"
+              COMPOSE_FILE="dockerfiles/docker-compose.yml"
               echo "✅ Using standard docker compose for dev environment"
               
               # Setup dev environment file
