@@ -40,7 +40,7 @@ agents:
 qdrant:
   host: localhost
   port: 6333
-  collection: context_store
+  collection_name: project_context
   ssl: false
   grpc_port: 6334
   prefer_grpc: true # Use gRPC for better performance
