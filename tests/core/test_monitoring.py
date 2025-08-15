@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from core.monitoring import MCPMetrics, MCPMonitor, get_monitor
+from src.core.monitoring import MCPMetrics, MCPMonitor, get_monitor
 
 
 # Clean up the global monitor instance and prometheus registry between tests
@@ -22,9 +22,9 @@ from core.monitoring import MCPMetrics, MCPMonitor, get_monitor
 def cleanup_monitoring():
     """Clean up monitoring state between tests."""
     # Reset global monitor
-    import core.monitoring
+    import src.core.monitoring
 
-    core.monitoring._monitor = None
+    src.core.monitoring._monitor = None
 
     # Clear prometheus registry if available
     try:
