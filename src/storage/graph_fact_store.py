@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any, Set
 from dataclasses import dataclass
 import logging
 import json
+import time
 
 # Try absolute imports first, fall back to relative
 try:
@@ -24,6 +25,17 @@ except ImportError:
         from fact_store import FactStore
         from graph_enhancer import EntityExtractor, EntityMention, EntityType
         from neo4j_client import Neo4jInitializer
+
+# Import monitoring for Neo4j fallback metrics
+try:
+    from ..monitoring.fact_monitoring import record_custom_metric
+except ImportError:
+    try:
+        from monitoring.fact_monitoring import record_custom_metric
+    except ImportError:
+        # Fallback if monitoring not available
+        def record_custom_metric(metric_name: str, value: float, **labels) -> None:
+            pass
 
 logger = logging.getLogger(__name__)
 
@@ -92,17 +104,47 @@ class GraphFactStore:
             source_turn_id: Source conversation turn ID
             provenance: Fact provenance information
         """
+        start_time = time.time()
+        
         # Store in Redis first (fast lookup)
         self.fact_store.store_fact(namespace, user_id, attribute, value, confidence, 
                                  source_turn_id, provenance)
         
+        # Track Redis storage success
+        record_custom_metric("graph_fact_store_redis_operations", 1.0, 
+                           operation="store", status="success", namespace=namespace)
+        
         # Store in graph if available
         if self.neo4j_client:
             try:
+                graph_start_time = time.time()
                 self._store_fact_in_graph(namespace, user_id, attribute, value, confidence, 
                                         source_turn_id, provenance)
+                
+                # Track successful graph storage
+                graph_duration = (time.time() - graph_start_time) * 1000
+                record_custom_metric("graph_fact_store_neo4j_operations", 1.0,
+                                   operation="store", status="success", namespace=namespace)
+                record_custom_metric("graph_fact_store_neo4j_duration_ms", graph_duration,
+                                   operation="store", namespace=namespace)
+                
             except Exception as e:
                 logger.warning(f"Failed to store fact in graph: {e}")
+                
+                # Track graph storage failure and fallback
+                record_custom_metric("graph_fact_store_neo4j_operations", 1.0,
+                                   operation="store", status="error", namespace=namespace)
+                record_custom_metric("graph_fact_store_fallback_occurrences", 1.0,
+                                   operation="store", reason="neo4j_error", namespace=namespace)
+        else:
+            # Track fallback due to no Neo4j client
+            record_custom_metric("graph_fact_store_fallback_occurrences", 1.0,
+                               operation="store", reason="no_neo4j_client", namespace=namespace)
+        
+        # Track overall operation duration
+        total_duration = (time.time() - start_time) * 1000
+        record_custom_metric("graph_fact_store_total_duration_ms", total_duration,
+                           operation="store", namespace=namespace)
     
     def _store_fact_in_graph(self, namespace: str, user_id: str, attribute: str, 
                            value: Any, confidence: float, source_turn_id: str, 
@@ -289,7 +331,34 @@ class GraphFactStore:
     
     def get_fact(self, namespace: str, user_id: str, attribute: str) -> Optional[Any]:
         """Get fact value (delegates to Redis store)."""
-        return self.fact_store.get_fact(namespace, user_id, attribute)
+        start_time = time.time()
+        
+        try:
+            result = self.fact_store.get_fact(namespace, user_id, attribute)
+            
+            # Track successful retrieval
+            record_custom_metric("graph_fact_store_redis_operations", 1.0,
+                               operation="get", status="success", namespace=namespace)
+            
+            if result is not None:
+                record_custom_metric("graph_fact_store_retrieval_hits", 1.0,
+                                   namespace=namespace, attribute=attribute)
+            else:
+                record_custom_metric("graph_fact_store_retrieval_misses", 1.0,
+                                   namespace=namespace, attribute=attribute)
+            
+            return result
+            
+        except Exception as e:
+            # Track retrieval failure
+            record_custom_metric("graph_fact_store_redis_operations", 1.0,
+                               operation="get", status="error", namespace=namespace)
+            raise
+        finally:
+            # Track retrieval duration
+            duration = (time.time() - start_time) * 1000
+            record_custom_metric("graph_fact_store_total_duration_ms", duration,
+                               operation="get", namespace=namespace)
     
     def get_user_facts(self, namespace: str, user_id: str) -> Dict[str, Any]:
         """Get all facts for user (delegates to Redis store)."""

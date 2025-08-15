@@ -8,7 +8,7 @@ user facts in a structured key-value format with lineage tracking.
 import json
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, asdict
 from redis import Redis
 import logging
@@ -44,7 +44,7 @@ class FactStore:
     Supports fact updates with last-write-wins and historical tracking.
     """
 
-    def __init__(self, redis_client: Redis, ttl_seconds: int = 86400 * 30):  # 30 days default
+    def __init__(self, redis_client: Redis, ttl_seconds: int = 86400 * 30) -> None:  # 30 days default
         self.redis = redis_client
         self.ttl = ttl_seconds
         self._fact_key_prefix = "facts"
@@ -243,7 +243,7 @@ class FactStore:
 
         return matches
 
-    def get_stats(self, namespace: str) -> Dict[str, int]:
+    def get_stats(self, namespace: str) -> Dict[str, Union[int, float]]:
         """
         Get storage statistics for a namespace.
         

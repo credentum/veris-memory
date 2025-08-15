@@ -332,53 +332,78 @@ class FeatureGateManager:
                                geographic_region: Optional[str] = None,
                                custom_attributes: Optional[Dict[str, Any]] = None) -> tuple[bool, str]:
         """Core logic for feature evaluation."""
-        current_time = time.time()
-        
-        # Check if feature is completely disabled
-        if config.state == FeatureState.DISABLED:
-            return False, "Feature disabled"
-        
-        # Check if feature is deprecated
-        if config.state == FeatureState.DEPRECATED:
-            return False, "Feature deprecated"
-        
-        # Check time windows
-        if config.start_time and current_time < config.start_time:
-            return False, "Before start time"
-        
-        if config.end_time and current_time > config.end_time:
-            return False, "After end time"
-        
-        # Check disabled cohorts first (takes precedence)
-        if user_cohort and user_cohort in config.disabled_cohorts:
-            return False, f"User cohort '{user_cohort}' explicitly disabled"
-        
-        # Check enabled cohorts
-        if config.enabled_cohorts and user_cohort:
-            if user_cohort in config.enabled_cohorts:
-                return True, f"User cohort '{user_cohort}' explicitly enabled"
-        
-        # Check testing cohorts for testing state
-        if config.state == FeatureState.TESTING:
-            if user_cohort in self.testing_cohorts:
-                return True, f"Testing enabled for cohort '{user_cohort}'"
-            else:
-                return False, "Feature in testing, user not in testing cohort"
-        
-        # Check geographic restrictions
-        if config.geographic_regions and geographic_region:
-            if geographic_region not in config.geographic_regions:
-                return False, f"Geographic region '{geographic_region}' not in allowed regions"
-        
-        # For fully enabled features
-        if config.state == FeatureState.ENABLED:
-            return True, "Feature fully enabled"
-        
-        # For rollout features, use rollout strategy
-        if config.state == FeatureState.ROLLOUT:
-            return self._evaluate_rollout_strategy(config, user_id, custom_attributes)
-        
-        return False, "Unknown feature state"
+        try:
+            current_time = time.time()
+            
+            # Check if feature is completely disabled
+            if config.state == FeatureState.DISABLED:
+                return False, "Feature disabled"
+            
+            # Check if feature is deprecated
+            if config.state == FeatureState.DEPRECATED:
+                return False, "Feature deprecated"
+            
+            # Check time windows
+            try:
+                if config.start_time and current_time < config.start_time:
+                    return False, "Before start time"
+                
+                if config.end_time and current_time > config.end_time:
+                    return False, "After end time"
+            except (TypeError, ValueError) as e:
+                logger.warning(f"Invalid time configuration for feature {config.feature_name}: {e}")
+                # Continue with evaluation, ignoring time restrictions
+            
+            # Check disabled cohorts first (takes precedence)
+            try:
+                if user_cohort and user_cohort in config.disabled_cohorts:
+                    return False, f"User cohort '{user_cohort}' explicitly disabled"
+                
+                # Check enabled cohorts
+                if config.enabled_cohorts and user_cohort:
+                    if user_cohort in config.enabled_cohorts:
+                        return True, f"User cohort '{user_cohort}' explicitly enabled"
+            except (TypeError, AttributeError) as e:
+                logger.warning(f"Cohort evaluation error for feature {config.feature_name}: {e}")
+                # Continue without cohort-based evaluation
+            
+            # Check testing cohorts for testing state
+            try:
+                if config.state == FeatureState.TESTING:
+                    if user_cohort and user_cohort in self.testing_cohorts:
+                        return True, f"Testing enabled for cohort '{user_cohort}'"
+                    else:
+                        return False, "Feature in testing, user not in testing cohort"
+            except (TypeError, AttributeError) as e:
+                logger.warning(f"Testing cohort evaluation error for feature {config.feature_name}: {e}")
+                return False, "Feature in testing, cohort evaluation failed"
+            
+            # Check geographic restrictions
+            try:
+                if config.geographic_regions and geographic_region:
+                    if geographic_region not in config.geographic_regions:
+                        return False, f"Geographic region '{geographic_region}' not in allowed regions"
+            except (TypeError, AttributeError) as e:
+                logger.warning(f"Geographic evaluation error for feature {config.feature_name}: {e}")
+                # Continue without geographic restrictions
+            
+            # For fully enabled features
+            if config.state == FeatureState.ENABLED:
+                return True, "Feature fully enabled"
+            
+            # For rollout features, use rollout strategy
+            if config.state == FeatureState.ROLLOUT:
+                try:
+                    return self._evaluate_rollout_strategy(config, user_id, custom_attributes)
+                except Exception as e:
+                    logger.error(f"Rollout strategy evaluation failed for feature {config.feature_name}: {e}")
+                    return False, f"Rollout evaluation failed: {str(e)}"
+            
+            return False, "Unknown feature state"
+            
+        except Exception as e:
+            logger.error(f"Feature evaluation failed for {config.feature_name}: {e}")
+            return False, f"Feature evaluation error: {str(e)}"
     
     def _evaluate_rollout_strategy(self, config: FeatureConfig, user_id: str,
                                   custom_attributes: Optional[Dict[str, Any]] = None) -> tuple[bool, str]:
