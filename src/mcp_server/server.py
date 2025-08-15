@@ -39,6 +39,9 @@ try:
     from src.storage.fact_store import FactStore
     from src.core.intent_classifier import IntentClassifier, IntentType
     from src.core.fact_extractor import FactExtractor
+    from src.core.qa_generator import QAPairGenerator
+    from src.storage.fact_ranker import FactAwareRanker
+    from src.core.query_rewriter import FactQueryRewriter
     from src.middleware.scope_validator import ScopeValidator, ScopeMiddleware
 except ImportError:
     # Fallback for different import contexts
@@ -61,6 +64,9 @@ except ImportError:
     from storage.fact_store import FactStore
     from core.intent_classifier import IntentClassifier, IntentType
     from core.fact_extractor import FactExtractor
+    from core.qa_generator import QAPairGenerator
+    from storage.fact_ranker import FactAwareRanker
+    from core.query_rewriter import FactQueryRewriter
     from middleware.scope_validator import ScopeValidator, ScopeMiddleware
 
 # Configure logging
@@ -80,6 +86,9 @@ embedding_generator = None
 fact_store = None
 intent_classifier = IntentClassifier()
 fact_extractor = FactExtractor()
+qa_generator = QAPairGenerator()
+fact_ranker = FactAwareRanker()
+query_rewriter = FactQueryRewriter()
 scope_validator = ScopeValidator()
 scope_middleware = None
 
@@ -895,6 +904,47 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "error_type": type_validation.error,
             }
 
+        # Generate Q&A pairs for enhanced fact retrieval (Phase 2 enhancement)
+        qa_pairs_generated = []
+        stitched_units = []
+        try:
+            # Extract text content for Q&A generation
+            if isinstance(content, dict):
+                # Try to extract meaningful text from various fields
+                text_fields = []
+                for key, value in content.items():
+                    if isinstance(value, str) and len(value.strip()) > 10:
+                        text_fields.append(value.strip())
+                
+                combined_text = " ".join(text_fields)
+                
+                if combined_text and len(combined_text) > 20:
+                    # Generate Q&A pairs from the content
+                    qa_pairs = qa_generator.generate_qa_pairs_from_statement(combined_text)
+                    qa_pairs_generated = qa_pairs
+                    
+                    # Create stitched units for joint indexing
+                    for qa_pair in qa_pairs:
+                        stitched_unit = qa_generator.create_stitched_unit(qa_pair)
+                        stitched_units.append(stitched_unit)
+                    
+                    logger.info(f"Generated {len(qa_pairs)} Q&A pairs and {len(stitched_units)} stitched units")
+            
+            elif isinstance(content, str) and len(content.strip()) > 20:
+                # Direct string content
+                qa_pairs = qa_generator.generate_qa_pairs_from_statement(content.strip())
+                qa_pairs_generated = qa_pairs
+                
+                for qa_pair in qa_pairs:
+                    stitched_unit = qa_generator.create_stitched_unit(qa_pair)
+                    stitched_units.append(stitched_unit)
+                
+                logger.info(f"Generated {len(qa_pairs)} Q&A pairs and {len(stitched_units)} stitched units")
+        
+        except Exception as e:
+            logger.warning(f"Q&A generation failed: {e}")
+            # Continue with normal storage even if Q&A generation fails
+
         # Store in vector database
         vector_id = None
         if qdrant_client and qdrant_client.client:
@@ -943,6 +993,55 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 )
                 vector_id = context_id
                 logger.info(f"Stored vector with ID: {vector_id}")
+                
+                # Store stitched Q&A units as additional vectors (Phase 2 enhancement)
+                qa_vector_ids = []
+                for i, stitched_unit in enumerate(stitched_units):
+                    try:
+                        qa_id = f"{context_id}_qa_{i}"
+                        qa_content = stitched_unit.content
+                        
+                        if embedding_generator:
+                            qa_embedding = await embedding_generator.generate_embedding(qa_content)
+                        else:
+                            # Fallback hash-based embedding
+                            import hashlib
+                            hash_obj = hashlib.sha256(qa_content.encode())
+                            hash_bytes = hash_obj.digest()
+                            dimensions = qdrant_client.config.get("qdrant", {}).get(
+                                "dimensions", Config.EMBEDDING_DIMENSIONS
+                            )
+                            qa_embedding = []
+                            for j in range(dimensions):
+                                byte_idx = j % len(hash_bytes)
+                                normalized_value = (float(hash_bytes[byte_idx]) / 255.0) * 2.0 - 1.0
+                                qa_embedding.append(normalized_value)
+                        
+                        # Store Q&A unit with enhanced metadata
+                        qa_metadata = {
+                            "content": qa_content,
+                            "type": "qa_pair",
+                            "question": stitched_unit.question,
+                            "answer": stitched_unit.answer,
+                            "fact_attribute": stitched_unit.fact_attribute,
+                            "confidence": stitched_unit.confidence,
+                            "parent_context_id": context_id,
+                            "metadata": stitched_unit.metadata
+                        }
+                        
+                        qdrant_client.store_vector(
+                            vector_id=qa_id,
+                            embedding=qa_embedding,
+                            metadata=qa_metadata,
+                        )
+                        qa_vector_ids.append(qa_id)
+                        
+                    except Exception as qa_e:
+                        logger.warning(f"Failed to store Q&A unit {i}: {qa_e}")
+                
+                if qa_vector_ids:
+                    logger.info(f"Stored {len(qa_vector_ids)} Q&A vector units")
+                    
             except Exception as e:
                 logger.error(f"Failed to store vector: {e}")
                 vector_id = None
@@ -1028,6 +1127,11 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "vector": "success" if vector_id else "failed",
                 "graph": "success" if graph_id else "failed",
             },
+            "qa_enhancement": {
+                "qa_pairs_generated": len(qa_pairs_generated),
+                "stitched_units_stored": len(stitched_units),
+                "fact_attributes": [pair.fact_attribute for pair in qa_pairs_generated] if qa_pairs_generated else []
+            }
         }
 
     except Exception as e:
@@ -1128,6 +1232,30 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "error_type": "invalid_parameter",
             }
 
+        # Phase 2 Enhancement: Query analysis and expansion
+        original_query = query
+        enhanced_queries = [query]  # Start with original query
+        intent_result = None
+        
+        try:
+            # Classify query intent
+            intent_result = intent_classifier.classify(query)
+            logger.debug(f"Query intent: {intent_result.intent.value}, attribute: {intent_result.attribute}")
+            
+            # Generate query rewrites for better recall
+            if intent_result.intent == IntentType.FACT_LOOKUP:
+                rewritten_queries = query_rewriter.rewrite_fact_query(query, intent_result.attribute)
+                additional_queries = [rq.query for rq in rewritten_queries]
+                enhanced_queries.extend(additional_queries)
+                logger.info(f"Generated {len(additional_queries)} query variants for fact lookup")
+            
+            # Limit total queries to avoid performance issues
+            enhanced_queries = enhanced_queries[:4]  # Original + up to 3 variants
+            
+        except Exception as e:
+            logger.warning(f"Query enhancement failed: {e}")
+            # Continue with original query
+
         # New GraphRAG parameters
         max_hops = arguments.get("max_hops", 2)
         relationship_types = arguments.get("relationship_types", None)
@@ -1141,55 +1269,98 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
         if effective_mode in ["vector", "hybrid"] and qdrant_client and qdrant_client.client:
             try:
-                # Generate proper semantic embedding for query
-                if embedding_generator:
-                    query_vector = await embedding_generator.generate_embedding(query)
-                    logger.info("Generated semantic query embedding using configured model")
-                else:
-                    # Fallback to hash-based query embedding for development
-                    logger.warning(
-                        "No embedding generator available, using fallback method for query"
+                # Phase 2 Enhancement: Multi-query vector search with fact-aware ranking
+                all_vector_results = []
+                
+                for enhanced_query in enhanced_queries:
+                    # Generate proper semantic embedding for each query variant
+                    if embedding_generator:
+                        query_vector = await embedding_generator.generate_embedding(enhanced_query)
+                        logger.debug(f"Generated embedding for query: {enhanced_query[:50]}...")
+                    else:
+                        # Fallback to hash-based query embedding for development
+                        import hashlib
+                        query_hash = hashlib.sha256(enhanced_query.encode()).digest()
+                        dimensions = qdrant_client.config.get("qdrant", {}).get(
+                            "dimensions", Config.EMBEDDING_DIMENSIONS
+                        )
+                        query_vector = []
+                        for i in range(dimensions):
+                            byte_idx = i % len(query_hash)
+                            normalized_value = (float(query_hash[byte_idx]) / 255.0) * 2.0 - 1.0
+                            query_vector.append(normalized_value)
+
+                    # Search with each query variant
+                    collection_name = qdrant_client.config.get("qdrant", {}).get(
+                        "collection_name", "project_context"
                     )
-                    import hashlib
 
-                    query_hash = hashlib.sha256(query.encode()).digest()
-
-                    # Get dimensions from Qdrant config or default
-                    dimensions = qdrant_client.config.get("qdrant", {}).get(
-                        "dimensions", Config.EMBEDDING_DIMENSIONS
+                    variant_results = qdrant_client.search(
+                        query_vector=query_vector,
+                        limit=limit * 2,  # Get more results for better ranking
+                        filter_dict=None,
                     )
-                    query_vector = []
-                    for i in range(dimensions):
-                        byte_idx = i % len(query_hash)
-                        # Normalize to [-1, 1] for better vector space properties
-                        normalized_value = (float(query_hash[byte_idx]) / 255.0) * 2.0 - 1.0
-                        query_vector.append(normalized_value)
+                    
+                    # Add query source tracking
+                    for result in variant_results:
+                        result["query_variant"] = enhanced_query
+                        result["is_original_query"] = enhanced_query == original_query
+                    
+                    all_vector_results.extend(variant_results)
 
-                # Use the collection name from config or default
-                collection_name = qdrant_client.config.get("qdrant", {}).get(
-                    "collection_name", "project_context"
-                )
-
-                # Use VectorDBInitializer.search method instead of direct client access
-                vector_results = qdrant_client.search(
-                    query_vector=query_vector,
-                    limit=limit,
-                    filter_dict=None,  # Can be enhanced later with type filtering
-                )
-
-                # Convert VectorDBInitializer results to our format
-                # vector_results is already in the correct format from VectorDBInitializer.search
-                for result in vector_results:
-                    results.append(
-                        {
-                            "id": result["id"],
+                # Apply fact-aware ranking to combined results
+                if all_vector_results:
+                    # Convert to format expected by fact ranker
+                    ranking_input = []
+                    for result in all_vector_results:
+                        content = ""
+                        if "content" in result.get("payload", {}):
+                            content = str(result["payload"]["content"])
+                        elif "payload" in result:
+                            content = str(result["payload"])
+                        
+                        ranking_input.append({
+                            "content": content,
                             "score": result["score"],
-                            "source": "vector",
-                            "payload": result["payload"],
-                        }
-                    )
+                            "metadata": result.get("payload", {})
+                        })
+                    
+                    # Apply fact-aware ranking
+                    ranked_results = fact_ranker.apply_fact_ranking(ranking_input, original_query)
+                    
+                    # Convert back and deduplicate by ID
+                    seen_ids = set()
+                    for i, ranked_result in enumerate(ranked_results):
+                        if i >= limit:  # Respect the limit
+                            break
+                        
+                        # Find corresponding original result
+                        original_result = all_vector_results[ranking_input.index({
+                            "content": ranked_result.content,
+                            "score": ranked_result.original_score,
+                            "metadata": ranked_result.metadata
+                        })]
+                        
+                        result_id = original_result["id"]
+                        if result_id not in seen_ids:
+                            seen_ids.add(result_id)
+                            results.append({
+                                "id": result_id,
+                                "score": ranked_result.final_score,
+                                "original_score": ranked_result.original_score,
+                                "fact_boost": ranked_result.fact_boost,
+                                "content_type": ranked_result.content_type.value,
+                                "source": "vector_enhanced",
+                                "payload": original_result.get("payload", {}),
+                                "query_variant": original_result.get("query_variant", ""),
+                                "ranking_patterns": ranked_result.matched_patterns
+                            })
+                    
+                    logger.info(f"Applied fact-aware ranking to {len(all_vector_results)} vector results, returned {len(results)}")
+                else:
+                    logger.warning("No vector results found for enhanced queries")
 
-                logger.info(f"Vector search returned {len(vector_results)} results")
+                logger.info(f"Enhanced vector search completed")
             except Exception as e:
                 logger.error(f"Vector search failed: {e}")
 
@@ -1309,6 +1480,14 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
             "retrieval_mode_used": effective_mode,
             "graphrag_metadata": graphrag_metadata,
             "message": f"Found {len(enhanced_results)} matching contexts using GraphRAG-enhanced {'reranked ' if reranker.enabled else ''}search",
+            "phase2_enhancements": {
+                "intent_detected": intent_result.intent.value if intent_result else "unknown",
+                "fact_attribute": intent_result.attribute if intent_result else None,
+                "query_variants_used": len(enhanced_queries),
+                "original_query": original_query,
+                "enhanced_queries": enhanced_queries[:3] if len(enhanced_queries) > 1 else [],
+                "fact_aware_ranking_applied": any("fact_boost" in r for r in enhanced_results)
+            }
         }
 
     except Exception as e:
