@@ -1,0 +1,48 @@
+# SIMPLE MAKEFILE FOR CONSISTENT TEST EXECUTION
+# This is the ONE TRUE WAY to run tests - same results for everyone
+
+.PHONY: test coverage help
+
+# Default shows help
+help:
+	@echo "═══════════════════════════════════════════════════════"
+	@echo "  ONE WAY TO RUN TESTS - ALWAYS WORKS"
+	@echo "═══════════════════════════════════════════════════════"
+	@echo ""
+	@echo "  make coverage    # Get code coverage (THIS IS THE WAY)"
+	@echo "  make test        # Run tests without coverage (faster)"
+	@echo ""
+	@echo "Expected: ~25% coverage, 4000+ tests, 2-3 minutes"
+	@echo "═══════════════════════════════════════════════════════"
+
+# Simple test run - no coverage, no parallel (always works)
+test:
+	@echo "Running tests (no coverage)..."
+	@python3 -m pytest tests/ --tb=short --maxfail=50 -q
+	@echo "✅ Tests completed"
+
+# Coverage run - simple and reliable
+coverage:
+	@echo "Running tests with coverage (this takes 2-3 minutes)..."
+	@# Clean any old coverage data
+	@rm -f .coverage coverage.json 2>/dev/null || true
+	@# Run tests with coverage - NO PARALLEL to ensure consistency
+	@# Continue even if some tests fail so we get coverage data
+	@python3 -m pytest tests/ \
+		--cov=src \
+		--cov-report=term-missing:skip-covered \
+		--cov-report=json:coverage.json \
+		--tb=short \
+		--maxfail=100 \
+		--continue-on-collection-errors \
+		-q || true
+	@# Show the result
+	@echo ""
+	@echo "════════════════════════════════════════════════════════"
+	@if [ -f coverage.json ]; then \
+		python3 -c "import json; data=json.load(open('coverage.json')); print(f'📊 TOTAL COVERAGE: {data[\"totals\"][\"percent_covered\"]:.1f}%')"; \
+	else \
+		echo "❌ Coverage data not found"; \
+	fi
+	@echo "════════════════════════════════════════════════════════"
+	@echo "Coverage saved to: coverage.json"

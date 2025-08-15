@@ -1,0 +1,52 @@
+[tool:pytest]
+# Test discovery patterns
+testpaths = tests
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+
+# Add src to Python path for imports
+pythonpath = . src
+
+# Basic test configuration - coverage handled by Makefile
+addopts =
+    --strict-markers
+    --strict-config
+    --tb=short
+    -q
+
+# Markers for different test types
+markers =
+    unit: Unit tests
+    integration: Integration tests
+    slow: Slow running tests (use -m 'not slow' to skip)
+    mcp: MCP protocol tests
+    storage: Storage backend tests
+    security: Security validation tests
+    performance: Performance/benchmark tests
+
+# Asyncio configuration
+asyncio_mode = auto
+
+# Test filtering - exclude problematic directories
+norecursedirs =
+    .git
+    .tox
+    dist
+    build
+    *.egg
+    __pycache__
+    .coverage*
+    coverage_html
+    benchmarks
+    scripts
+
+# Ignore warnings from dependencies
+filterwarnings =
+    ignore::DeprecationWarning
+    ignore::PendingDeprecationWarning
+    ignore::RuntimeWarning:.*asyncio.*
+    ignore::UserWarning:.*duckdb.*
+
+# Minimum version
+minversion = 6.0
