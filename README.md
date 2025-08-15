@@ -4,6 +4,16 @@
 [![Protocol](https://img.shields.io/badge/MCP-1.0-green.svg)](protocol)
 [![Agent](https://img.shields.io/badge/agent_first_schema-purple.svg)](agent)
 
+## 🎯 Quick Coverage Check
+
+```bash
+# GET CODE COVERAGE - ONE COMMAND:
+python coverage.py
+
+# That's it. Results in coverage.json
+# Current coverage: ~25%
+```
+
 > **memory with covenant**
 > Truthful memory for agents. For those who remember.
 
