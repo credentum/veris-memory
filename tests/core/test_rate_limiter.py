@@ -419,7 +419,7 @@ class TestMCPRateLimiter:
         """Test async rate limit checking - success case."""
         limiter = MCPRateLimiter()
         
-        allowed, message = await limiter._async_check_rate_limit("store_context", "test_client", 1)
+        allowed, message = await limiter.async_check_rate_limit("store_context", "test_client", 1)
         assert allowed is True
         assert message is None
 
@@ -432,7 +432,7 @@ class TestMCPRateLimiter:
         limiter.global_limiters["store_context"].can_proceed = MagicMock(return_value=False)
         limiter.global_limiters["store_context"].get_reset_time = MagicMock(return_value=30.0)
         
-        allowed, message = await limiter._async_check_rate_limit("store_context", "test_client", 1)
+        allowed, message = await limiter.async_check_rate_limit("store_context", "test_client", 1)
         assert allowed is False
         assert "Global rate limit exceeded" in message
         assert "30.0s" in message
@@ -447,14 +447,14 @@ class TestMCPRateLimiter:
         endpoint = "store_context"
         
         # First call creates the bucket
-        await limiter._async_check_rate_limit(endpoint, client_id, 1)
+        await limiter.async_check_rate_limit(endpoint, client_id, 1)
         
         # Mock the bucket to be empty
         bucket = limiter.client_limiters[client_id][endpoint]
         bucket.consume = MagicMock(return_value=False)
         bucket.get_wait_time = MagicMock(return_value=45.0)
         
-        allowed, message = await limiter._async_check_rate_limit(endpoint, client_id, 1)
+        allowed, message = await limiter.async_check_rate_limit(endpoint, client_id, 1)
         assert allowed is False
         assert "Rate limit exceeded" in message
         assert "45.0s" in message
@@ -464,7 +464,7 @@ class TestMCPRateLimiter:
         """Test async burst protection - success case."""
         limiter = MCPRateLimiter()
         
-        allowed, message = await limiter._async_check_burst_protection("test_client", 10)
+        allowed, message = await limiter.async_check_burst_protection("test_client", 10)
         assert allowed is True
         assert message is None
 
@@ -474,13 +474,13 @@ class TestMCPRateLimiter:
         limiter = MCPRateLimiter()
         
         # Initialize burst limiter
-        await limiter._async_check_burst_protection("test_client", 10)
+        await limiter.async_check_burst_protection("test_client", 10)
         
         # Mock the limiter to be over limit
         limiter._burst_limiters["test_client"].can_proceed = MagicMock(return_value=False)
         limiter._burst_limiters["test_client"].get_reset_time = MagicMock(return_value=8.5)
         
-        allowed, message = await limiter._async_check_burst_protection("test_client", 10)
+        allowed, message = await limiter.async_check_burst_protection("test_client", 10)
         assert allowed is False
         assert "Burst protection triggered" in message
         assert "8.5s" in message

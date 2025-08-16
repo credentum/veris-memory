@@ -150,7 +150,7 @@ class TestRateLimiting:
         """Test MCP rate limiter allowing requests."""
         limiter = MCPRateLimiter()
 
-        allowed, message = await limiter._async_check_rate_limit("store_context", "test_client", 1)
+        allowed, message = await limiter.async_check_rate_limit("store_context", "test_client", 1)
         assert allowed is True
         assert message is None
 
@@ -161,20 +161,20 @@ class TestRateLimiting:
 
         # Trigger burst protection
         for _ in range(51):  # Exceed burst limit
-            await limiter._async_check_burst_protection("test_client")
+            await limiter.async_check_burst_protection("test_client")
 
-        allowed, message = await limiter._async_check_burst_protection("test_client")
+        allowed, message = await limiter.async_check_burst_protection("test_client")
         assert allowed is False
         assert "Burst protection triggered" in message
 
     @pytest.mark.asyncio
     async def test_rate_limit_check_function(self):
         """Test convenience rate limit check function."""
-        with patch("core.rate_limiter.get_rate_limiter") as mock_get_limiter:
+        with patch("src.core.rate_limiter.get_rate_limiter") as mock_get_limiter:
             mock_limiter = Mock()
             mock_limiter.get_client_id.return_value = "test_client"
-            mock_limiter._async_check_burst_protection = AsyncMock(return_value=(True, None))
-            mock_limiter._async_check_rate_limit = AsyncMock(return_value=(True, None))
+            mock_limiter.async_check_burst_protection = AsyncMock(return_value=(True, None))
+            mock_limiter.async_check_rate_limit = AsyncMock(return_value=(True, None))
             mock_get_limiter.return_value = mock_limiter
 
             allowed, message = await rate_limit_check("test_endpoint")
