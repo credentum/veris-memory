@@ -46,10 +46,7 @@ class SimpleRedisClient:
                 "decode_responses": True,  # Return strings instead of bytes
                 "socket_connect_timeout": 5,
                 "socket_timeout": 5,
-                "connection_pool_kwargs": {
-                    "max_connections": 10,
-                    "retry_on_timeout": True
-                }
+                "retry_on_timeout": True
             }
             
             # Add password if provided
@@ -217,6 +214,31 @@ class SimpleRedisClient:
         except Exception as e:
             logger.error(f"Unexpected error in keys(): {e}")
             return []
+    
+    def ping(self) -> bool:
+        """
+        Ping Redis server to check connectivity.
+        
+        Returns:
+            bool: True if ping successful
+        """
+        try:
+            if not self.is_connected or not self.client:
+                logger.warning("Redis not connected, attempting reconnection...")
+                if not self.connect():
+                    return False
+            
+            # Perform Redis PING operation
+            result = self.client.ping()
+            return bool(result)
+            
+        except redis.ConnectionError as e:
+            logger.error(f"Redis connection error in ping(): {e}")
+            self.is_connected = False
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error in ping(): {e}")
+            return False
     
     def close(self):
         """Close Redis connection."""
