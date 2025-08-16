@@ -11,6 +11,7 @@ import json
 import time
 import asyncio
 import logging
+import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Union, Tuple, Callable
 from dataclasses import dataclass, asdict
@@ -303,9 +304,12 @@ class UnifiedDashboard:
             try:
                 sleep_interval = interval
                 if consecutive_failures > 0:
-                    # Exponential backoff: 30s, 60s, 120s, etc.
-                    sleep_interval = min(interval * (2 ** consecutive_failures), 300)  # Max 5 minutes
-                    logger.info(f"Using backoff interval: {sleep_interval}s due to {consecutive_failures} failures")
+                    # Exponential backoff with jitter: 30s, 60s, 120s, etc.
+                    base_backoff = min(interval * (2 ** consecutive_failures), 300)  # Max 5 minutes
+                    # Add ±25% jitter to prevent thundering herd
+                    jitter_factor = 0.75 + (0.5 * random.random())  # Random between 0.75 and 1.25
+                    sleep_interval = base_backoff * jitter_factor
+                    logger.info(f"Using backoff interval: {sleep_interval:.1f}s (base: {base_backoff}s, jitter: {jitter_factor:.2f}) due to {consecutive_failures} failures")
                     
                 await asyncio.sleep(sleep_interval)
             except asyncio.CancelledError:
@@ -491,74 +495,100 @@ class UnifiedDashboard:
         return fallback.get('disk_total_gb', 500.0)
 
     async def _collect_service_metrics(self) -> List[ServiceMetrics]:
-        """Collect service health and performance metrics."""
+        """Collect service health and performance metrics with concurrent health checks."""
         services = []
         
-        # MCP Server (self)
+        # MCP Server (self) - always healthy if we can collect
         services.append(ServiceMetrics(
             name="MCP Server", 
-            status="healthy",  # We're running if we can collect this
+            status="healthy",
             port=8000
         ))
         
-        # Redis health check
-        redis_status = "unknown"
-        if self.service_clients['redis']:
+        # Run all external service health checks concurrently
+        async def check_redis():
+            """Check Redis health concurrently."""
+            if not self.service_clients['redis']:
+                return "unknown"
             try:
                 await asyncio.get_event_loop().run_in_executor(
                     None, self.service_clients['redis'].ping
                 )
-                redis_status = "healthy"
+                return "healthy"
+            except ConnectionError as e:
+                logger.debug(f"Redis connection failed: {e}")
+                return "unhealthy"
+            except TimeoutError as e:
+                logger.debug(f"Redis health check timed out: {e}")
+                return "unhealthy"
             except Exception as e:
-                logger.debug(f"Redis health check failed: {e}")
-                redis_status = "unhealthy"
+                logger.debug(f"Redis health check failed with unexpected error: {e}")
+                return "unhealthy"
         
-        services.append(ServiceMetrics(
-            name="Redis", 
-            status=redis_status, 
-            port=6379
-        ))
-        
-        # Neo4j health check
-        neo4j_status = "unknown"
-        if self.service_clients['neo4j']:
+        async def check_neo4j():
+            """Check Neo4j health concurrently."""
+            if not self.service_clients['neo4j']:
+                return "unknown"
             try:
                 result = await asyncio.get_event_loop().run_in_executor(
                     None, self.service_clients['neo4j'].query, "RETURN 1 as test"
                 )
-                neo4j_status = "healthy" if result else "unhealthy"
+                return "healthy" if result else "unhealthy"
+            except ConnectionError as e:
+                logger.debug(f"Neo4j connection failed: {e}")
+                return "unhealthy"
+            except TimeoutError as e:
+                logger.debug(f"Neo4j health check timed out: {e}")
+                return "unhealthy"
+            except ValueError as e:
+                logger.debug(f"Neo4j authentication or query error: {e}")
+                return "unhealthy"
             except Exception as e:
-                logger.debug(f"Neo4j health check failed: {e}")
-                neo4j_status = "unhealthy"
-                
-        services.append(ServiceMetrics(
-            name="Neo4j HTTP", 
-            status=neo4j_status, 
-            port=7474
-        ))
-        services.append(ServiceMetrics(
-            name="Neo4j Bolt", 
-            status=neo4j_status, 
-            port=7687
-        ))
+                logger.debug(f"Neo4j health check failed with unexpected error: {e}")
+                return "unhealthy"
         
-        # Qdrant health check
-        qdrant_status = "unknown"
-        if self.service_clients['qdrant']:
+        async def check_qdrant():
+            """Check Qdrant health concurrently."""
+            if not self.service_clients['qdrant']:
+                return "unknown"
             try:
                 collections = await asyncio.get_event_loop().run_in_executor(
                     None, self.service_clients['qdrant'].get_collections
                 )
-                qdrant_status = "healthy" if collections else "unhealthy"
+                return "healthy" if collections else "unhealthy"
+            except ConnectionError as e:
+                logger.debug(f"Qdrant connection failed: {e}")
+                return "unhealthy"
+            except TimeoutError as e:
+                logger.debug(f"Qdrant health check timed out: {e}")
+                return "unhealthy"
+            except ValueError as e:
+                logger.debug(f"Qdrant API or authentication error: {e}")
+                return "unhealthy"
             except Exception as e:
-                logger.debug(f"Qdrant health check failed: {e}")
-                qdrant_status = "unhealthy"
-                
-        services.append(ServiceMetrics(
-            name="Qdrant", 
-            status=qdrant_status, 
-            port=6333
-        ))
+                logger.debug(f"Qdrant health check failed with unexpected error: {e}")
+                return "unhealthy"
+        
+        # Execute all health checks concurrently with timeout
+        try:
+            redis_status, neo4j_status, qdrant_status = await asyncio.wait_for(
+                asyncio.gather(check_redis(), check_neo4j(), check_qdrant()),
+                timeout=10.0  # Total timeout for all health checks
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Service health checks timed out after 10 seconds")
+            redis_status = neo4j_status = qdrant_status = "unhealthy"
+        except Exception as e:
+            logger.error(f"Unexpected error during concurrent health checks: {e}")
+            redis_status = neo4j_status = qdrant_status = "unhealthy"
+        
+        # Add services with their health status
+        services.extend([
+            ServiceMetrics(name="Redis", status=redis_status, port=6379),
+            ServiceMetrics(name="Neo4j HTTP", status=neo4j_status, port=7474),
+            ServiceMetrics(name="Neo4j Bolt", status=neo4j_status, port=7687),
+            ServiceMetrics(name="Qdrant", status=qdrant_status, port=6333),
+        ])
         
         return services
 

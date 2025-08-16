@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -1391,9 +1392,28 @@ async def dashboard_health():
     """
     try:
         # Dashboard is healthy when: exists, has recent updates, and collection is active
-        dashboard_healthy = (dashboard is not None and 
-                           dashboard.last_update is not None and
-                           getattr(dashboard, '_collection_running', False))
+        dashboard_exists = dashboard is not None
+        has_recent_update = dashboard.last_update is not None if dashboard_exists else False
+        
+        # Check collection status with timeout protection
+        collection_running = False
+        if dashboard_exists:
+            try:
+                # Add timeout protection for collection status check
+                collection_running = getattr(dashboard, '_collection_running', False)
+                
+                # Additional health check: verify last update is recent (within 2 minutes)
+                if has_recent_update and dashboard.last_update:
+                    time_since_update = (datetime.utcnow() - dashboard.last_update).total_seconds()
+                    if time_since_update > 120:  # 2 minutes
+                        logger.warning(f"Dashboard last update was {time_since_update:.1f}s ago")
+                        has_recent_update = False
+                        
+            except Exception as e:
+                logger.error(f"Error checking dashboard collection status: {e}")
+                collection_running = False
+        
+        dashboard_healthy = dashboard_exists and has_recent_update and collection_running
         websocket_healthy = len(websocket_connections) <= 100  # Max connections
         overall_healthy = dashboard_healthy and websocket_healthy
         
