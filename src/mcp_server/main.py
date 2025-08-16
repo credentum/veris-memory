@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -537,7 +538,17 @@ async def startup_event() -> None:
         if DASHBOARD_AVAILABLE:
             try:
                 dashboard = UnifiedDashboard()
-                print("✅ Dashboard monitoring initialized")
+                
+                # Set service clients for real health checks
+                dashboard.set_service_clients(
+                    neo4j_client=neo4j_client,
+                    qdrant_client=qdrant_client,
+                    redis_client=simple_redis
+                )
+                
+                # Start background collection loop
+                await dashboard.start_collection_loop()
+                print("✅ Dashboard monitoring initialized with background collection")
             except Exception as e:
                 print(f"⚠️ Dashboard initialization failed: {e}")
                 dashboard = None
@@ -557,6 +568,7 @@ async def shutdown_event() -> None:
     if kv_store:
         kv_store.close()
     if dashboard:
+        await dashboard.stop_collection_loop()
         await dashboard.shutdown()
 
     print("Storage clients and dashboard closed")
@@ -1594,9 +1606,41 @@ async def refresh_dashboard():
 
 @app.get("/api/dashboard/health")
 async def dashboard_health():
-    """Dashboard API health check."""
+    """Dashboard API health check.
+    
+    Returns comprehensive health status of the dashboard system including:
+    - Dashboard component health (requires active collection loop)
+    - WebSocket connection health (under connection limits)
+    
+    The collection_running check is required because the dashboard is only
+    considered healthy when actively collecting metrics from services.
+    Without an active collection loop, metrics become stale and the
+    dashboard cannot provide accurate real-time monitoring.
+    """
     try:
-        dashboard_healthy = dashboard is not None and dashboard.last_update is not None
+        # Dashboard is healthy when: exists, has recent updates, and collection is active
+        dashboard_exists = dashboard is not None
+        has_recent_update = dashboard.last_update is not None if dashboard_exists else False
+        
+        # Check collection status with timeout protection
+        collection_running = False
+        if dashboard_exists:
+            try:
+                # Add timeout protection for collection status check
+                collection_running = getattr(dashboard, '_collection_running', False)
+                
+                # Additional health check: verify last update is recent (within 2 minutes)
+                if has_recent_update and dashboard.last_update:
+                    time_since_update = (datetime.utcnow() - dashboard.last_update).total_seconds()
+                    if time_since_update > 120:  # 2 minutes
+                        logger.warning(f"Dashboard last update was {time_since_update:.1f}s ago")
+                        has_recent_update = False
+                        
+            except Exception as e:
+                logger.error(f"Error checking dashboard collection status: {e}")
+                collection_running = False
+        
+        dashboard_healthy = dashboard_exists and has_recent_update and collection_running
         websocket_healthy = len(websocket_connections) <= 100  # Max connections
         overall_healthy = dashboard_healthy and websocket_healthy
         
@@ -1607,6 +1651,7 @@ async def dashboard_health():
             "components": {
                 "dashboard": {
                     "healthy": dashboard_healthy,
+                    "collection_running": getattr(dashboard, '_collection_running', False) if dashboard else False,
                     "last_update": dashboard.last_update.isoformat() if dashboard and dashboard.last_update else None
                 },
                 "websockets": {

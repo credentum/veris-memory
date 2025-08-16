@@ -11,6 +11,7 @@ import json
 import time
 import asyncio
 import logging
+import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Union, Tuple, Callable
 from dataclasses import dataclass, asdict
@@ -151,13 +152,21 @@ class UnifiedDashboard:
         self.health_checker = HealthChecker(self.metrics_collector)
         self.mcp_metrics = MCPMetrics()
         
-        # Start metrics collection
-        self.metrics_collector.start_collection()
+        # Don't auto-start collection - use our own async collection loop instead
         
         # Dashboard state
         self.last_update = None
         self.cached_metrics = None
         self.cache_duration = self.config.get('cache_duration_seconds', 30)
+        self._collection_running = False
+        self._collection_task = None
+        
+        # Store service clients for health checks
+        self.service_clients = {
+            'neo4j': None,
+            'qdrant': None,
+            'redis': None
+        }
         
         logger.info("🎯 UnifiedDashboard initialized")
 
@@ -166,6 +175,7 @@ class UnifiedDashboard:
         return {
             'refresh_interval_seconds': 5,
             'cache_duration_seconds': 30,
+            'collection_interval_seconds': 30,
             'ascii': {
                 'width': 80,
                 'use_color': True,
@@ -228,6 +238,83 @@ class UnifiedDashboard:
                 }
             }
         }
+
+    def set_service_clients(self, neo4j_client: Optional[Any] = None, 
+                           qdrant_client: Optional[Any] = None, 
+                           redis_client: Optional[Any] = None) -> None:
+        """Set service clients for real health checks."""
+        if neo4j_client:
+            self.service_clients['neo4j'] = neo4j_client
+        if qdrant_client:
+            self.service_clients['qdrant'] = qdrant_client
+        if redis_client:
+            self.service_clients['redis'] = redis_client
+            
+    async def start_collection_loop(self) -> None:
+        """Start background collection loop."""
+        if self._collection_running:
+            logger.warning("Collection loop already running")
+            return
+            
+        self._collection_running = True
+        self._collection_task = asyncio.create_task(self._collection_loop())
+        logger.info("🔄 Dashboard collection loop started")
+        
+    async def stop_collection_loop(self) -> None:
+        """Stop background collection loop."""
+        self._collection_running = False
+        if self._collection_task:
+            self._collection_task.cancel()
+            try:
+                await self._collection_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("⏹️ Dashboard collection loop stopped")
+        
+    async def _collection_loop(self) -> None:
+        """Background collection loop with enhanced error handling."""
+        interval = self.config.get('collection_interval_seconds', 30)
+        consecutive_failures = 0
+        max_failures = 5
+        
+        while self._collection_running:
+            try:
+                await self.collect_all_metrics(force_refresh=True)
+                consecutive_failures = 0  # Reset on success
+                logger.debug(f"Metrics collected at {datetime.utcnow()}")
+            except asyncio.CancelledError:
+                logger.info("Collection loop cancelled")
+                break
+            except ConnectionError as e:
+                consecutive_failures += 1
+                logger.warning(f"Connection error in collection loop (attempt {consecutive_failures}): {e}")
+                if consecutive_failures >= max_failures:
+                    logger.error(f"Too many consecutive connection failures ({consecutive_failures}), stopping collection")
+                    self._collection_running = False
+                    break
+            except Exception as e:
+                consecutive_failures += 1
+                logger.error(f"Unexpected error in collection loop (attempt {consecutive_failures}): {e}", exc_info=True)
+                if consecutive_failures >= max_failures:
+                    logger.error(f"Too many consecutive failures ({consecutive_failures}), stopping collection")
+                    self._collection_running = False
+                    break
+                
+            # Wait for next collection with exponential backoff on failures
+            try:
+                sleep_interval = interval
+                if consecutive_failures > 0:
+                    # Exponential backoff with jitter: 30s, 60s, 120s, etc.
+                    base_backoff = min(interval * (2 ** consecutive_failures), 300)  # Max 5 minutes
+                    # Add ±25% jitter to prevent thundering herd
+                    jitter_factor = 0.75 + (0.5 * random.random())  # Random between 0.75 and 1.25
+                    sleep_interval = base_backoff * jitter_factor
+                    logger.info(f"Using backoff interval: {sleep_interval:.1f}s (base: {base_backoff}s, jitter: {jitter_factor:.2f}) due to {consecutive_failures} failures")
+                    
+                await asyncio.sleep(sleep_interval)
+            except asyncio.CancelledError:
+                logger.info("Collection loop sleep cancelled")
+                break
 
     async def collect_all_metrics(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
@@ -408,44 +495,101 @@ class UnifiedDashboard:
         return fallback.get('disk_total_gb', 500.0)
 
     async def _collect_service_metrics(self) -> List[ServiceMetrics]:
-        """Collect service health metrics."""
+        """Collect service health and performance metrics with concurrent health checks."""
         services = []
         
-        # Run health checks
-        health_results = self.health_checker.run_checks()
+        # MCP Server (self) - always healthy if we can collect
+        services.append(ServiceMetrics(
+            name="MCP Server", 
+            status="healthy",
+            port=8000
+        ))
         
-        # Define expected services
-        service_configs = [
-            {'name': 'MCP Server', 'port': 8000},
-            {'name': 'Redis', 'port': 6379},
-            {'name': 'Neo4j HTTP', 'port': 7474},
-            {'name': 'Neo4j Bolt', 'port': 7687},
-            {'name': 'Qdrant', 'port': 6333}
-        ]
-
-        for service_config in service_configs:
-            name = service_config['name']
-            port = service_config['port']
-            
-            # Get health status
-            health_key = name.lower().replace(' ', '_')
-            health_info = health_results.get(health_key, {})
-            status = health_info.get('status', 'unknown')
-            
-            # Get metrics from metrics collector
-            memory_mb = self.metrics_collector.get_metric_value(f"service_memory_mb", {'service': name})
-            ops_per_sec = self.metrics_collector.get_metric_value(f"service_ops_per_sec", {'service': name})
-            connections = self.metrics_collector.get_metric_value(f"service_connections", {'service': name})
-
-            services.append(ServiceMetrics(
-                name=name,
-                status=status,
-                port=port,
-                memory_mb=memory_mb,
-                operations_per_sec=int(ops_per_sec) if ops_per_sec else None,
-                connections=int(connections) if connections else None
-            ))
-
+        # Run all external service health checks concurrently
+        async def check_redis():
+            """Check Redis health concurrently."""
+            if not self.service_clients['redis']:
+                return "unknown"
+            try:
+                await asyncio.get_event_loop().run_in_executor(
+                    None, self.service_clients['redis'].ping
+                )
+                return "healthy"
+            except ConnectionError as e:
+                logger.debug(f"Redis connection failed: {e}")
+                return "unhealthy"
+            except TimeoutError as e:
+                logger.debug(f"Redis health check timed out: {e}")
+                return "unhealthy"
+            except Exception as e:
+                logger.debug(f"Redis health check failed with unexpected error: {e}")
+                return "unhealthy"
+        
+        async def check_neo4j():
+            """Check Neo4j health concurrently."""
+            if not self.service_clients['neo4j']:
+                return "unknown"
+            try:
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None, self.service_clients['neo4j'].query, "RETURN 1 as test"
+                )
+                return "healthy" if result else "unhealthy"
+            except ConnectionError as e:
+                logger.debug(f"Neo4j connection failed: {e}")
+                return "unhealthy"
+            except TimeoutError as e:
+                logger.debug(f"Neo4j health check timed out: {e}")
+                return "unhealthy"
+            except ValueError as e:
+                logger.debug(f"Neo4j authentication or query error: {e}")
+                return "unhealthy"
+            except Exception as e:
+                logger.debug(f"Neo4j health check failed with unexpected error: {e}")
+                return "unhealthy"
+        
+        async def check_qdrant():
+            """Check Qdrant health concurrently."""
+            if not self.service_clients['qdrant']:
+                return "unknown"
+            try:
+                collections = await asyncio.get_event_loop().run_in_executor(
+                    None, self.service_clients['qdrant'].get_collections
+                )
+                return "healthy" if collections else "unhealthy"
+            except ConnectionError as e:
+                logger.debug(f"Qdrant connection failed: {e}")
+                return "unhealthy"
+            except TimeoutError as e:
+                logger.debug(f"Qdrant health check timed out: {e}")
+                return "unhealthy"
+            except ValueError as e:
+                logger.debug(f"Qdrant API or authentication error: {e}")
+                return "unhealthy"
+            except Exception as e:
+                logger.debug(f"Qdrant health check failed with unexpected error: {e}")
+                return "unhealthy"
+        
+        # Execute all health checks concurrently with timeout
+        try:
+            redis_status, neo4j_status, qdrant_status = await asyncio.wait_for(
+                asyncio.gather(check_redis(), check_neo4j(), check_qdrant()),
+                timeout=10.0  # Total timeout for all health checks
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Service health checks timed out after 10 seconds")
+            redis_status = neo4j_status = qdrant_status = "unhealthy"
+        except Exception as e:
+            logger.error(f"Unexpected error during concurrent health checks: {e}")
+            redis_status = neo4j_status = qdrant_status = "unhealthy"
+        
+        # Add services with their health status
+        services.extend([
+            ServiceMetrics(name="Redis", status=redis_status, port=6379),
+            ServiceMetrics(name="Neo4j HTTP", status=neo4j_status, port=7474),
+            ServiceMetrics(name="Neo4j Bolt", status=neo4j_status, port=7687),
+            ServiceMetrics(name="Qdrant", status=qdrant_status, port=6333),
+        ])
+        
         return services
 
     async def _collect_veris_metrics(self) -> VerisMetrics:
