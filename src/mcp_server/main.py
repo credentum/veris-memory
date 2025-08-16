@@ -252,100 +252,6 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
     return embedding
 
 
-# Format adapter for backward compatibility
-def adapt_legacy_content_format(content: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Convert legacy content format to current format for backward compatibility.
-    
-    Handles the breaking changes reported in Issue #48:
-    - user_message + assistant_response -> text + type + title
-    - exchange_type -> fact_type
-    """
-    if not isinstance(content, dict):
-        return content
-        
-    # Check if this looks like legacy format
-    has_legacy_fields = any(field in content for field in ["user_message", "assistant_response", "exchange_type"])
-    
-    if has_legacy_fields:
-        logger.info("Detected legacy content format, converting to current format")
-        
-        # Convert legacy conversation format to current semantic format
-        adapted_content = {}
-        
-        # Primary text content
-        if "user_message" in content:
-            adapted_content["text"] = content["user_message"]
-            adapted_content["type"] = "decision"  # Default type for user statements
-            
-        elif "assistant_response" in content:
-            adapted_content["text"] = content["assistant_response"] 
-            adapted_content["type"] = "response"  # Assistant responses
-            
-        # Generate title from content
-        text = adapted_content.get("text", "")
-        if len(text) > 50:
-            adapted_content["title"] = text[:47] + "..."
-        else:
-            adapted_content["title"] = text
-            
-        # Map exchange_type to fact_type
-        if "exchange_type" in content:
-            exchange_type_mapping = {
-                "qa": "question_answer",
-                "introduction": "personal_info", 
-                "preference": "personal_info",
-                "fact": "general_fact",
-                "decision": "decision_point"
-            }
-            adapted_content["fact_type"] = exchange_type_mapping.get(
-                content["exchange_type"], content["exchange_type"]
-            )
-            
-        # Preserve other fields
-        for key, value in content.items():
-            if key not in ["user_message", "assistant_response", "exchange_type"]:
-                adapted_content[key] = value
-                
-        logger.info(f"Legacy format converted: {list(content.keys())} -> {list(adapted_content.keys())}")
-        return adapted_content
-    
-    # Return current format unchanged
-    return content
-
-
-def enhance_response_with_legacy_fields(response: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Add legacy field aliases to responses for backward compatibility.
-    
-    This allows integrations using old field names to continue working
-    while they migrate to the new format.
-    """
-    if "results" in response:
-        for result in response["results"]:
-            if "content" in result and isinstance(result["content"], dict):
-                content = result["content"]
-                
-                # Add legacy aliases for common fields
-                if "text" in content and "user_message" not in content:
-                    content["user_message"] = content["text"]  # Legacy alias
-                    
-                if "type" in content and "exchange_type" not in content:
-                    # Map current types back to legacy exchange_type
-                    type_mapping = {
-                        "decision": "fact",
-                        "response": "qa",
-                        "personal_info": "introduction"
-                    }
-                    content["exchange_type"] = type_mapping.get(content["type"], content["type"])
-                    
-                if "fact_type" in content and "metadata" not in content:
-                    # Add fact_type to metadata for legacy compatibility
-                    content["metadata"] = content.get("metadata", {})
-                    content["metadata"]["fact_type"] = content["fact_type"]
-    
-    return response
-
 
 app = FastAPI(
     title="Context Store MCP Server",
@@ -1019,19 +925,14 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
         import uuid
 
         context_id = str(uuid.uuid4())
-        
-        # Apply format adapter for backward compatibility
-        adapted_content = adapt_legacy_content_format(request.content)
-        if adapted_content != request.content:
-            logger.info("Applied legacy format conversion for backward compatibility")
 
         # Store in vector database
         vector_id = None
         if qdrant_client:
             try:
                 logger.info("Generating embedding for vector storage...")
-                # Create embedding from adapted content using proper embedding service
-                embedding = await _generate_embedding(adapted_content)
+                # Create embedding from content using proper embedding service
+                embedding = await _generate_embedding(request.content)
                 logger.info(f"Generated embedding with {len(embedding)} dimensions")
 
                 logger.info("Storing vector in Qdrant...")
@@ -1039,8 +940,7 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
                     vector_id=context_id,
                     embedding=embedding,
                     metadata={
-                        "content": adapted_content,  # Use adapted content
-                        "original_content": request.content,  # Preserve original for debugging
+                        "content": request.content,
                         "type": request.type,
                         "metadata": request.metadata,
                     }
@@ -1059,8 +959,8 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
                 # Flatten nested objects for Neo4j compatibility
                 flattened_properties = {"id": context_id, "type": request.type}
                 
-                # Handle adapted_content safely - convert nested objects to JSON strings
-                for key, value in adapted_content.items():
+                # Handle request.content safely - convert nested objects to JSON strings
+                for key, value in request.content.items():
                     if isinstance(value, (dict, list)):
                         flattened_properties[f"{key}_json"] = json.dumps(value)
                     else:
@@ -1178,18 +1078,13 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                 logger.warning(f"Graph search failed: {e}")
                 # Continue with vector results only
 
-        # Prepare response
-        response = {
+        return {
             "success": True,
             "results": results[: request.limit],
             "total_count": len(results),
             "search_mode_used": request.search_mode,
             "message": f"Found {len(results)} matching contexts",
         }
-        
-        # Add legacy field compatibility for backward compatibility
-        enhanced_response = enhance_response_with_legacy_fields(response)
-        return enhanced_response
 
     except Exception as e:
         import traceback

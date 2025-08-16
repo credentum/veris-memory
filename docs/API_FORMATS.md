@@ -1,14 +1,14 @@
 # API Response Formats
 
-This document describes the current API response formats and addresses breaking changes reported in Issue #48.
+This document describes the current API response formats for Veris Memory v1.0.
 
 ## Overview
 
-Veris Memory has evolved its API response formats to provide more structured and consistent data. This document helps developers understand the current formats and migrate from older versions.
+Veris Memory provides a clean, consistent API with standardized response formats across all endpoints. 
+
+**Breaking Changes Notice**: If you were using fields like `user_message`, `assistant_response`, or `exchange_type` from earlier versions, please update to the current format described below.
 
 ## Store Context Response Format
-
-### Current Format (v0.9.0+)
 
 ```json
 {
@@ -20,21 +20,27 @@ Veris Memory has evolved its API response formats to provide more structured and
 }
 ```
 
-### Legacy Format (v0.4.x - DEPRECATED)
+## Store Context Input Format
+
+Use this standardized content format:
 
 ```json
 {
-  "success": true,
-  "context_id": "uuid-string",
-  "stored_in": ["vector", "graph"]
+  "content": {
+    "text": "My name is Matt",
+    "type": "decision",
+    "title": "User Name",
+    "fact_type": "personal_info"
+  },
+  "type": "log",
+  "metadata": {"source": "telegram_bot", "timestamp": 1234567890}
 }
 ```
 
 ## Retrieve Context Response Format
 
-### Current Format (v0.9.0+)
+All search results (vector, graph, hybrid) use this consistent format:
 
-**Vector Search Results:**
 ```json
 {
   "success": true,
@@ -57,99 +63,14 @@ Veris Memory has evolved its API response formats to provide more structured and
 }
 ```
 
-**Graph Search Results:**
-```json
-{
-  "success": true,
-  "results": [
-    {
-      "n": {
-        "id": "node-123",
-        "type": "decision",
-        "text": "My name is Matt",
-        "title": "User Name"
-      }
-    }
-  ],
-  "total_count": 1,
-  "search_mode_used": "graph"
-}
-```
-
-### Legacy Format (v0.4.x - DEPRECATED)
-
-```json
-{
-  "success": true,
-  "contexts": [
-    {
-      "user_message": "What is my name?",
-      "assistant_response": "I don't have your name saved yet",
-      "exchange_type": "qa",
-      "metadata": {...}
-    }
-  ]
-}
-```
-
-## Breaking Changes from v0.4.x to v0.9.0
-
-### 1. Field Name Changes
-
-| Legacy Field | Current Field | Notes |
-|-------------|---------------|-------|
-| `user_message` | `text` | Content now in structured format |
-| `assistant_response` | `type` + `title` | Semantic categorization |
-| `exchange_type` | `fact_type` | More specific typing |
-| `contexts` | `results` | Consistent naming |
-| `context_id` | `id` | Simplified |
-
-### 2. Structure Changes
-
-**Legacy nested conversation format:**
-```json
-{
-  "user_message": "My name is Matt",
-  "assistant_response": "Nice to meet you, Matt!",
-  "exchange_type": "introduction"
-}
-```
-
-**Current semantic format:**
-```json
-{
-  "text": "My name is Matt",
-  "type": "decision", 
-  "title": "User Name",
-  "fact_type": "personal_info"
-}
-```
-
-### 3. Response Wrapper Changes
-
-**Legacy:**
-```json
-{
-  "success": true,
-  "contexts": [...],
-  "count": 5
-}
-```
-
-**Current:**
-```json
-{
-  "success": true,
-  "results": [...],
-  "total_count": 5,
-  "search_mode_used": "hybrid",
-  "message": "Found 5 matching contexts"
-}
-```
+**Key Points:**
+- ✅ **Consistent structure**: All results use `{id, content, score, source}` format
+- ✅ **No nested wrappers**: Eliminated problematic `{'n': {...}}` structures
+- ✅ **Single parsing path**: Same code handles vector and graph results
 
 ## Readiness Check Format
 
-### Current Format (v0.9.0+)
+Enhanced diagnostic information with clear readiness levels:
 
 ```json
 {
@@ -173,69 +94,28 @@ Veris Memory has evolved its API response formats to provide more structured and
 }
 ```
 
-### Legacy Format Issues (FIXED)
-
-**Previous problematic format:**
-```json
-{
-  "ready": false,
-  "error": "'agent_ready'",
-  "recommended_actions": [
-    "Check system logs for detailed error information"
-  ]
-}
-```
-
-**Issue:** Referenced non-existent `agent_ready` field causing KeyError
-**Status:** Fixed in this release
-
-## Migration Guide
-
-### For Integrations Using Legacy Format
-
-1. **Update field mappings:**
-   ```python
-   # OLD
-   name = data.get('user_message', '')
-   response = data.get('assistant_response', '')
-   
-   # NEW
-   text = data.get('text', '')
-   fact_type = data.get('type', '')
-   title = data.get('title', '')
-   ```
-
-2. **Handle nested structures:**
-   ```python
-   # Check for graph result format
-   if 'n' in result:
-       content = result['n']
-   else:
-       content = result.get('content', {})
-   ```
-
-3. **Update response parsing:**
-   ```python
-   # OLD
-   contexts = response.get('contexts', [])
-   
-   # NEW  
-   results = response.get('results', [])
-   ```
-
-## Readiness Levels
-
-The new readiness system provides clearer diagnostic levels:
+### Readiness Levels
 
 - **BASIC**: Core tools available, minimal functionality
-- **STANDARD**: Redis healthy, all 5 MCP tools operational
+- **STANDARD**: Redis healthy, all 5 MCP tools operational  
 - **FULL**: All services healthy, enhanced search available
+
+## Content Field Structure
+
+The standardized content format uses these fields:
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `text` | string | Primary content text | "My name is Matt" |
+| `type` | string | Content classification | "decision", "response", "fact" |
+| `title` | string | Short descriptive title | "User Name" |
+| `fact_type` | string | Semantic categorization | "personal_info", "preference" |
 
 ## Error Handling
 
 ### Graceful Degradation
 
-The system now operates in degraded mode rather than failing completely:
+System operates in degraded mode when some services are unavailable:
 
 ```json
 {
@@ -243,27 +123,67 @@ The system now operates in degraded mode rather than failing completely:
   "readiness_level": "STANDARD",
   "usage_quotas": {
     "vector_operations": "unavailable",
-    "graph_queries": "unavailable",
+    "graph_queries": "unavailable", 
     "kv_operations": "unlimited"
   },
   "recommended_actions": [
+    "✓ Core functionality operational",
     "INFO: Enhanced features unavailable - Qdrant (vector search) not ready"
   ]
 }
 ```
 
-## Backward Compatibility
+## Integration Code Examples
 
-Current version maintains backward compatibility for:
-- Legacy field names (with deprecation warnings)
-- Response structure parsing
-- Error handling patterns
+### Simple Result Processing
 
-Future versions (v1.0+) will remove legacy support entirely.
+```python
+# Clean, consistent parsing
+for result in response['results']:
+    content = result['content']
+    text = content['text']
+    content_type = content['type']
+    
+    print(f"Found: {text} (type: {content_type})")
+```
+
+### Search with Error Handling
+
+```python
+async def search_contexts(query: str):
+    payload = {
+        "query": query,
+        "search_mode": "hybrid",
+        "limit": 10
+    }
+    
+    async with session.post(f"{BASE_URL}/tools/retrieve_context", json=payload) as resp:
+        result = await resp.json()
+        
+        if result.get('success'):
+            return result['results']
+        else:
+            logger.error(f"Search failed: {result.get('message', 'Unknown error')}")
+            return []
+```
+
+## Migration from Previous Versions
+
+If you were using earlier field names, update your code:
+
+```python
+# If you had:
+user_msg = data.get('user_message', '')  
+exchange_type = data.get('exchange_type', '')
+
+# Update to:
+text = data.get('text', '')
+content_type = data.get('type', '')
+```
 
 ## Support
 
-For migration assistance or format questions:
-- Create issue at: https://github.com/credentum/veris-memory/issues
-- Reference this document in bug reports
-- Include version information in support requests
+For questions or issues:
+- Create issue at: https://github.com/credentum/veris-memory/issues  
+- Include version information and example requests
+- Reference this documentation

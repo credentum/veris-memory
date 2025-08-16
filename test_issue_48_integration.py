@@ -52,35 +52,36 @@ async def test_issue_48_fixes():
         except Exception as e:
             print(f"❌ Readiness test failed: {e}")
             
-        # Test 2: Legacy format support (from issue example)
-        print("\n2️⃣ Testing legacy format auto-conversion...")
-        legacy_payload = {
+        # Test 2: Store user name information
+        print("\n2️⃣ Testing current format - user name...")
+        name_payload = {
             "content": {
-                "user_message": "My name is Matt",
-                "assistant_response": "Nice to meet you, Matt!",
-                "exchange_type": "introduction"
+                "text": "My name is Matt",
+                "type": "decision",
+                "title": "User Name",
+                "fact_type": "personal_info"
             },
             "type": "log",
             "metadata": {"source": "telegram_bot", "timestamp": time.time()}
         }
         
         try:
-            async with session.post(f"{BASE_URL}/tools/store_context", json=legacy_payload) as resp:
+            async with session.post(f"{BASE_URL}/tools/store_context", json=name_payload) as resp:
                 result = await resp.json()
                 if result.get('success'):
-                    print("✅ Legacy format accepted and converted!")
+                    print("✅ User name stored successfully!")
                     print(f"   Stored with ID: {result.get('id')}")
-                    legacy_id = result.get('id')
+                    name_id = result.get('id')
                 else:
-                    print(f"❌ Legacy format storage failed: {result}")
-                    legacy_id = None
+                    print(f"❌ Name storage failed: {result}")
+                    name_id = None
         except Exception as e:
-            print(f"❌ Legacy format test failed: {e}")
-            legacy_id = None
+            print(f"❌ Name storage test failed: {e}")
+            name_id = None
             
-        # Test 3: Current format support
-        print("\n3️⃣ Testing current format handling...")
-        current_payload = {
+        # Test 3: Store color preference
+        print("\n3️⃣ Testing current format - color preference...")
+        color_payload = {
             "content": {
                 "text": "My favorite color is green",
                 "type": "decision",
@@ -92,18 +93,18 @@ async def test_issue_48_fixes():
         }
         
         try:
-            async with session.post(f"{BASE_URL}/tools/store_context", json=current_payload) as resp:
+            async with session.post(f"{BASE_URL}/tools/store_context", json=color_payload) as resp:
                 result = await resp.json()
                 if result.get('success'):
-                    print("✅ Current format stored successfully!")
+                    print("✅ Color preference stored successfully!")
                     print(f"   Stored with ID: {result.get('id')}")
-                    current_id = result.get('id')
+                    color_id = result.get('id')
                 else:
-                    print(f"❌ Current format storage failed: {result}")
-                    current_id = None
+                    print(f"❌ Color storage failed: {result}")
+                    color_id = None
         except Exception as e:
-            print(f"❌ Current format test failed: {e}")
-            current_id = None
+            print(f"❌ Color storage test failed: {e}")
+            color_id = None
             
         # Wait for indexing
         print("\n⏳ Waiting 3 seconds for indexing...")
@@ -156,16 +157,13 @@ async def test_issue_48_fixes():
                             if isinstance(content, dict):
                                 print(f"      Content fields: {list(content.keys())}")
                                 
-                                # Check for legacy compatibility fields
-                                has_legacy = any(field in content for field in ['user_message', 'exchange_type'])
+                                # Check for current format fields
                                 has_current = any(field in content for field in ['text', 'type', 'title'])
                                 
-                                if has_legacy and has_current:
-                                    print(f"      ✅ Both legacy and current fields present")
-                                elif has_current:
+                                if has_current:
                                     print(f"      ✅ Current format fields present")
-                                elif has_legacy:
-                                    print(f"      ℹ️ Only legacy fields present")
+                                else:
+                                    print(f"      ❌ Missing expected current format fields")
                         
                         if not has_nested_n:
                             print("   ✅ No problematic nested 'n' structures found!")
@@ -194,7 +192,7 @@ async def test_issue_48_fixes():
                 if result.get('success'):
                     results = result.get('results', [])
                     
-                    print("   Integration code example (BEFORE fixes):")
+                    print("   Integration code example (BEFORE Issue #48 fixes):")
                     print("   ```python")
                     print("   # OLD: Complex format handling")
                     print("   for result in results:")
@@ -208,11 +206,11 @@ async def test_issue_48_fixes():
                     
                     print("\n   Integration code example (AFTER fixes):")
                     print("   ```python")
-                    print("   # NEW: Simplified format handling")
+                    print("   # NEW: Clean, single format")
                     print("   for result in results:")
-                    print("       content = result['content']  # Always present")
-                    print("       text = content.get('text', content.get('user_message', ''))")
-                    print("       fact_type = content.get('type', content.get('exchange_type', ''))")
+                    print("       content = result['content']  # Always present, consistent structure")
+                    print("       text = content['text']  # No conditional checks needed")
+                    print("       content_type = content['type']  # Single source of truth")
                     print("   ```")
                     
                     # Demonstrate actual parsing
@@ -251,15 +249,16 @@ async def test_issue_48_fixes():
     print("📋 SUMMARY: Issue #48 Integration Challenges")
     print("=" * 70)
     print("✅ Fixed 'agent_ready' KeyError in verify_readiness endpoint")
-    print("✅ Added backward compatibility for legacy field names")
     print("✅ Eliminated nested 'n' structures in responses")
     print("✅ Standardized response format across all endpoints")
     print("✅ Added clear readiness levels and actionable diagnostics")
+    print("✅ Clean, single-format API (no legacy compatibility overhead)")
     print("✅ Reduced integration code complexity by ~60%")
-    print("\nNext steps:")
-    print("- Deploy to production")
-    print("- Update integration documentation")
-    print("- Monitor for any remaining format issues")
+    print("\nDeveloper Experience:")
+    print("- Single format to learn and use")
+    print("- Consistent parsing logic across all endpoints")
+    print("- No complex conditional format handling needed")
+    print("- Clear migration path from older versions")
 
 if __name__ == "__main__":
     asyncio.run(test_issue_48_fixes())
