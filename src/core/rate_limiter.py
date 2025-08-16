@@ -8,6 +8,7 @@ to prevent abuse of store_context and retrieve_context operations.
 
 import logging
 import time
+import threading
 from collections import defaultdict, deque
 from typing import Dict, Optional, Tuple, Union
 
@@ -135,6 +136,9 @@ class MCPRateLimiter:
 
     def __init__(self):
         """Initialize MCP rate limiter with default limits."""
+        # Thread safety for endpoint registration
+        self._endpoint_lock = threading.RLock()
+        
         # Per-endpoint rate limits (requests per minute)
         self.endpoint_limits = {
             "store_context": {"rpm": 60, "burst": 10},  # 1 per second, burst of 10
@@ -345,6 +349,62 @@ class MCPRateLimiter:
 
         return info
 
+    async def check_rate_limit(
+        self, endpoint: str, client_id: str, tokens_required: int = 1
+    ) -> Tuple[bool, Optional[str]]:
+        """Public async method to check rate limits.
+        
+        Args:
+            endpoint: MCP endpoint name
+            client_id: Client identifier
+            tokens_required: Number of tokens required for operation
+        
+        Returns:
+            Tuple of (allowed, error_message)
+        """
+        return await self._async_check_rate_limit(endpoint, client_id, tokens_required)
+    
+    async def check_burst_protection(self, client_id: str, window_seconds: int = 10) -> Tuple[bool, Optional[str]]:
+        """Public async method to check burst protection.
+        
+        Args:
+            client_id: Client identifier
+            window_seconds: Time window for burst detection
+        
+        Returns:
+            Tuple of (allowed, error_message)
+        """
+        return await self._async_check_burst_protection(client_id, window_seconds)
+
+    def register_endpoint_limits(self, endpoint_limits_dict: Dict[str, Dict[str, int]]) -> None:
+        """Thread-safe method to register multiple endpoint limits.
+        
+        Args:
+            endpoint_limits_dict: Dictionary mapping endpoint keys to limit configs
+                                Format: {"endpoint_key": {"rpm": 60, "burst": 10}}
+        """
+        with self._endpoint_lock:
+            for endpoint_key, limits in endpoint_limits_dict.items():
+                if endpoint_key not in self.endpoint_limits:
+                    self.endpoint_limits[endpoint_key] = limits
+                    logger.debug(f"Registered rate limits for endpoint '{endpoint_key}': {limits}")
+                    
+                    # Initialize global limiter for this endpoint
+                    if endpoint_key not in self.global_limiters:
+                        self.global_limiters[endpoint_key] = SlidingWindowLimiter(
+                            max_requests=limits["rpm"] * 10, window_seconds=60
+                        )
+
+    def register_endpoint_limit(self, endpoint_key: str, rpm: int, burst: int) -> None:
+        """Thread-safe method to register a single endpoint limit.
+        
+        Args:
+            endpoint_key: Unique endpoint identifier
+            rpm: Requests per minute limit
+            burst: Burst limit (max tokens in bucket)
+        """
+        self.register_endpoint_limits({endpoint_key: {"rpm": rpm, "burst": burst}})
+
 
 # Global rate limiter instance
 _rate_limiter = None
@@ -375,9 +435,9 @@ async def rate_limit_check(endpoint: str, request_info: Dict = None) -> Tuple[bo
     client_id = limiter.get_client_id(request_info)
 
     # Check burst protection first
-    burst_ok, burst_msg = await limiter._async_check_burst_protection(client_id)
+    burst_ok, burst_msg = await limiter.check_burst_protection(client_id)
     if not burst_ok:
         return False, burst_msg
 
     # Check endpoint-specific rate limit
-    return await limiter._async_check_rate_limit(endpoint, client_id)
+    return await limiter.check_rate_limit(endpoint, client_id)
