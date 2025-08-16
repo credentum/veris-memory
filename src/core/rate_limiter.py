@@ -349,7 +349,7 @@ class MCPRateLimiter:
 
         return info
 
-    async def check_rate_limit(
+    async def async_check_rate_limit(
         self, endpoint: str, client_id: str, tokens_required: int = 1
     ) -> Tuple[bool, Optional[str]]:
         """Public async method to check rate limits.
@@ -364,7 +364,7 @@ class MCPRateLimiter:
         """
         return await self._async_check_rate_limit(endpoint, client_id, tokens_required)
     
-    async def check_burst_protection(self, client_id: str, window_seconds: int = 10) -> Tuple[bool, Optional[str]]:
+    async def async_check_burst_protection(self, client_id: str, window_seconds: int = 10) -> Tuple[bool, Optional[str]]:
         """Public async method to check burst protection.
         
         Args:
@@ -435,9 +435,9 @@ async def rate_limit_check(endpoint: str, request_info: Dict = None) -> Tuple[bo
     client_id = limiter.get_client_id(request_info)
 
     # Check burst protection first
-    burst_ok, burst_msg = await limiter.check_burst_protection(client_id)
+    burst_ok, burst_msg = await limiter.async_check_burst_protection(client_id)
     if not burst_ok:
         return False, burst_msg
 
     # Check endpoint-specific rate limit
-    return await limiter.check_rate_limit(endpoint, client_id)
+    return await limiter.async_check_rate_limit(endpoint, client_id)

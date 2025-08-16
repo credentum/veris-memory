@@ -97,8 +97,8 @@ if not all([_dashboard_module, _streaming_module, _rate_limiter_module]):
             logger.error("Rate limiter not available - rate limiting disabled")
             class MockRateLimiter:
                 def get_client_id(self, *args): return "unknown"
-                async def _async_check_rate_limit(self, *args): return True, None
-                async def _async_check_burst_protection(self, *args): return True, None
+                async def async_check_rate_limit(self, *args): return True, None
+                async def async_check_burst_protection(self, *args): return True, None
                 endpoint_limits = {}
             return MockRateLimiter()
         
@@ -159,7 +159,7 @@ class MonitoringRateLimitMiddleware(BaseHTTPMiddleware):
         
         # Check rate limits
         try:
-            allowed, error_msg = await self.rate_limiter.check_rate_limit(
+            allowed, error_msg = await self.rate_limiter.async_check_rate_limit(
                 endpoint_key, client_id, 1
             )
             
@@ -181,7 +181,7 @@ class MonitoringRateLimitMiddleware(BaseHTTPMiddleware):
                 )
             
             # Check burst protection
-            burst_ok, burst_msg = await self.rate_limiter.check_burst_protection(client_id)
+            burst_ok, burst_msg = await self.rate_limiter.async_check_burst_protection(client_id)
             if not burst_ok:
                 logger.warning(f"Burst protection triggered for {client_id} on {endpoint_path}: {burst_msg}")
                 return Response(
