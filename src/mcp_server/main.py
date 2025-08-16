@@ -118,11 +118,14 @@ from ..validators.config_validator import validate_all_configs
 try:
     from ..monitoring.dashboard import UnifiedDashboard
     from ..monitoring.streaming import MetricsStreamer
+    from ..monitoring.request_metrics import get_metrics_collector, RequestMetricsMiddleware
     DASHBOARD_AVAILABLE = True
+    REQUEST_METRICS_AVAILABLE = True
     logger.info("Dashboard monitoring components available")
 except ImportError as e:
     logger.warning(f"Dashboard monitoring not available: {e}")
     DASHBOARD_AVAILABLE = False
+    REQUEST_METRICS_AVAILABLE = False
     UnifiedDashboard = None
     MetricsStreamer = None
 
@@ -260,6 +263,19 @@ app = FastAPI(
     version="1.0.0",
     debug=False,  # Disable debug mode for production security
 )
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add request metrics middleware if available
+if REQUEST_METRICS_AVAILABLE:
+    app.add_middleware(RequestMetricsMiddleware, metrics_collector=get_metrics_collector())
 
 
 # Global exception handler for production security with request tracking
@@ -1476,28 +1492,86 @@ async def list_tools() -> Dict[str, Any]:
 
 # Dashboard API Endpoints
 @app.get("/api/dashboard")
-async def get_dashboard_json() -> Dict[str, Any]:
-    """Get complete dashboard data in JSON format.
+async def get_dashboard_json(include_trends: bool = False):
+    """Get complete dashboard data in JSON format with optional trending data.
     
-    Returns:
-        Dictionary containing dashboard metrics and metadata
-        
-    Raises:
-        HTTPException: If dashboard is not available or metrics collection fails
+    Args:
+        include_trends: Include 5-minute trending data for latency and error rates
     """
     if not dashboard:
         raise HTTPException(status_code=503, detail="Dashboard not available")
     
     try:
         metrics = await dashboard.collect_all_metrics()
-        return {
+        response = {
             "success": True,
             "format": "json",
             "timestamp": time.time(),
             "data": metrics
         }
+        
+        # Add trending data if requested and available
+        if include_trends and REQUEST_METRICS_AVAILABLE:
+            try:
+                request_collector = get_metrics_collector()
+                trending_data = await request_collector.get_trending_data(minutes=5)
+                endpoint_stats = await request_collector.get_endpoint_stats()
+                
+                response["analytics"] = {
+                    "trending": {
+                        "period_minutes": 5,
+                        "data_points": trending_data,
+                        "description": "Per-minute metrics for the last 5 minutes"
+                    },
+                    "endpoints": {
+                        "top_endpoints": dict(list(endpoint_stats.items())[:10]),
+                        "description": "Top 10 endpoints by request count"
+                    }
+                }
+            except Exception as e:
+                logger.debug(f"Could not get analytics data: {e}")
+                
+        return response
     except Exception as e:
         logger.error(f"Failed to get dashboard JSON: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dashboard/analytics")
+async def get_dashboard_analytics(minutes: int = 5, include_insights: bool = True):
+    """Get enhanced dashboard data with analytics and performance insights for AI agents.
+    
+    Args:
+        minutes: Minutes of trending data to include (default: 5)
+        include_insights: Include automated performance insights
+    """
+    if not dashboard:
+        raise HTTPException(status_code=503, detail="Dashboard not available")
+    
+    try:
+        # Use the enhanced analytics dashboard method
+        analytics_json = await dashboard.generate_json_dashboard_with_analytics(
+            metrics=None, 
+            include_trends=True, 
+            minutes=minutes
+        )
+        
+        # Parse the JSON to add metadata
+        import json as json_module
+        analytics_data = json_module.loads(analytics_json)
+        
+        response = {
+            "success": True,
+            "format": "json_analytics",
+            "timestamp": time.time(),
+            "analytics_window_minutes": minutes,
+            "data": analytics_data
+        }
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Failed to get dashboard analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
