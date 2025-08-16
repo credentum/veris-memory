@@ -1573,7 +1573,10 @@ except ImportError:
     from src.core.rate_limiter import get_rate_limiter
 
 
-async def sentinel_rate_limit_middleware(request, handler):
+async def sentinel_rate_limit_middleware(
+    request: web.Request, 
+    handler: Callable[[web.Request], Awaitable[web.Response]]
+) -> web.Response:
     """Rate limiting middleware for Sentinel API endpoints."""
     # Define rate limits for Sentinel endpoints
     endpoint_limits = {
@@ -1597,14 +1600,17 @@ async def sentinel_rate_limit_middleware(request, handler):
     # Map endpoint path to rate limit key
     endpoint_path = request.path
     if endpoint_path in endpoint_limits:
-        # Add Sentinel endpoint limits to rate limiter if not already present
+        # Add Sentinel endpoint limits to rate limiter using thread-safe method
         endpoint_key = f"sentinel{endpoint_path}"
-        if endpoint_key not in rate_limiter.endpoint_limits:
-            rate_limiter.endpoint_limits[endpoint_key] = endpoint_limits[endpoint_path]
+        rate_limiter.register_endpoint_limit(
+            endpoint_key, 
+            endpoint_limits[endpoint_path]["rpm"], 
+            endpoint_limits[endpoint_path]["burst"]
+        )
         
         try:
             # Check rate limits
-            allowed, error_msg = await rate_limiter._async_check_rate_limit(
+            allowed, error_msg = await rate_limiter.check_rate_limit(
                 endpoint_key, client_id, 1
             )
             
@@ -1621,7 +1627,7 @@ async def sentinel_rate_limit_middleware(request, handler):
                 })
             
             # Check burst protection
-            burst_ok, burst_msg = await rate_limiter._async_check_burst_protection(client_id)
+            burst_ok, burst_msg = await rate_limiter.check_burst_protection(client_id)
             if not burst_ok:
                 logger.warning(f"Burst protection triggered for {client_id} on {endpoint_path}: {burst_msg}")
                 return web.json_response({

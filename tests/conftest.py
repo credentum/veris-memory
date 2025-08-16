@@ -24,7 +24,14 @@ os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("CONFIG_PATH", str(project_root / "config" / "test.yaml"))
 
 # Import test configuration utilities
-from src.core.test_config import get_minimal_config, get_test_config  # noqa: E402
+from src.core.test_config import (  # noqa: E402
+    get_minimal_config, 
+    get_test_config, 
+    get_test_credentials,
+    get_mock_responses,
+    get_alternative_config,
+    get_database_url
+)
 
 
 @pytest.fixture
@@ -42,38 +49,22 @@ def minimal_config() -> Dict[str, Any]:
 @pytest.fixture
 def mock_neo4j_config() -> Dict[str, Any]:
     """Provide Neo4j-specific test configuration."""
-    return {
-        "neo4j": {
-            "host": "localhost",
-            "port": 7687,
-            "database": "test_context",
-            "username": "neo4j",
-            "password": "test_password",
-            "ssl": False,
-        }
-    }
+    config = get_test_config()
+    return {"neo4j": config["neo4j"]}
 
 
 @pytest.fixture
 def mock_qdrant_config() -> Dict[str, Any]:
     """Provide Qdrant-specific test configuration."""
-    return {
-        "qdrant": {
-            "host": "localhost",
-            "port": 6333,
-            "collection_name": "test_contexts",
-            "dimensions": 384,
-            "https": False,
-        }
-    }
+    config = get_test_config()
+    return {"qdrant": config["qdrant"]}
 
 
 @pytest.fixture
 def mock_redis_config() -> Dict[str, Any]:
     """Provide Redis-specific test configuration."""
-    return {
-        "redis": {"host": "localhost", "port": 6379, "database": 0, "password": None, "ssl": False}
-    }
+    config = get_test_config()
+    return {"redis": config["redis"]}
 
 
 @pytest.fixture
@@ -215,20 +206,21 @@ def docker_compose_file():
 @pytest.fixture
 def test_database_config():
     """Provide test database configuration for integration tests."""
+    config = get_alternative_config("integration_test")
     return {
         "neo4j": {
-            "uri": "bolt://localhost:7687",
-            "username": "neo4j",
-            "password": "testpassword",
-            "database": "neo4j",
+            "uri": get_database_url("neo4j"),
+            "username": config["neo4j"]["username"],
+            "password": get_test_credentials("neo4j").get("test_pass", "testpassword"),
+            "database": config["neo4j"]["database"],
         },
         "qdrant": {
-            "url": "http://localhost:6333",
-            "collection_name": "test_collection",
-            "vector_size": 384,
+            "url": get_database_url("qdrant"),
+            "collection_name": config["qdrant"]["collection_name"],
+            "vector_size": config["qdrant"]["dimensions"],
         },
         "redis": {
-            "url": "redis://localhost:6379/0",
+            "url": get_database_url("redis"),
             "prefix": "test:",
         },
     }
@@ -344,3 +336,34 @@ def mock_metrics_with_registry(prometheus_registry):
         
     except ImportError:
         pytest.skip("Prometheus client not available")
+
+
+@pytest.fixture
+def test_credentials():
+    """Provide test credentials from centralized configuration."""
+    return get_test_credentials()
+
+
+@pytest.fixture  
+def mock_service_responses():
+    """Provide mock service responses from centralized configuration."""
+    return get_mock_responses()
+
+
+@pytest.fixture
+def sample_test_data():
+    """Provide sample test data from centralized configuration."""
+    from src.core.test_config import get_test_data
+    return get_test_data()
+
+
+@pytest.fixture
+def integration_test_config():
+    """Provide integration test configuration."""
+    return get_alternative_config("integration_test")
+
+
+@pytest.fixture
+def ssl_test_config():
+    """Provide SSL test configuration."""
+    return get_alternative_config("ssl_test")

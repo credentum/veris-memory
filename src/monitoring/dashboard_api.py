@@ -128,11 +128,13 @@ class MonitoringRateLimitMiddleware(BaseHTTPMiddleware):
             "/api/dashboard/connections": {"rpm": 60, "burst": 10},  # 1 req/sec, burst 10
         }
         
-        # Update rate limiter with monitoring endpoint limits
+        # Update rate limiter with monitoring endpoint limits using thread-safe method
+        monitoring_endpoint_limits = {}
         for endpoint, limits in self.monitoring_limits.items():
             endpoint_key = f"monitoring{endpoint.replace('/api/dashboard', '')}"
-            if endpoint_key not in self.rate_limiter.endpoint_limits:
-                self.rate_limiter.endpoint_limits[endpoint_key] = limits
+            monitoring_endpoint_limits[endpoint_key] = limits
+        
+        self.rate_limiter.register_endpoint_limits(monitoring_endpoint_limits)
     
     async def dispatch(self, request: Request, call_next):
         """Check rate limits for monitoring endpoints."""
@@ -157,7 +159,7 @@ class MonitoringRateLimitMiddleware(BaseHTTPMiddleware):
         
         # Check rate limits
         try:
-            allowed, error_msg = await self.rate_limiter._async_check_rate_limit(
+            allowed, error_msg = await self.rate_limiter.check_rate_limit(
                 endpoint_key, client_id, 1
             )
             
@@ -179,7 +181,7 @@ class MonitoringRateLimitMiddleware(BaseHTTPMiddleware):
                 )
             
             # Check burst protection
-            burst_ok, burst_msg = await self.rate_limiter._async_check_burst_protection(client_id)
+            burst_ok, burst_msg = await self.rate_limiter.check_burst_protection(client_id)
             if not burst_ok:
                 logger.warning(f"Burst protection triggered for {client_id} on {endpoint_path}: {burst_msg}")
                 return Response(
