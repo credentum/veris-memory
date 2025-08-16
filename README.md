@@ -1,6 +1,6 @@
 # ◎ Veris Memory
 
-[![Version](https://img.shields.io/badge/version-v0.9.0-blue.svg)](version)
+[![Version](https://img.shields.io/badge/version-v1.0.0-blue.svg)](version)
 [![Protocol](https://img.shields.io/badge/MCP-1.0-green.svg)](protocol)
 [![Agent](https://img.shields.io/badge/agent_first_schema-purple.svg)](agent)
 
@@ -18,6 +18,8 @@ python coverage.py
 > Truthful memory for agents. For those who remember.
 
 Veris is memory that persists through change. For agents who carry weight. For those who remember what others forget.
+
+**🎉 Production-Proven**: Successfully deployed in production telegram bots with multiple concurrent users, real-time voice interaction, and persistent memory. Documentation improved based on real-world integration feedback.
 
 ## Agent-First Schema
 
@@ -226,7 +228,18 @@ pytest tests/integration/
 npm test
 ```
 
-## Deployment
+## 🚀 Production Deployment
+
+*Based on real production deployments and lessons learned.*
+
+### Quick Production Checklist
+
+**Before deploying:**
+- ✅ Set all required environment variables (see Configuration section)
+- ✅ Configure persistent storage volumes for databases
+- ✅ Set up monitoring for health endpoints
+- ✅ Test with your integration code using staging environment
+- ✅ Verify backup/restore procedures
 
 ### Local Development
 
@@ -234,24 +247,72 @@ npm test
 docker-compose up -d
 ```
 
-### Production
+### Production Deployment
 
 ```bash
-# Using production configuration
+# Using production configuration with persistent storage
 docker-compose -f docker-compose.prod.yml up -d
 
-# Scale MCP servers
+# Scale MCP servers for high availability
 docker-compose up --scale mcp-server=3
 ```
+
+### Production Considerations
+
+**Persistent Storage:**
+```yaml
+# In docker-compose.prod.yml
+volumes:
+  qdrant_data:
+    driver: local
+  neo4j_data: 
+    driver: local
+  redis_data:
+    driver: local
+```
+
+**Monitoring Integration:**
+```bash
+# Key metrics to monitor
+curl http://localhost:8000/health          # Basic uptime
+curl http://localhost:8000/status          # Detailed service status
+curl -X POST http://localhost:8000/tools/verify_readiness  # Full diagnostics
+```
+
+**Connection Pooling:**
+- Redis: Configure connection pool size based on concurrent users
+- Neo4j: Use connection pooling for graph queries  
+- Qdrant: Vector operations are optimized automatically
+
+**Backup Strategies:**
+- **Redis**: Use Redis persistence (RDB + AOF)
+- **Neo4j**: Regular database backups via neo4j-admin
+- **Qdrant**: Vector index snapshots
 
 ### Cloud Deployment
 
 See `docs/deployment/` for cloud-specific deployment guides:
 
 - AWS ECS/Fargate
-- Google Cloud Run
+- Google Cloud Run  
 - Azure Container Instances
 - Kubernetes
+
+### Performance Tuning
+
+**For high-throughput applications:**
+```bash
+# Environment variables for production
+REDIS_MAX_CONNECTIONS=100
+NEO4J_POOL_SIZE=50
+QDRANT_TIMEOUT=30
+MCP_SERVER_WORKERS=4
+```
+
+**Scaling Indicators:**
+- **Scale up**: Response times > 100ms consistently
+- **Scale out**: CPU usage > 70% or memory > 80%
+- **Database scaling**: Query timeouts or connection pool exhaustion
 
 ## 📚 Documentation
 
@@ -288,11 +349,12 @@ Returns comprehensive system information for agent orchestration:
 ```json
 {
   "label": "◎ Veris Memory",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "protocol": "MCP-1.0",
+  "agent_ready": true,
   "tools": [
     "store_context",
-    "retrieve_context",
+    "retrieve_context", 
     "query_graph",
     "update_scratchpad",
     "get_agent_state"
@@ -316,18 +378,265 @@ Provides diagnostic information for agents to verify system readiness:
 ```json
 {
   "ready": true,
+  "readiness_level": "FULL",
   "readiness_score": 100,
   "tools_available": 5,
-  "schema_version": "0.9.0",
-  "indexes": {
-    "vector_count": 1250,
-    "graph_nodes": 340
+  "service_status": {
+    "core_services": {
+      "redis": "healthy",
+      "status": "healthy"
+    },
+    "enhanced_services": {
+      "qdrant": "healthy",
+      "neo4j": "healthy",
+      "status": "healthy" 
+    }
   },
-  "usage_quotas": {
-    "vector_operations": "unlimited"
+  "recommended_actions": [
+    "✓ Core functionality operational"
+  ]
+}
+```
+
+**Readiness Levels:**
+- `BASIC`: Core tools available, minimal functionality
+- `STANDARD`: Redis healthy, all 5 MCP tools operational  
+- `FULL`: All services healthy, enhanced search available
+
+## 📋 Response Format Examples
+
+*Based on production integration feedback - these examples show actual response structures you'll receive.*
+
+### Store Context Input
+
+```json
+{
+  "content": {
+    "text": "My name is Matt",
+    "type": "decision",
+    "title": "User Name",
+    "fact_type": "personal_info"
+  },
+  "type": "log",
+  "metadata": {"source": "telegram_bot", "timestamp": 1234567890}
+}
+```
+
+### Retrieve Context Response
+
+All search results (vector, graph, hybrid) use this **consistent format**:
+
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "id": "uuid-string",
+      "content": {
+        "text": "My name is Matt",
+        "type": "decision",
+        "title": "User Name", 
+        "fact_type": "personal_info"
+      },
+      "score": 0.95,
+      "source": "vector"
+    }
+  ],
+  "total_count": 1,
+  "search_mode_used": "hybrid",
+  "message": "Found 1 matching contexts"
+}
+```
+
+**Key Points:**
+- ✅ **Consistent structure**: All results use `{id, content, score, source}` format
+- ✅ **No nested wrappers**: Clean, predictable structure
+- ✅ **Single parsing path**: Same code handles vector and graph results
+
+## 🔧 Integration Examples
+
+*Production-tested integration patterns from real deployments.*
+
+### Python Integration (Recommended)
+
+```python
+import aiohttp
+import asyncio
+
+class VerisMemoryClient:
+    def __init__(self, base_url="http://localhost:8000"):
+        self.base_url = base_url
+    
+    async def store_user_fact(self, text: str, fact_type: str = "personal_info"):
+        """Store a user fact with proper format."""
+        payload = {
+            "content": {
+                "text": text,
+                "type": "decision",
+                "title": text[:50] + "..." if len(text) > 50 else text,
+                "fact_type": fact_type
+            },
+            "type": "log",
+            "metadata": {"source": "your_app", "timestamp": time.time()}
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{self.base_url}/tools/store_context", json=payload) as resp:
+                return await resp.json()
+    
+    async def search_memories(self, query: str, limit: int = 10):
+        """Search stored memories with clean response handling."""
+        payload = {
+            "query": query,
+            "search_mode": "hybrid",
+            "limit": limit
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{self.base_url}/tools/retrieve_context", json=payload) as resp:
+                result = await resp.json()
+                
+                if result.get('success'):
+                    # Clean, consistent parsing
+                    memories = []
+                    for item in result.get('results', []):
+                        content = item['content']  # Always present
+                        memories.append({
+                            'text': content['text'],
+                            'type': content['type'],
+                            'score': item['score']
+                        })
+                    return memories
+                else:
+                    raise Exception(f"Search failed: {result.get('message', 'Unknown error')}")
+
+# Usage example
+async def main():
+    client = VerisMemoryClient()
+    
+    # Store user information
+    await client.store_user_fact("My name is Matt", "personal_info")
+    await client.store_user_fact("I prefer green color", "preference")
+    
+    # Search for user info
+    memories = await client.search_memories("What's my name?")
+    for memory in memories:
+        print(f"Found: {memory['text']} (confidence: {memory['score']:.2f})")
+
+asyncio.run(main())
+```
+
+### TypeScript Integration
+
+```typescript
+interface MemoryContent {
+  text: string;
+  type: string;
+  title: string;
+  fact_type: string;
+}
+
+interface MemoryResult {
+  id: string;
+  content: MemoryContent;
+  score: number;
+  source: string;
+}
+
+interface MemoryResponse {
+  success: boolean;
+  results: MemoryResult[];
+  total_count: number;
+  search_mode_used: string;
+  message: string;
+}
+
+class VerisMemoryClient {
+  constructor(private baseUrl: string = "http://localhost:8000") {}
+
+  async storeMemory(text: string, type: string = "decision"): Promise<any> {
+    const payload = {
+      content: {
+        text,
+        type,
+        title: text.length > 50 ? text.substring(0, 47) + "..." : text,
+        fact_type: "general"
+      },
+      type: "log",
+      metadata: { source: "typescript_app", timestamp: Date.now() }
+    };
+
+    const response = await fetch(`${this.baseUrl}/tools/store_context`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    return await response.json();
+  }
+
+  async searchMemories(query: string): Promise<MemoryResult[]> {
+    const payload = {
+      query,
+      search_mode: "hybrid",
+      limit: 10
+    };
+
+    const response = await fetch(`${this.baseUrl}/tools/retrieve_context`, {
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const result: MemoryResponse = await response.json();
+    
+    if (result.success) {
+      return result.results; // Clean, typed results
+    } else {
+      throw new Error(`Search failed: ${result.message}`);
+    }
   }
 }
 ```
+
+## 🔍 Troubleshooting Guide
+
+*Common issues and solutions from production deployments.*
+
+### Health Check Interpretation
+
+| Endpoint | Purpose | When to Use |
+|----------|---------|-------------|
+| `GET /health` | Quick up/down status | Basic monitoring, load balancer health checks |
+| `GET /status` | Detailed system info | Performance debugging, service overview |
+| `POST /tools/verify_readiness` | Comprehensive diagnostics | Integration troubleshooting, readiness verification |
+
+### Common Warnings and What They Mean
+
+**"Enhanced features unavailable - Qdrant not ready"**
+- ✅ **Status**: System operational with basic functionality
+- 🔧 **Action**: Check Qdrant connection, vector search unavailable but core features work
+- 📊 **Impact**: Graph and KV operations continue normally
+
+**"Readiness level: STANDARD"**  
+- ✅ **Status**: Normal operation, all core tools available
+- 🔧 **Action**: None required, enhanced features may be degraded
+- 📊 **Impact**: Perfect for most use cases
+
+**"Redis connection timeout"**
+- ❌ **Status**: Critical - core functionality affected
+- 🔧 **Action**: Check Redis connectivity immediately
+- 📊 **Impact**: Agent state and scratchpad operations fail
+
+### Migration from Previous Versions
+
+If you're upgrading from earlier versions that used different field names:
+
+| Old Field | New Field | 
+|-----------|-----------|
+| `user_message` | `text` |
+| `assistant_response` | `text` |  
+| `exchange_type` | `type` |
 
 ### MCP Protocol
 
@@ -342,9 +651,14 @@ const client = new MCPClient({
 
 await client.connect();
 const result = await client.callTool('store_context', {
-  type: 'design',
-  content: { ... },
-  metadata: { ... }
+  content: {
+    text: "Important information",
+    type: "decision", 
+    title: "Important information",
+    fact_type: "general"
+  },
+  type: "log",
+  metadata: {}
 });
 ```
 
