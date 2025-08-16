@@ -252,6 +252,7 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
     return embedding
 
 
+
 app = FastAPI(
     title="Context Store MCP Server",
     description="Model Context Protocol server for context management",
@@ -305,7 +306,14 @@ websocket_connections = set()  # Track WebSocket connections
 
 
 class StoreContextRequest(BaseModel):
-    """Request model for store_context tool."""
+    """Request model for store_context tool.
+    
+    Attributes:
+        content: Dictionary containing the context data to store
+        type: Type of context (design, decision, trace, sprint, log)
+        metadata: Optional metadata associated with the context
+        relationships: Optional list of relationships to other contexts
+    """
 
     content: Dict[str, Any]
     type: str = Field(..., pattern="^(design|decision|trace|sprint|log)$")
@@ -314,7 +322,16 @@ class StoreContextRequest(BaseModel):
 
 
 class RetrieveContextRequest(BaseModel):
-    """Request model for retrieve_context tool."""
+    """Request model for retrieve_context tool.
+    
+    Attributes:
+        query: Search query string
+        type: Context type filter, defaults to "all"
+        search_mode: Search strategy (vector, graph, hybrid)
+        limit: Maximum number of results to return
+        filters: Optional additional filters
+        include_relationships: Whether to include relationship data
+    """
 
     query: str
     type: Optional[str] = "all"
@@ -325,7 +342,14 @@ class RetrieveContextRequest(BaseModel):
 
 
 class QueryGraphRequest(BaseModel):
-    """Request model for query_graph tool."""
+    """Request model for query_graph tool.
+    
+    Attributes:
+        query: Cypher query string to execute
+        parameters: Optional query parameters
+        limit: Maximum number of results to return
+        timeout: Query timeout in milliseconds
+    """
 
     query: str
     parameters: Optional[Dict[str, Any]] = None
@@ -336,7 +360,12 @@ class QueryGraphRequest(BaseModel):
 class UpdateScratchpadRequest(BaseModel):
     """Request model for update_scratchpad tool.
     
-    Defines the input schema for updating agent scratchpad data.
+    Attributes:
+        agent_id: Unique identifier for the agent (alphanumeric, underscore, hyphen)
+        key: Key for the scratchpad entry (alphanumeric, underscore, dot, hyphen)
+        content: Content to store in the scratchpad
+        mode: Update mode - "overwrite" or "append"
+        ttl: Time to live in seconds (60-86400)
     """
     agent_id: str = Field(..., description="Agent identifier", pattern=r"^[a-zA-Z0-9_-]{1,64}$")
     key: str = Field(..., description="Scratchpad key", pattern=r"^[a-zA-Z0-9_.-]{1,128}$")
@@ -348,11 +377,83 @@ class UpdateScratchpadRequest(BaseModel):
 class GetAgentStateRequest(BaseModel):
     """Request model for get_agent_state tool.
     
-    Defines the input schema for retrieving agent state data.
+    Attributes:
+        agent_id: Unique identifier for the agent
+        key: Optional specific state key to retrieve
+        prefix: State type prefix for namespacing
     """
     agent_id: str = Field(..., description="Agent identifier")
     key: Optional[str] = Field(None, description="Specific state key")
     prefix: str = Field("state", description="State type prefix")
+
+
+def validate_and_get_credential(env_var_name: str, required: bool = True, min_length: int = 8) -> Optional[str]:
+    """
+    Securely retrieve and validate credentials from environment variables.
+    
+    Args:
+        env_var_name: Name of the environment variable
+        required: Whether the credential is required for operation
+        min_length: Minimum length for password validation
+        
+    Returns:
+        The credential value if valid, None if optional and missing
+        
+    Raises:
+        RuntimeError: If required credential is missing or invalid
+    """
+    credential = os.getenv(env_var_name)
+    
+    if not credential:
+        if required:
+            raise RuntimeError(f"Required credential {env_var_name} is not set")
+        return None
+    
+    # Basic validation
+    if len(credential) < min_length:
+        raise RuntimeError(f"Credential {env_var_name} is too short (minimum {min_length} characters)")
+    
+    # Check for common insecure defaults
+    insecure_defaults = ["password", "123456", "admin", "default", "changeme", "secret"]
+    if credential.lower() in insecure_defaults:
+        raise RuntimeError(f"Credential {env_var_name} uses an insecure default value")
+    
+    return credential
+
+
+def validate_startup_credentials() -> Dict[str, Optional[str]]:
+    """
+    Validate all required credentials at startup with fail-fast behavior.
+    
+    Returns:
+        Dictionary of validated credentials
+        
+    Raises:
+        RuntimeError: If any required credential validation fails
+    """
+    try:
+        credentials = {
+            'neo4j_password': validate_and_get_credential("NEO4J_PASSWORD", required=False),
+            'qdrant_api_key': validate_and_get_credential("QDRANT_API_KEY", required=False, min_length=1),
+            'redis_password': validate_and_get_credential("REDIS_PASSWORD", required=False, min_length=1)
+        }
+        
+        # Log secure startup status
+        available_services = []
+        if credentials['neo4j_password']:
+            available_services.append("Neo4j")
+        if credentials['qdrant_api_key']:
+            available_services.append("Qdrant")
+        if credentials['redis_password']:
+            available_services.append("Redis")
+            
+        logger.info(f"Credential validation complete. Available services: {', '.join(available_services) if available_services else 'Core only'}")
+        
+        return credentials
+        
+    except Exception as e:
+        logger.error(f"Credential validation failed: {e}")
+        raise RuntimeError(f"Startup credential validation failed: {e}")
 
 
 @app.on_event("startup")
@@ -376,22 +477,25 @@ async def startup_event() -> None:
     if not config_result.get("valid", False):
         raise RuntimeError(f"Configuration validation failed: {config_result}")
 
+    # Validate and retrieve all credentials securely
+    credentials = validate_startup_credentials()
+
     try:
         # Initialize Neo4j (allow graceful degradation if unavailable)
-        neo4j_password = os.getenv("NEO4J_PASSWORD")
-        if not neo4j_password:
-            print("⚠️ NEO4J_PASSWORD not set - Neo4j will be unavailable")
-            neo4j_client = None
-        else:
+        if credentials['neo4j_password']:
             try:
                 neo4j_client = Neo4jClient()
                 neo4j_client.connect(
-                    username=os.getenv("NEO4J_USER", "neo4j"), password=neo4j_password
+                    username=os.getenv("NEO4J_USER", "neo4j"), 
+                    password=credentials['neo4j_password']
                 )
                 print("✅ Neo4j connected successfully")
             except Exception as neo4j_error:
                 print(f"⚠️ Neo4j unavailable: {neo4j_error}")
                 neo4j_client = None
+        else:
+            print("⚠️ NEO4J_PASSWORD not set - Neo4j will be unavailable")
+            neo4j_client = None
 
         # Initialize Qdrant (allow graceful degradation if unavailable)
         try:
@@ -541,7 +645,7 @@ _server_startup_time = time.time()
 
 async def _check_service_with_retries(
     service_name: str,
-    check_func,
+    check_func: callable,
     max_retries: Optional[int] = None,
     retry_delay: Optional[float] = None,
 ) -> Tuple[str, str]:
@@ -739,14 +843,32 @@ async def status() -> Dict[str, Any]:
     # Get health status
     health_status = await health()
 
+    # Determine agent readiness based on core functionality
+    agent_ready = (
+        health_status["services"]["redis"] == "healthy" and  # Core KV storage required
+        len([
+            "store_context",
+            "retrieve_context", 
+            "query_graph",
+            "update_scratchpad",
+            "get_agent_state",
+        ]) == 5  # All tools available
+    )
+
     return {
         "label": "◎ Veris Memory",
         "version": "0.9.0",
         "protocol": "MCP-1.0",
+        "agent_ready": agent_ready,
         "deps": {
             "qdrant": "ok" if health_status["services"]["qdrant"] == "healthy" else "error",
             "neo4j": "ok" if health_status["services"]["neo4j"] == "healthy" else "error",
             "redis": "ok" if health_status["services"]["redis"] == "healthy" else "error",
+        },
+        "dependencies": {
+            "qdrant": health_status["services"]["qdrant"],
+            "neo4j": health_status["services"]["neo4j"], 
+            "redis": health_status["services"]["redis"],
         },
         "tools": [
             "store_context",
@@ -801,17 +923,59 @@ async def verify_readiness() -> Dict[str, Any]:
         # Schema version from agent schema
         schema_version = "0.9.0"  # From agent-schema.json
 
+        # Determine readiness level and score
         readiness_score = 0
-        if status_info["agent_ready"]:
+        readiness_level = "BASIC"
+        
+        # Core functionality check (Redis + Tools)
+        core_ready = status_info["agent_ready"]
+        if core_ready:
             readiness_score += 40  # Base readiness
+            readiness_level = "STANDARD"
+        
+        # All tools available
         if tools_available == 5:
             readiness_score += 30  # All tools available
+            
+        # Enhanced features (vector/graph search)
+        enhanced_ready = (
+            status_info["dependencies"]["qdrant"] == "healthy" and 
+            status_info["dependencies"]["neo4j"] == "healthy"
+        )
+        if enhanced_ready:
+            readiness_score += 20  # Enhanced search available
+            readiness_level = "FULL"
+            
+        # Indexes accessible
         if index_info:
-            readiness_score += 20  # Indexes accessible
-        readiness_score += 10  # Schema compatibility
+            readiness_score += 10  # Indexes accessible
+            
+        # Generate clear, actionable recommendations
+        recommendations = []
+        if not core_ready:
+            recommendations.extend([
+                "CRITICAL: Redis connection required for core operations",
+                "Check Redis configuration and network connectivity"
+            ])
+        elif tools_available < 5:
+            recommendations.append(f"WARNING: Only {tools_available}/5 tools available")
+        else:
+            recommendations.append("✓ Core functionality operational")
+            
+        if not enhanced_ready:
+            missing_services = []
+            if status_info["dependencies"]["qdrant"] != "healthy":
+                missing_services.append("Qdrant (vector search)")
+            if status_info["dependencies"]["neo4j"] != "healthy":
+                missing_services.append("Neo4j (graph queries)")
+            
+            if missing_services:
+                recommendations.append(f"INFO: Enhanced features unavailable - {', '.join(missing_services)} not ready")
+                recommendations.append("System can operate with basic functionality")
 
         return {
-            "ready": status_info["agent_ready"],
+            "ready": core_ready,
+            "readiness_level": readiness_level,  # NEW: Clear level indicator
             "readiness_score": min(readiness_score, 100),
             "tools_available": tools_available,
             "tools_expected": 5,
@@ -819,24 +983,24 @@ async def verify_readiness() -> Dict[str, Any]:
             "protocol_version": "MCP-1.0",
             "indexes": index_info,
             "dependencies": status_info["dependencies"],
+            "service_status": {  # NEW: Clear service breakdown
+                "core_services": {
+                    "redis": status_info["dependencies"]["redis"],
+                    "status": "healthy" if core_ready else "degraded"
+                },
+                "enhanced_services": {
+                    "qdrant": status_info["dependencies"]["qdrant"],
+                    "neo4j": status_info["dependencies"]["neo4j"],
+                    "status": "healthy" if enhanced_ready else "degraded"
+                }
+            },
             "usage_quotas": {
-                "vector_operations": "unlimited",
-                "graph_queries": "unlimited",
+                "vector_operations": "unlimited" if enhanced_ready else "unavailable",
+                "graph_queries": "unlimited" if enhanced_ready else "unavailable", 
                 "kv_operations": "unlimited",
                 "note": "Quotas depend on underlying database limits",
             },
-            "recommended_actions": [
-                (
-                    "Verify all dependencies are healthy"
-                    if not status_info["agent_ready"]
-                    else "System ready for agent operations"
-                ),
-                (
-                    f"Tools available: {tools_available}/5"
-                    if tools_available < 5
-                    else "All MCP tools operational"
-                ),
-            ],
+            "recommended_actions": recommendations,
         }
 
     except Exception as e:
@@ -933,8 +1097,11 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
 
     except Exception as e:
         import traceback
-
-        print(f"Error storing context: {traceback.format_exc()}")
+        
+        # Log detailed error information securely (internal only)
+        logger.error(f"Error storing context: {traceback.format_exc()}")
+        
+        # Return sanitized error response (external)
         return handle_generic_error(e, "store context")
 
 
@@ -979,16 +1146,43 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
 
         if request.search_mode in ["graph", "hybrid"] and neo4j_client:
             # Perform graph search
-            cypher_query = """
-            MATCH (n:Context)
-            WHERE n.type = $type OR $type = 'all'
-            RETURN n
-            LIMIT $limit
-            """
-            graph_results = neo4j_client.query(
-                cypher_query, parameters={"type": request.type, "limit": request.limit}
-            )
-            results.extend(graph_results)
+            try:
+                cypher_query = """
+                MATCH (n:Context)
+                WHERE n.type = $type OR $type = 'all'
+                RETURN n
+                LIMIT $limit
+                """
+                raw_graph_results = neo4j_client.query(
+                    cypher_query, parameters={"type": request.type, "limit": request.limit}
+                )
+                
+                # Normalize graph results to consistent format (eliminate nested 'n' structure)
+                for raw_result in raw_graph_results:
+                    if isinstance(raw_result, dict) and 'n' in raw_result:
+                        # Extract the actual node data from {'n': {...}} wrapper
+                        node_data = raw_result['n']
+                    else:
+                        # Handle direct node data
+                        node_data = raw_result
+                    
+                    # Convert to consistent format matching vector results
+                    normalized_result = {
+                        "id": node_data.get("id", "unknown"),
+                        "content": {
+                            key: value for key, value in node_data.items() 
+                            if key != "id"  # Don't duplicate id in content
+                        },
+                        "score": 1.0,  # Graph results don't have similarity scores
+                        "source": "graph",
+                    }
+                    results.append(normalized_result)
+                    
+                logger.info(f"Graph search found {len(raw_graph_results)} results")
+                
+            except Exception as e:
+                logger.warning(f"Graph search failed: {e}")
+                # Continue with vector results only
 
         return {
             "success": True,
@@ -1000,8 +1194,11 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
 
     except Exception as e:
         import traceback
-
-        print(f"Error retrieving context: {traceback.format_exc()}")
+        
+        # Log detailed error information securely (internal only)
+        logger.error(f"Error retrieving context: {traceback.format_exc()}")
+        
+        # Return sanitized error response (external)
         error_response = handle_generic_error(e, "retrieve context")
         error_response["results"] = []
         return error_response
@@ -1052,6 +1249,25 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
     Returns:
         Dict containing success status, message, and operation details
     """
+    # Additional runtime TTL validation for resource exhaustion prevention
+    if request.ttl < 60:
+        raise HTTPException(
+            status_code=400,
+            detail="TTL too short: minimum 60 seconds required to prevent resource exhaustion"
+        )
+    if request.ttl > 86400:  # 24 hours
+        raise HTTPException(
+            status_code=400,
+            detail="TTL too long: maximum 86400 seconds (24 hours) allowed to prevent resource exhaustion"
+        )
+    
+    # Additional content size validation for large payloads
+    if len(request.content) > 100000:  # 100KB
+        raise HTTPException(
+            status_code=400,
+            detail="Content too large: maximum 100KB allowed to prevent resource exhaustion"
+        )
+    
     # Validate request against MCP contract
     request_data = request.model_dump()
     validation_errors = validate_mcp_request("update_scratchpad", request_data)
@@ -1248,8 +1464,15 @@ async def list_tools() -> Dict[str, Any]:
 
 # Dashboard API Endpoints
 @app.get("/api/dashboard")
-async def get_dashboard_json():
-    """Get complete dashboard data in JSON format."""
+async def get_dashboard_json() -> Dict[str, Any]:
+    """Get complete dashboard data in JSON format.
+    
+    Returns:
+        Dictionary containing dashboard metrics and metadata
+        
+    Raises:
+        HTTPException: If dashboard is not available or metrics collection fails
+    """
     if not dashboard:
         raise HTTPException(status_code=503, detail="Dashboard not available")
     
@@ -1267,8 +1490,12 @@ async def get_dashboard_json():
 
 
 @app.get("/api/dashboard/ascii", response_class=PlainTextResponse)
-async def get_dashboard_ascii():
-    """Get dashboard in ASCII format for human reading."""
+async def get_dashboard_ascii() -> str:
+    """Get dashboard in ASCII format for human reading.
+    
+    Returns:
+        ASCII art string representation of dashboard metrics
+    """
     if not dashboard:
         return "Dashboard Error: Dashboard not available"
     
@@ -1473,8 +1700,12 @@ async def _stream_dashboard_updates(websocket: WebSocket):
         logger.error(f"Streaming error: {e}")
 
 
-async def _broadcast_to_websockets(message: Dict[str, Any]):
-    """Broadcast message to all connected WebSocket clients."""
+async def _broadcast_to_websockets(message: Dict[str, Any]) -> None:
+    """Broadcast message to all connected WebSocket clients.
+    
+    Args:
+        message: Dictionary containing the message data to broadcast
+    """
     if not websocket_connections:
         return
     
