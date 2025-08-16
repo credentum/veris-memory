@@ -14,7 +14,8 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
+from collections import defaultdict, deque
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -118,11 +119,14 @@ from ..validators.config_validator import validate_all_configs
 try:
     from ..monitoring.dashboard import UnifiedDashboard
     from ..monitoring.streaming import MetricsStreamer
+    from ..monitoring.request_metrics import get_metrics_collector, RequestMetricsMiddleware
     DASHBOARD_AVAILABLE = True
+    REQUEST_METRICS_AVAILABLE = True
     logger.info("Dashboard monitoring components available")
 except ImportError as e:
     logger.warning(f"Dashboard monitoring not available: {e}")
     DASHBOARD_AVAILABLE = False
+    REQUEST_METRICS_AVAILABLE = False
     UnifiedDashboard = None
     MetricsStreamer = None
 
@@ -260,6 +264,19 @@ app = FastAPI(
     version="1.0.0",
     debug=False,  # Disable debug mode for production security
 )
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add request metrics middleware if available
+if REQUEST_METRICS_AVAILABLE:
+    app.add_middleware(RequestMetricsMiddleware, metrics_collector=get_metrics_collector())
 
 
 # Global exception handler for production security with request tracking
@@ -1474,30 +1491,175 @@ async def list_tools() -> Dict[str, Any]:
     return {"tools": tools, "server_version": "1.0.0"}
 
 
+class RateLimiter:
+    """Rate limiter for API endpoints to prevent DoS attacks."""
+    
+    def __init__(self, max_requests: int = 10, window_seconds: int = 60):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.requests: Dict[str, deque] = defaultdict(lambda: deque())
+    
+    def is_allowed(self, client_id: str) -> bool:
+        """Check if request is allowed for the given client."""
+        now = datetime.utcnow()
+        cutoff_time = now - timedelta(seconds=self.window_seconds)
+        
+        # Clean old requests
+        client_requests = self.requests[client_id]
+        while client_requests and client_requests[0] < cutoff_time:
+            client_requests.popleft()
+        
+        # Check if under limit
+        if len(client_requests) >= self.max_requests:
+            return False
+        
+        # Add current request
+        client_requests.append(now)
+        return True
+    
+    def get_reset_time(self, client_id: str) -> Optional[datetime]:
+        """Get when the rate limit will reset for the client."""
+        client_requests = self.requests[client_id]
+        if not client_requests:
+            return None
+        return client_requests[0] + timedelta(seconds=self.window_seconds)
+
+
+# Global rate limiters for different endpoint types
+analytics_rate_limiter = RateLimiter(max_requests=5, window_seconds=60)  # 5 req/min for analytics
+dashboard_rate_limiter = RateLimiter(max_requests=20, window_seconds=60)  # 20 req/min for dashboard
+
+
+def get_client_id(request: Request) -> str:
+    """Get client identifier for rate limiting."""
+    # Use X-Forwarded-For if behind proxy, fallback to direct IP
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        # Take the first IP in the chain
+        client_ip = forwarded_for.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+    
+    # Include user agent in client ID for better granularity
+    user_agent = request.headers.get("user-agent", "")[:50]  # Limit length
+    return f"{client_ip}:{hash(user_agent) % 10000}"
+
+
+def check_rate_limit(rate_limiter: RateLimiter, request: Request) -> None:
+    """Check rate limit and raise HTTPException if exceeded."""
+    client_id = get_client_id(request)
+    
+    if not rate_limiter.is_allowed(client_id):
+        reset_time = rate_limiter.get_reset_time(client_id)
+        reset_seconds = int((reset_time - datetime.utcnow()).total_seconds()) if reset_time else 60
+        
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "Rate limit exceeded",
+                "retry_after_seconds": reset_seconds,
+                "max_requests": rate_limiter.max_requests,
+                "window_seconds": rate_limiter.window_seconds
+            },
+            headers={"Retry-After": str(reset_seconds)}
+        )
+
+
 # Dashboard API Endpoints
 @app.get("/api/dashboard")
-async def get_dashboard_json() -> Dict[str, Any]:
-    """Get complete dashboard data in JSON format.
+async def get_dashboard_json(request: Request, include_trends: bool = False):
+    """Get complete dashboard data in JSON format with optional trending data.
     
-    Returns:
-        Dictionary containing dashboard metrics and metadata
-        
-    Raises:
-        HTTPException: If dashboard is not available or metrics collection fails
+    Args:
+        include_trends: Include 5-minute trending data for latency and error rates
     """
+    # Apply rate limiting for dashboard endpoint
+    check_rate_limit(dashboard_rate_limiter, request)
+    
     if not dashboard:
         raise HTTPException(status_code=503, detail="Dashboard not available")
     
     try:
         metrics = await dashboard.collect_all_metrics()
-        return {
+        response = {
             "success": True,
             "format": "json",
             "timestamp": time.time(),
             "data": metrics
         }
+        
+        # Add trending data if requested and available
+        if include_trends and REQUEST_METRICS_AVAILABLE:
+            try:
+                request_collector = get_metrics_collector()
+                trending_data = await request_collector.get_trending_data(minutes=5)
+                endpoint_stats = await request_collector.get_endpoint_stats()
+                
+                response["analytics"] = {
+                    "trending": {
+                        "period_minutes": 5,
+                        "data_points": trending_data,
+                        "description": "Per-minute metrics for the last 5 minutes"
+                    },
+                    "endpoints": {
+                        "top_endpoints": dict(list(endpoint_stats.items())[:10]),
+                        "description": "Top 10 endpoints by request count"
+                    }
+                }
+            except Exception as e:
+                logger.debug(f"Could not get analytics data: {e}")
+                
+        return response
     except Exception as e:
         logger.error(f"Failed to get dashboard JSON: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dashboard/analytics")
+async def get_dashboard_analytics(request: Request, minutes: int = 5, include_insights: bool = True):
+    """Get enhanced dashboard data with analytics and performance insights for AI agents.
+    
+    Args:
+        minutes: Minutes of trending data to include (default: 5)
+        include_insights: Include automated performance insights
+    """
+    # Apply rate limiting for analytics endpoint
+    check_rate_limit(analytics_rate_limiter, request)
+    
+    # Input validation for minutes parameter
+    if minutes <= 0 or minutes > 1440:  # Max 24 hours
+        raise HTTPException(
+            status_code=400, 
+            detail="minutes parameter must be between 1 and 1440 (24 hours)"
+        )
+    
+    if not dashboard:
+        raise HTTPException(status_code=503, detail="Dashboard not available")
+    
+    try:
+        # Use the enhanced analytics dashboard method
+        analytics_json = await dashboard.generate_json_dashboard_with_analytics(
+            metrics=None, 
+            include_trends=True, 
+            minutes=minutes
+        )
+        
+        # Parse the JSON to add metadata
+        import json as json_module
+        analytics_data = json_module.loads(analytics_json)
+        
+        response = {
+            "success": True,
+            "format": "json_analytics",
+            "timestamp": time.time(),
+            "analytics_window_minutes": minutes,
+            "data": analytics_data
+        }
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Failed to get dashboard analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
