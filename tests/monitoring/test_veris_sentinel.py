@@ -30,8 +30,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from monitoring.veris_sentinel import (
     CheckResult, SentinelConfig, VerisHealthProbe, 
-    GoldenFactRecall, MetricsWiring, SecurityNegatives,
-    ConfigParity, CapacitySmoke, SentinelRunner, SentinelAPI
+    GoldenFactRecall, ParaphraseRobustness, MetricsWiring, SecurityNegatives,
+    BackupRestore, ConfigParity, CapacitySmoke, GraphIntentValidation,
+    ContentPipelineMonitoring, SentinelRunner, SentinelAPI
 )
 
 
@@ -972,3 +973,329 @@ class TestPerformanceCharacteristics:
             
         finally:
             Path(temp_db).unlink()
+
+
+# New Sentinel Checks Tests (S3, S6, S9, S10)
+class TestParaphraseRobustness:
+    """Test S3: Paraphrase robustness monitoring check."""
+    
+    @pytest.fixture
+    def config(self):
+        return SentinelConfig(target_base_url="http://test:8000")
+    
+    @pytest.fixture
+    def check(self, config):
+        return ParaphraseRobustness(config)
+    
+    @pytest.mark.asyncio
+    async def test_paraphrase_robustness_pass(self, check):
+        """Test paraphrase robustness check with passing scenario."""
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Mock successful API responses with consistent results
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value={
+                "results": [{"score": 0.95, "text": "relevant result"}]
+            })
+            
+            mock_session.return_value.__aenter__.return_value.post.return_value.__aenter__.return_value = mock_response
+            
+            result = await check.run_check()
+            
+            assert result.check_id == "S3-paraphrase-robustness"
+            assert result.status == "pass"
+            assert result.latency_ms > 0
+            assert result.metrics is not None
+            assert "consistency_rate" in result.metrics
+    
+    @pytest.mark.asyncio
+    async def test_paraphrase_robustness_fail(self, check):
+        """Test paraphrase robustness check with failing scenario."""
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Mock API error responses
+            mock_response = AsyncMock()
+            mock_response.status = 500
+            
+            mock_session.return_value.__aenter__.return_value.post.return_value.__aenter__.return_value = mock_response
+            
+            result = await check.run_check()
+            
+            assert result.check_id == "S3-paraphrase-robustness"
+            assert result.status == "fail"
+            assert result.error_message is not None
+    
+    @pytest.mark.asyncio
+    async def test_paraphrase_robustness_inconsistent_results(self, check):
+        """Test paraphrase robustness with inconsistent results."""
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Mock inconsistent API responses
+            responses = [
+                {"results": [{"score": 0.95, "text": "result A"}]},
+                {"results": [{"score": 0.2, "text": "different result"}]},  # Inconsistent
+            ]
+            
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(side_effect=responses)
+            
+            mock_session.return_value.__aenter__.return_value.post.return_value.__aenter__.return_value = mock_response
+            
+            result = await check.run_check()
+            
+            assert result.check_id == "S3-paraphrase-robustness"
+            assert result.status in ["warn", "fail"]  # Should detect inconsistency
+
+
+class TestBackupRestore:
+    """Test S6: Backup and restore monitoring check."""
+    
+    @pytest.fixture
+    def config(self):
+        return SentinelConfig(target_base_url="http://test:8000")
+    
+    @pytest.fixture
+    def check(self, config):
+        return BackupRestore(config)
+    
+    @pytest.mark.asyncio
+    async def test_backup_restore_pass(self, check):
+        """Test backup restore check with passing scenario."""
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Mock successful backup/restore operations
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value={
+                "success": True,
+                "backup_id": "test-backup-123",
+                "stored_contexts": 5
+            })
+            
+            mock_session.return_value.__aenter__.return_value.post.return_value.__aenter__.return_value = mock_response
+            mock_session.return_value.__aenter__.return_value.get.return_value.__aenter__.return_value = mock_response
+            
+            result = await check.run_check()
+            
+            assert result.check_id == "S6-backup-restore"
+            assert result.status == "pass"
+            assert result.latency_ms > 0
+            assert result.metrics is not None
+            assert "contexts_verified" in result.metrics
+    
+    @pytest.mark.asyncio
+    async def test_backup_restore_fail(self, check):
+        """Test backup restore check with failing scenario."""
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Mock failed backup operation
+            mock_response = AsyncMock()
+            mock_response.status = 500
+            
+            mock_session.return_value.__aenter__.return_value.post.return_value.__aenter__.return_value = mock_response
+            
+            result = await check.run_check()
+            
+            assert result.check_id == "S6-backup-restore"
+            assert result.status == "fail"
+            assert result.error_message is not None
+    
+    @pytest.mark.asyncio
+    async def test_backup_restore_data_integrity_issue(self, check):
+        """Test backup restore with data integrity problems."""
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Mock responses where backup succeeds but restore shows missing data
+            backup_response = AsyncMock()
+            backup_response.status = 200
+            backup_response.json = AsyncMock(return_value={
+                "success": True,
+                "backup_id": "test-backup-123",
+                "stored_contexts": 5
+            })
+            
+            restore_response = AsyncMock()
+            restore_response.status = 200
+            restore_response.json = AsyncMock(return_value={
+                "success": True,
+                "restored_contexts": 3  # Less than backed up!
+            })
+            
+            mock_session.return_value.__aenter__.return_value.post.return_value.__aenter__.return_value = backup_response
+            mock_session.return_value.__aenter__.return_value.get.return_value.__aenter__.return_value = restore_response
+            
+            result = await check.run_check()
+            
+            assert result.check_id == "S6-backup-restore"
+            assert result.status in ["warn", "fail"]  # Should detect data loss
+
+
+class TestGraphIntentValidation:
+    """Test S9: Graph intent validation monitoring check."""
+    
+    @pytest.fixture
+    def config(self):
+        return SentinelConfig(target_base_url="http://test:8000")
+    
+    @pytest.fixture
+    def check(self, config):
+        return GraphIntentValidation(config)
+    
+    @pytest.mark.asyncio
+    async def test_graph_intent_validation_pass(self, check):
+        """Test graph intent validation with high accuracy."""
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Mock successful intent analysis responses
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value={
+                "intent": {"type": "semantic_search"},
+                "graph_plan": {"node_types": ["concept", "document"]}
+            })
+            
+            mock_session.return_value.__aenter__.return_value.post.return_value.__aenter__.return_value = mock_response
+            
+            result = await check.run_check()
+            
+            assert result.check_id == "S9-graph-intent"
+            assert result.status == "pass"
+            assert result.latency_ms > 0
+            assert result.metrics is not None
+            assert "intent_accuracy_rate" in result.metrics
+            assert result.metrics["intent_accuracy_rate"] >= 0.8
+    
+    @pytest.mark.asyncio
+    async def test_graph_intent_validation_low_accuracy(self, check):
+        """Test graph intent validation with low accuracy."""
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Mock incorrect intent analysis responses
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value={
+                "intent": {"type": "wrong_intent"},  # Always wrong
+                "graph_plan": {"node_types": ["wrong", "types"]}
+            })
+            
+            mock_session.return_value.__aenter__.return_value.post.return_value.__aenter__.return_value = mock_response
+            
+            result = await check.run_check()
+            
+            assert result.check_id == "S9-graph-intent"
+            assert result.status in ["warn", "fail"]
+            assert result.metrics["intent_accuracy_rate"] < 0.8
+    
+    @pytest.mark.asyncio
+    async def test_graph_intent_validation_api_error(self, check):
+        """Test graph intent validation with API errors."""
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Mock API error
+            mock_response = AsyncMock()
+            mock_response.status = 503
+            
+            mock_session.return_value.__aenter__.return_value.post.return_value.__aenter__.return_value = mock_response
+            
+            result = await check.run_check()
+            
+            assert result.check_id == "S9-graph-intent"
+            assert result.status == "fail"
+            assert result.error_message is not None
+
+
+class TestContentPipelineMonitoring:
+    """Test S10: Content pipeline monitoring check."""
+    
+    @pytest.fixture
+    def config(self):
+        return SentinelConfig(target_base_url="http://test:8000")
+    
+    @pytest.fixture
+    def check(self, config):
+        return ContentPipelineMonitoring(config)
+    
+    @pytest.mark.asyncio
+    async def test_content_pipeline_monitoring_pass(self, check):
+        """Test content pipeline monitoring with all stages healthy."""
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Mock healthy pipeline responses
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value={
+                "processed_today": 100,
+                "errors_today": 1,
+                "queue_depth": 5,
+                "vectors_generated_today": 95,
+                "embedding_failures_today": 0,
+                "stored_today": 95,
+                "storage_failures_today": 0,
+                "indexed_today": 95,
+                "index_failures_today": 0
+            })
+            
+            mock_session.return_value.__aenter__.return_value.get.return_value.__aenter__.return_value = mock_response
+            
+            result = await check.run_check()
+            
+            assert result.check_id == "S10-content-pipeline"
+            assert result.status == "pass"
+            assert result.latency_ms > 0
+            assert result.metrics is not None
+            assert "pipeline_health_percent" in result.metrics
+            assert result.metrics["pipeline_health_percent"] == 100.0
+    
+    @pytest.mark.asyncio
+    async def test_content_pipeline_monitoring_degraded(self, check):
+        """Test content pipeline monitoring with some unhealthy stages."""
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Mock mix of healthy and unhealthy responses
+            responses = [
+                # Ingestion healthy
+                AsyncMock(status=200, json=AsyncMock(return_value={
+                    "processed_today": 100, "errors_today": 1
+                })),
+                # Embedding unhealthy
+                AsyncMock(status=503),
+                # Storage healthy
+                AsyncMock(status=200, json=AsyncMock(return_value={
+                    "stored_today": 50, "storage_failures_today": 5
+                })),
+                # Indexing healthy
+                AsyncMock(status=200, json=AsyncMock(return_value={
+                    "indexed_today": 45, "index_failures_today": 0
+                }))
+            ]
+            
+            mock_session.return_value.__aenter__.return_value.get.return_value.__aenter__.return_value = responses[0]
+            mock_session.return_value.__aenter__.return_value.get.side_effect = [
+                responses[0].__aenter__.return_value,
+                responses[1].__aenter__.return_value,
+                responses[2].__aenter__.return_value,
+                responses[3].__aenter__.return_value
+            ]
+            
+            result = await check.run_check()
+            
+            assert result.check_id == "S10-content-pipeline"
+            assert result.status in ["warn", "fail"]
+            assert result.metrics["pipeline_health_percent"] < 100.0
+    
+    @pytest.mark.asyncio
+    async def test_content_pipeline_monitoring_high_error_rate(self, check):
+        """Test content pipeline monitoring with high error rates."""
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Mock responses with high error rates
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value={
+                "processed_today": 100,
+                "errors_today": 20,  # High error rate
+                "vectors_generated_today": 70,
+                "embedding_failures_today": 10,
+                "stored_today": 60,
+                "storage_failures_today": 15,
+                "indexed_today": 55,
+                "index_failures_today": 5
+            })
+            
+            mock_session.return_value.__aenter__.return_value.get.return_value.__aenter__.return_value = mock_response
+            
+            result = await check.run_check()
+            
+            assert result.check_id == "S10-content-pipeline"
+            assert result.status in ["warn", "fail"]
+            assert result.metrics["error_rate"] > 0.05  # More than 5% error rate

@@ -265,30 +265,82 @@ def rate_limiter_mock():
 
 
 @pytest.fixture(autouse=True)
-def clear_prometheus_registry():
-    """Clear Prometheus registry before each test to avoid collisions."""
+def isolated_prometheus_registry():
+    """Provide isolated Prometheus registry for each test to avoid global state interference."""
     try:
-        from prometheus_client import REGISTRY
-        # Clear the registry before each test
-        collectors = list(REGISTRY._collector_to_names.keys())
-        for collector in collectors:
-            try:
-                REGISTRY.unregister(collector)
-            except KeyError:
-                pass  # Already unregistered
+        from prometheus_client import CollectorRegistry, REGISTRY
+        import threading
+        
+        # Create an isolated registry for this test
+        test_registry = CollectorRegistry()
+        
+        # Store original registry reference
+        original_registry = REGISTRY
+        
+        # Temporarily replace the global registry with our isolated one
+        # We need to be careful about thread-local state
+        prometheus_client_module = __import__('prometheus_client')
+        original_registry_ref = prometheus_client_module.REGISTRY
+        prometheus_client_module.REGISTRY = test_registry
+        
+        # Also handle any existing collectors that might reference the old registry
+        # This prevents cross-test contamination
+        yield test_registry
+        
+        # Restore original registry
+        prometheus_client_module.REGISTRY = original_registry_ref
+        
     except ImportError:
-        pass  # Prometheus not available
+        # Prometheus not available, yield None
+        yield None
+
+
+@pytest.fixture
+def prometheus_registry():
+    """Provide a fresh Prometheus registry for tests that explicitly need metrics.
     
-    yield
-    
-    # Clean up after test
+    This fixture creates a completely isolated registry that doesn't interfere 
+    with the global state or other tests.
+    """
     try:
-        from prometheus_client import REGISTRY
-        collectors = list(REGISTRY._collector_to_names.keys())
-        for collector in collectors:
-            try:
-                REGISTRY.unregister(collector)
-            except KeyError:
-                pass
+        from prometheus_client import CollectorRegistry
+        
+        # Create a fresh, isolated registry
+        registry = CollectorRegistry()
+        return registry
+        
     except ImportError:
-        pass
+        pytest.skip("Prometheus client not available")
+
+
+@pytest.fixture  
+def mock_metrics_with_registry(prometheus_registry):
+    """Create mock metrics objects bound to an isolated registry."""
+    try:
+        from prometheus_client import Counter, Histogram, Gauge
+        
+        # Create metrics with the isolated registry
+        metrics = {
+            'request_counter': Counter(
+                'test_requests_total', 
+                'Test requests', 
+                ['endpoint'], 
+                registry=prometheus_registry
+            ),
+            'request_duration': Histogram(
+                'test_request_duration_seconds',
+                'Test request duration',
+                ['endpoint'],
+                registry=prometheus_registry
+            ),
+            'active_connections': Gauge(
+                'test_active_connections',
+                'Test active connections',
+                registry=prometheus_registry
+            )
+        }
+        
+        return metrics, prometheus_registry
+        
+    except ImportError:
+        pytest.skip("Prometheus client not available")

@@ -75,6 +75,7 @@ class SentinelConfig:
     per_check_timeout_sec: int = 10
     cycle_budget_sec: int = 45
     max_parallel_checks: int = 4
+    burst_test_timeout_sec: int = 30  # Timeout for burst testing operations
     alert_webhook: Optional[str] = None
     github_repo: Optional[str] = None
 
@@ -791,7 +792,15 @@ class CapacitySmoke:
                     task = self._single_request(session, i)
                     tasks.append(task)
                 
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                # Execute burst test with timeout protection
+                try:
+                    results = await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True),
+                        timeout=self.config.burst_test_timeout_sec
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"Burst test timeout after {self.config.burst_test_timeout_sec}s")
+                    results = [Exception("Burst test timeout") for _ in tasks]
                 
                 # Analyze results
                 successful_requests = 0

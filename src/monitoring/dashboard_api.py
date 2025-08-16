@@ -17,21 +17,93 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-# Import monitoring components with fallback handling
+# Import monitoring components with comprehensive error handling
+_dashboard_module = None
+_streaming_module = None
+_rate_limiter_module = None
+
 try:
+    # Try relative imports first (normal package structure)
     from .dashboard import UnifiedDashboard
+    _dashboard_module = "relative"
+    logger = logging.getLogger(__name__)
+    logger.debug("Loaded dashboard via relative import")
+except ImportError as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Relative dashboard import failed: {e}")
+
+try:
     from .streaming import MetricsStreamer
+    _streaming_module = "relative"
+    logger.debug("Loaded streaming via relative import")
+except ImportError as e:
+    logger.warning(f"Relative streaming import failed: {e}")
+
+try:
     from ..core.rate_limiter import get_rate_limiter, MCPRateLimiter
-except ImportError:
-    # Fallback imports for testing
-    import sys
-    import os
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-    from src.monitoring.dashboard import UnifiedDashboard
-    from src.monitoring.streaming import MetricsStreamer
-    from src.core.rate_limiter import get_rate_limiter, MCPRateLimiter
+    _rate_limiter_module = "relative"
+    logger.debug("Loaded rate_limiter via relative import")
+except ImportError as e:
+    logger.warning(f"Relative rate_limiter import failed: {e}")
+
+# Fallback to absolute imports if relative imports failed
+if not all([_dashboard_module, _streaming_module, _rate_limiter_module]):
+    try:
+        import sys
+        import os
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        
+        if not _dashboard_module:
+            from src.monitoring.dashboard import UnifiedDashboard
+            _dashboard_module = "absolute"
+            logger.info("Loaded dashboard via absolute import fallback")
+        
+        if not _streaming_module:
+            from src.monitoring.streaming import MetricsStreamer
+            _streaming_module = "absolute"
+            logger.info("Loaded streaming via absolute import fallback")
+        
+        if not _rate_limiter_module:
+            from src.core.rate_limiter import get_rate_limiter, MCPRateLimiter
+            _rate_limiter_module = "absolute"
+            logger.info("Loaded rate_limiter via absolute import fallback")
+            
+    except ImportError as e:
+        logger.error(f"Failed to import monitoring components: {e}")
+        logger.error("Dashboard API may not function correctly without these dependencies")
+        
+        # Create fallback implementations to prevent crashes
+        class UnifiedDashboard:
+            def __init__(self, *args, **kwargs):
+                self.last_update = None
+                logger.error("Using fallback UnifiedDashboard - functionality limited")
+            
+            async def collect_all_metrics(self, *args, **kwargs):
+                return {"error": "Dashboard module not available"}
+            
+            def generate_ascii_dashboard(self, *args, **kwargs):
+                return "Dashboard module not available"
+            
+            async def shutdown(self):
+                pass
+        
+        class MetricsStreamer:
+            def __init__(self, *args, **kwargs):
+                logger.error("Using fallback MetricsStreamer - functionality limited")
+        
+        def get_rate_limiter():
+            logger.error("Rate limiter not available - rate limiting disabled")
+            class MockRateLimiter:
+                def get_client_id(self, *args): return "unknown"
+                async def _async_check_rate_limit(self, *args): return True, None
+                async def _async_check_burst_protection(self, *args): return True, None
+                endpoint_limits = {}
+            return MockRateLimiter()
+        
+        class MCPRateLimiter:
+            pass
 
 logger = logging.getLogger(__name__)
 
