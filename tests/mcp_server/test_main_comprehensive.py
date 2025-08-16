@@ -497,22 +497,27 @@ class TestHealthEndpoints:
             
             assert response.status_code == 200
             data = response.json()
-            assert "status" in data
-            assert "services" in data
+            assert "agent_ready" in data
+            assert "dependencies" in data
+            assert "deps" in data
+            assert "tools" in data
 
     def test_verify_readiness_endpoint(self):
         """Test readiness verification endpoint."""
         client = TestClient(app)
         
         async def mock_check_ready(*args, **kwargs):
-            return True
+            return "healthy", ""
         
         with patch('src.mcp_server.main._check_service_with_retries', side_effect=mock_check_ready):
-            response = client.get("/ready")
+            response = client.post("/tools/verify_readiness")
             
             assert response.status_code == 200
             data = response.json()
             assert "ready" in data
+            assert "readiness_level" in data
+            assert "service_status" in data
+            assert "recommended_actions" in data
 
 
 class TestMCPToolEndpoints:

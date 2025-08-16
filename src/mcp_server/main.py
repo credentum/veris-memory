@@ -252,6 +252,101 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
     return embedding
 
 
+# Format adapter for backward compatibility
+def adapt_legacy_content_format(content: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert legacy content format to current format for backward compatibility.
+    
+    Handles the breaking changes reported in Issue #48:
+    - user_message + assistant_response -> text + type + title
+    - exchange_type -> fact_type
+    """
+    if not isinstance(content, dict):
+        return content
+        
+    # Check if this looks like legacy format
+    has_legacy_fields = any(field in content for field in ["user_message", "assistant_response", "exchange_type"])
+    
+    if has_legacy_fields:
+        logger.info("Detected legacy content format, converting to current format")
+        
+        # Convert legacy conversation format to current semantic format
+        adapted_content = {}
+        
+        # Primary text content
+        if "user_message" in content:
+            adapted_content["text"] = content["user_message"]
+            adapted_content["type"] = "decision"  # Default type for user statements
+            
+        elif "assistant_response" in content:
+            adapted_content["text"] = content["assistant_response"] 
+            adapted_content["type"] = "response"  # Assistant responses
+            
+        # Generate title from content
+        text = adapted_content.get("text", "")
+        if len(text) > 50:
+            adapted_content["title"] = text[:47] + "..."
+        else:
+            adapted_content["title"] = text
+            
+        # Map exchange_type to fact_type
+        if "exchange_type" in content:
+            exchange_type_mapping = {
+                "qa": "question_answer",
+                "introduction": "personal_info", 
+                "preference": "personal_info",
+                "fact": "general_fact",
+                "decision": "decision_point"
+            }
+            adapted_content["fact_type"] = exchange_type_mapping.get(
+                content["exchange_type"], content["exchange_type"]
+            )
+            
+        # Preserve other fields
+        for key, value in content.items():
+            if key not in ["user_message", "assistant_response", "exchange_type"]:
+                adapted_content[key] = value
+                
+        logger.info(f"Legacy format converted: {list(content.keys())} -> {list(adapted_content.keys())}")
+        return adapted_content
+    
+    # Return current format unchanged
+    return content
+
+
+def enhance_response_with_legacy_fields(response: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Add legacy field aliases to responses for backward compatibility.
+    
+    This allows integrations using old field names to continue working
+    while they migrate to the new format.
+    """
+    if "results" in response:
+        for result in response["results"]:
+            if "content" in result and isinstance(result["content"], dict):
+                content = result["content"]
+                
+                # Add legacy aliases for common fields
+                if "text" in content and "user_message" not in content:
+                    content["user_message"] = content["text"]  # Legacy alias
+                    
+                if "type" in content and "exchange_type" not in content:
+                    # Map current types back to legacy exchange_type
+                    type_mapping = {
+                        "decision": "fact",
+                        "response": "qa",
+                        "personal_info": "introduction"
+                    }
+                    content["exchange_type"] = type_mapping.get(content["type"], content["type"])
+                    
+                if "fact_type" in content and "metadata" not in content:
+                    # Add fact_type to metadata for legacy compatibility
+                    content["metadata"] = content.get("metadata", {})
+                    content["metadata"]["fact_type"] = content["fact_type"]
+    
+    return response
+
+
 app = FastAPI(
     title="Context Store MCP Server",
     description="Model Context Protocol server for context management",
@@ -739,14 +834,32 @@ async def status() -> Dict[str, Any]:
     # Get health status
     health_status = await health()
 
+    # Determine agent readiness based on core functionality
+    agent_ready = (
+        health_status["services"]["redis"] == "healthy" and  # Core KV storage required
+        len([
+            "store_context",
+            "retrieve_context", 
+            "query_graph",
+            "update_scratchpad",
+            "get_agent_state",
+        ]) == 5  # All tools available
+    )
+
     return {
         "label": "◎ Veris Memory",
         "version": "0.9.0",
         "protocol": "MCP-1.0",
+        "agent_ready": agent_ready,
         "deps": {
             "qdrant": "ok" if health_status["services"]["qdrant"] == "healthy" else "error",
             "neo4j": "ok" if health_status["services"]["neo4j"] == "healthy" else "error",
             "redis": "ok" if health_status["services"]["redis"] == "healthy" else "error",
+        },
+        "dependencies": {
+            "qdrant": health_status["services"]["qdrant"],
+            "neo4j": health_status["services"]["neo4j"], 
+            "redis": health_status["services"]["redis"],
         },
         "tools": [
             "store_context",
@@ -801,17 +914,59 @@ async def verify_readiness() -> Dict[str, Any]:
         # Schema version from agent schema
         schema_version = "0.9.0"  # From agent-schema.json
 
+        # Determine readiness level and score
         readiness_score = 0
-        if status_info["agent_ready"]:
+        readiness_level = "BASIC"
+        
+        # Core functionality check (Redis + Tools)
+        core_ready = status_info["agent_ready"]
+        if core_ready:
             readiness_score += 40  # Base readiness
+            readiness_level = "STANDARD"
+        
+        # All tools available
         if tools_available == 5:
             readiness_score += 30  # All tools available
+            
+        # Enhanced features (vector/graph search)
+        enhanced_ready = (
+            status_info["dependencies"]["qdrant"] == "healthy" and 
+            status_info["dependencies"]["neo4j"] == "healthy"
+        )
+        if enhanced_ready:
+            readiness_score += 20  # Enhanced search available
+            readiness_level = "FULL"
+            
+        # Indexes accessible
         if index_info:
-            readiness_score += 20  # Indexes accessible
-        readiness_score += 10  # Schema compatibility
+            readiness_score += 10  # Indexes accessible
+            
+        # Generate clear, actionable recommendations
+        recommendations = []
+        if not core_ready:
+            recommendations.extend([
+                "CRITICAL: Redis connection required for core operations",
+                "Check Redis configuration and network connectivity"
+            ])
+        elif tools_available < 5:
+            recommendations.append(f"WARNING: Only {tools_available}/5 tools available")
+        else:
+            recommendations.append("✓ Core functionality operational")
+            
+        if not enhanced_ready:
+            missing_services = []
+            if status_info["dependencies"]["qdrant"] != "healthy":
+                missing_services.append("Qdrant (vector search)")
+            if status_info["dependencies"]["neo4j"] != "healthy":
+                missing_services.append("Neo4j (graph queries)")
+            
+            if missing_services:
+                recommendations.append(f"INFO: Enhanced features unavailable - {', '.join(missing_services)} not ready")
+                recommendations.append("System can operate with basic functionality")
 
         return {
-            "ready": status_info["agent_ready"],
+            "ready": core_ready,
+            "readiness_level": readiness_level,  # NEW: Clear level indicator
             "readiness_score": min(readiness_score, 100),
             "tools_available": tools_available,
             "tools_expected": 5,
@@ -819,24 +974,24 @@ async def verify_readiness() -> Dict[str, Any]:
             "protocol_version": "MCP-1.0",
             "indexes": index_info,
             "dependencies": status_info["dependencies"],
+            "service_status": {  # NEW: Clear service breakdown
+                "core_services": {
+                    "redis": status_info["dependencies"]["redis"],
+                    "status": "healthy" if core_ready else "degraded"
+                },
+                "enhanced_services": {
+                    "qdrant": status_info["dependencies"]["qdrant"],
+                    "neo4j": status_info["dependencies"]["neo4j"],
+                    "status": "healthy" if enhanced_ready else "degraded"
+                }
+            },
             "usage_quotas": {
-                "vector_operations": "unlimited",
-                "graph_queries": "unlimited",
+                "vector_operations": "unlimited" if enhanced_ready else "unavailable",
+                "graph_queries": "unlimited" if enhanced_ready else "unavailable", 
                 "kv_operations": "unlimited",
                 "note": "Quotas depend on underlying database limits",
             },
-            "recommended_actions": [
-                (
-                    "Verify all dependencies are healthy"
-                    if not status_info["agent_ready"]
-                    else "System ready for agent operations"
-                ),
-                (
-                    f"Tools available: {tools_available}/5"
-                    if tools_available < 5
-                    else "All MCP tools operational"
-                ),
-            ],
+            "recommended_actions": recommendations,
         }
 
     except Exception as e:
@@ -864,14 +1019,19 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
         import uuid
 
         context_id = str(uuid.uuid4())
+        
+        # Apply format adapter for backward compatibility
+        adapted_content = adapt_legacy_content_format(request.content)
+        if adapted_content != request.content:
+            logger.info("Applied legacy format conversion for backward compatibility")
 
         # Store in vector database
         vector_id = None
         if qdrant_client:
             try:
                 logger.info("Generating embedding for vector storage...")
-                # Create embedding from content using proper embedding service
-                embedding = await _generate_embedding(request.content)
+                # Create embedding from adapted content using proper embedding service
+                embedding = await _generate_embedding(adapted_content)
                 logger.info(f"Generated embedding with {len(embedding)} dimensions")
 
                 logger.info("Storing vector in Qdrant...")
@@ -879,7 +1039,8 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
                     vector_id=context_id,
                     embedding=embedding,
                     metadata={
-                        "content": request.content,
+                        "content": adapted_content,  # Use adapted content
+                        "original_content": request.content,  # Preserve original for debugging
                         "type": request.type,
                         "metadata": request.metadata,
                     }
@@ -898,8 +1059,8 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
                 # Flatten nested objects for Neo4j compatibility
                 flattened_properties = {"id": context_id, "type": request.type}
                 
-                # Handle request.content safely - convert nested objects to JSON strings
-                for key, value in request.content.items():
+                # Handle adapted_content safely - convert nested objects to JSON strings
+                for key, value in adapted_content.items():
                     if isinstance(value, (dict, list)):
                         flattened_properties[f"{key}_json"] = json.dumps(value)
                     else:
@@ -979,24 +1140,56 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
 
         if request.search_mode in ["graph", "hybrid"] and neo4j_client:
             # Perform graph search
-            cypher_query = """
-            MATCH (n:Context)
-            WHERE n.type = $type OR $type = 'all'
-            RETURN n
-            LIMIT $limit
-            """
-            graph_results = neo4j_client.query(
-                cypher_query, parameters={"type": request.type, "limit": request.limit}
-            )
-            results.extend(graph_results)
+            try:
+                cypher_query = """
+                MATCH (n:Context)
+                WHERE n.type = $type OR $type = 'all'
+                RETURN n
+                LIMIT $limit
+                """
+                raw_graph_results = neo4j_client.query(
+                    cypher_query, parameters={"type": request.type, "limit": request.limit}
+                )
+                
+                # Normalize graph results to consistent format (eliminate nested 'n' structure)
+                for raw_result in raw_graph_results:
+                    if isinstance(raw_result, dict) and 'n' in raw_result:
+                        # Extract the actual node data from {'n': {...}} wrapper
+                        node_data = raw_result['n']
+                    else:
+                        # Handle direct node data
+                        node_data = raw_result
+                    
+                    # Convert to consistent format matching vector results
+                    normalized_result = {
+                        "id": node_data.get("id", "unknown"),
+                        "content": {
+                            key: value for key, value in node_data.items() 
+                            if key != "id"  # Don't duplicate id in content
+                        },
+                        "score": 1.0,  # Graph results don't have similarity scores
+                        "source": "graph",
+                    }
+                    results.append(normalized_result)
+                    
+                logger.info(f"Graph search found {len(raw_graph_results)} results")
+                
+            except Exception as e:
+                logger.warning(f"Graph search failed: {e}")
+                # Continue with vector results only
 
-        return {
+        # Prepare response
+        response = {
             "success": True,
             "results": results[: request.limit],
             "total_count": len(results),
             "search_mode_used": request.search_mode,
             "message": f"Found {len(results)} matching contexts",
         }
+        
+        # Add legacy field compatibility for backward compatibility
+        enhanced_response = enhance_response_with_legacy_fields(response)
+        return enhanced_response
 
     except Exception as e:
         import traceback
