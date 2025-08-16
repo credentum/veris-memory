@@ -8,8 +8,7 @@ python_functions = test_*
 # Add src to Python path for imports
 pythonpath = . src
 
-# Basic configuration - NO COVERAGE OPTIONS HERE
-# Coverage should be handled explicitly by make coverage
+# Basic test configuration - coverage handled by Makefile
 addopts =
     --strict-markers
     --strict-config
@@ -25,7 +24,6 @@ markers =
     storage: Storage backend tests
     security: Security validation tests
     performance: Performance/benchmark tests
-    e2e: End-to-end tests
 
 # Asyncio configuration
 asyncio_mode = auto
