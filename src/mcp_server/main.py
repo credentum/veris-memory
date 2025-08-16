@@ -306,7 +306,14 @@ websocket_connections = set()  # Track WebSocket connections
 
 
 class StoreContextRequest(BaseModel):
-    """Request model for store_context tool."""
+    """Request model for store_context tool.
+    
+    Attributes:
+        content: Dictionary containing the context data to store
+        type: Type of context (design, decision, trace, sprint, log)
+        metadata: Optional metadata associated with the context
+        relationships: Optional list of relationships to other contexts
+    """
 
     content: Dict[str, Any]
     type: str = Field(..., pattern="^(design|decision|trace|sprint|log)$")
@@ -315,7 +322,16 @@ class StoreContextRequest(BaseModel):
 
 
 class RetrieveContextRequest(BaseModel):
-    """Request model for retrieve_context tool."""
+    """Request model for retrieve_context tool.
+    
+    Attributes:
+        query: Search query string
+        type: Context type filter, defaults to "all"
+        search_mode: Search strategy (vector, graph, hybrid)
+        limit: Maximum number of results to return
+        filters: Optional additional filters
+        include_relationships: Whether to include relationship data
+    """
 
     query: str
     type: Optional[str] = "all"
@@ -326,7 +342,14 @@ class RetrieveContextRequest(BaseModel):
 
 
 class QueryGraphRequest(BaseModel):
-    """Request model for query_graph tool."""
+    """Request model for query_graph tool.
+    
+    Attributes:
+        query: Cypher query string to execute
+        parameters: Optional query parameters
+        limit: Maximum number of results to return
+        timeout: Query timeout in milliseconds
+    """
 
     query: str
     parameters: Optional[Dict[str, Any]] = None
@@ -337,7 +360,12 @@ class QueryGraphRequest(BaseModel):
 class UpdateScratchpadRequest(BaseModel):
     """Request model for update_scratchpad tool.
     
-    Defines the input schema for updating agent scratchpad data.
+    Attributes:
+        agent_id: Unique identifier for the agent (alphanumeric, underscore, hyphen)
+        key: Key for the scratchpad entry (alphanumeric, underscore, dot, hyphen)
+        content: Content to store in the scratchpad
+        mode: Update mode - "overwrite" or "append"
+        ttl: Time to live in seconds (60-86400)
     """
     agent_id: str = Field(..., description="Agent identifier", pattern=r"^[a-zA-Z0-9_-]{1,64}$")
     key: str = Field(..., description="Scratchpad key", pattern=r"^[a-zA-Z0-9_.-]{1,128}$")
@@ -349,11 +377,83 @@ class UpdateScratchpadRequest(BaseModel):
 class GetAgentStateRequest(BaseModel):
     """Request model for get_agent_state tool.
     
-    Defines the input schema for retrieving agent state data.
+    Attributes:
+        agent_id: Unique identifier for the agent
+        key: Optional specific state key to retrieve
+        prefix: State type prefix for namespacing
     """
     agent_id: str = Field(..., description="Agent identifier")
     key: Optional[str] = Field(None, description="Specific state key")
     prefix: str = Field("state", description="State type prefix")
+
+
+def validate_and_get_credential(env_var_name: str, required: bool = True, min_length: int = 8) -> Optional[str]:
+    """
+    Securely retrieve and validate credentials from environment variables.
+    
+    Args:
+        env_var_name: Name of the environment variable
+        required: Whether the credential is required for operation
+        min_length: Minimum length for password validation
+        
+    Returns:
+        The credential value if valid, None if optional and missing
+        
+    Raises:
+        RuntimeError: If required credential is missing or invalid
+    """
+    credential = os.getenv(env_var_name)
+    
+    if not credential:
+        if required:
+            raise RuntimeError(f"Required credential {env_var_name} is not set")
+        return None
+    
+    # Basic validation
+    if len(credential) < min_length:
+        raise RuntimeError(f"Credential {env_var_name} is too short (minimum {min_length} characters)")
+    
+    # Check for common insecure defaults
+    insecure_defaults = ["password", "123456", "admin", "default", "changeme", "secret"]
+    if credential.lower() in insecure_defaults:
+        raise RuntimeError(f"Credential {env_var_name} uses an insecure default value")
+    
+    return credential
+
+
+def validate_startup_credentials() -> Dict[str, Optional[str]]:
+    """
+    Validate all required credentials at startup with fail-fast behavior.
+    
+    Returns:
+        Dictionary of validated credentials
+        
+    Raises:
+        RuntimeError: If any required credential validation fails
+    """
+    try:
+        credentials = {
+            'neo4j_password': validate_and_get_credential("NEO4J_PASSWORD", required=False),
+            'qdrant_api_key': validate_and_get_credential("QDRANT_API_KEY", required=False, min_length=1),
+            'redis_password': validate_and_get_credential("REDIS_PASSWORD", required=False, min_length=1)
+        }
+        
+        # Log secure startup status
+        available_services = []
+        if credentials['neo4j_password']:
+            available_services.append("Neo4j")
+        if credentials['qdrant_api_key']:
+            available_services.append("Qdrant")
+        if credentials['redis_password']:
+            available_services.append("Redis")
+            
+        logger.info(f"Credential validation complete. Available services: {', '.join(available_services) if available_services else 'Core only'}")
+        
+        return credentials
+        
+    except Exception as e:
+        logger.error(f"Credential validation failed: {e}")
+        raise RuntimeError(f"Startup credential validation failed: {e}")
 
 
 @app.on_event("startup")
@@ -377,22 +477,25 @@ async def startup_event() -> None:
     if not config_result.get("valid", False):
         raise RuntimeError(f"Configuration validation failed: {config_result}")
 
+    # Validate and retrieve all credentials securely
+    credentials = validate_startup_credentials()
+
     try:
         # Initialize Neo4j (allow graceful degradation if unavailable)
-        neo4j_password = os.getenv("NEO4J_PASSWORD")
-        if not neo4j_password:
-            print("⚠️ NEO4J_PASSWORD not set - Neo4j will be unavailable")
-            neo4j_client = None
-        else:
+        if credentials['neo4j_password']:
             try:
                 neo4j_client = Neo4jClient()
                 neo4j_client.connect(
-                    username=os.getenv("NEO4J_USER", "neo4j"), password=neo4j_password
+                    username=os.getenv("NEO4J_USER", "neo4j"), 
+                    password=credentials['neo4j_password']
                 )
                 print("✅ Neo4j connected successfully")
             except Exception as neo4j_error:
                 print(f"⚠️ Neo4j unavailable: {neo4j_error}")
                 neo4j_client = None
+        else:
+            print("⚠️ NEO4J_PASSWORD not set - Neo4j will be unavailable")
+            neo4j_client = None
 
         # Initialize Qdrant (allow graceful degradation if unavailable)
         try:
@@ -542,7 +645,7 @@ _server_startup_time = time.time()
 
 async def _check_service_with_retries(
     service_name: str,
-    check_func,
+    check_func: callable,
     max_retries: Optional[int] = None,
     retry_delay: Optional[float] = None,
 ) -> Tuple[str, str]:
@@ -994,8 +1097,11 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
 
     except Exception as e:
         import traceback
-
-        print(f"Error storing context: {traceback.format_exc()}")
+        
+        # Log detailed error information securely (internal only)
+        logger.error(f"Error storing context: {traceback.format_exc()}")
+        
+        # Return sanitized error response (external)
         return handle_generic_error(e, "store context")
 
 
@@ -1088,8 +1194,11 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
 
     except Exception as e:
         import traceback
-
-        print(f"Error retrieving context: {traceback.format_exc()}")
+        
+        # Log detailed error information securely (internal only)
+        logger.error(f"Error retrieving context: {traceback.format_exc()}")
+        
+        # Return sanitized error response (external)
         error_response = handle_generic_error(e, "retrieve context")
         error_response["results"] = []
         return error_response
@@ -1140,6 +1249,25 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
     Returns:
         Dict containing success status, message, and operation details
     """
+    # Additional runtime TTL validation for resource exhaustion prevention
+    if request.ttl < 60:
+        raise HTTPException(
+            status_code=400,
+            detail="TTL too short: minimum 60 seconds required to prevent resource exhaustion"
+        )
+    if request.ttl > 86400:  # 24 hours
+        raise HTTPException(
+            status_code=400,
+            detail="TTL too long: maximum 86400 seconds (24 hours) allowed to prevent resource exhaustion"
+        )
+    
+    # Additional content size validation for large payloads
+    if len(request.content) > 100000:  # 100KB
+        raise HTTPException(
+            status_code=400,
+            detail="Content too large: maximum 100KB allowed to prevent resource exhaustion"
+        )
+    
     # Validate request against MCP contract
     request_data = request.model_dump()
     validation_errors = validate_mcp_request("update_scratchpad", request_data)
@@ -1336,8 +1464,15 @@ async def list_tools() -> Dict[str, Any]:
 
 # Dashboard API Endpoints
 @app.get("/api/dashboard")
-async def get_dashboard_json():
-    """Get complete dashboard data in JSON format."""
+async def get_dashboard_json() -> Dict[str, Any]:
+    """Get complete dashboard data in JSON format.
+    
+    Returns:
+        Dictionary containing dashboard metrics and metadata
+        
+    Raises:
+        HTTPException: If dashboard is not available or metrics collection fails
+    """
     if not dashboard:
         raise HTTPException(status_code=503, detail="Dashboard not available")
     
@@ -1355,8 +1490,12 @@ async def get_dashboard_json():
 
 
 @app.get("/api/dashboard/ascii", response_class=PlainTextResponse)
-async def get_dashboard_ascii():
-    """Get dashboard in ASCII format for human reading."""
+async def get_dashboard_ascii() -> str:
+    """Get dashboard in ASCII format for human reading.
+    
+    Returns:
+        ASCII art string representation of dashboard metrics
+    """
     if not dashboard:
         return "Dashboard Error: Dashboard not available"
     
@@ -1561,8 +1700,12 @@ async def _stream_dashboard_updates(websocket: WebSocket):
         logger.error(f"Streaming error: {e}")
 
 
-async def _broadcast_to_websockets(message: Dict[str, Any]):
-    """Broadcast message to all connected WebSocket clients."""
+async def _broadcast_to_websockets(message: Dict[str, Any]) -> None:
+    """Broadcast message to all connected WebSocket clients.
+    
+    Args:
+        message: Dictionary containing the message data to broadcast
+    """
     if not websocket_connections:
         return
     
