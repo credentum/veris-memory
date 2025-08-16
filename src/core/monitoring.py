@@ -43,45 +43,86 @@ except ImportError:
 class MCPMetrics:
     """Prometheus metrics for MCP operations."""
 
-    def __init__(self):
-        """Initialize MCP metrics."""
+    def __init__(self, registry=None):
+        """Initialize MCP metrics.
+        
+        Args:
+            registry: Optional Prometheus registry. If None, uses the global registry.
+                     This allows for isolated registries in tests.
+        """
         if not PROMETHEUS_AVAILABLE:
             self.enabled = False
             return
 
         self.enabled = True
+        self.registry = registry  # Store registry reference for metric creation
 
-        # Request counters
-        self.request_total = Counter(
-            "mcp_requests_total", "Total number of MCP requests", ["endpoint", "status"]
-        )
+        # Request counters - use custom registry to avoid collisions in tests
+        try:
+            self.request_total = Counter(
+                "mcp_requests_total", "Total number of MCP requests", ["endpoint", "status"],
+                registry=self.registry
+            )
+        except ValueError:
+            # Already registered, get existing instance
+            from prometheus_client import REGISTRY
+            for collector in REGISTRY._collector_to_names:
+                if hasattr(collector, '_name') and collector._name == 'mcp_requests_total':
+                    self.request_total = collector
+                    break
 
-        self.request_duration = Histogram(
-            "mcp_request_duration_seconds",
-            "Time spent processing MCP requests",
-            ["endpoint"],
-            buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
-        )
+        try:
+            self.request_duration = Histogram(
+                "mcp_request_duration_seconds",
+                "Time spent processing MCP requests",
+                ["endpoint"],
+                buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+                registry=self.registry
+            )
+        except ValueError:
+            # Already registered, get existing instance
+            from prometheus_client import REGISTRY
+            for collector in REGISTRY._collector_to_names:
+                if hasattr(collector, '_name') and collector._name == 'mcp_request_duration_seconds':
+                    self.request_duration = collector
+                    break
 
         # Storage operation metrics
-        self.storage_operations = Counter(
-            "mcp_storage_operations_total",
-            "Total storage operations",
-            ["backend", "operation", "status"],
-        )
+        try:
+            self.storage_operations = Counter(
+                "mcp_storage_operations_total",
+                "Total storage operations",
+                ["backend", "operation", "status"],
+                registry=self.registry
+            )
+        except ValueError:
+            from prometheus_client import REGISTRY
+            for collector in REGISTRY._collector_to_names:
+                if hasattr(collector, '_name') and collector._name == 'mcp_storage_operations_total':
+                    self.storage_operations = collector
+                    break
 
-        self.storage_duration = Histogram(
-            "mcp_storage_duration_seconds",
-            "Time spent on storage operations",
-            ["backend", "operation"],
-            buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
-        )
+        try:
+            self.storage_duration = Histogram(
+                "mcp_storage_duration_seconds",
+                "Time spent on storage operations",
+                ["backend", "operation"],
+                buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
+                registry=self.registry
+            )
+        except ValueError:
+            from prometheus_client import REGISTRY
+            for collector in REGISTRY._collector_to_names:
+                if hasattr(collector, '_name') and collector._name == 'mcp_storage_duration_seconds':
+                    self.storage_duration = collector
+                    break
 
         # Vector operations
         self.embedding_operations = Counter(
             "mcp_embedding_operations_total",
             "Total embedding operations",
             ["provider", "status"],
+            registry=self.registry
         )
 
         self.embedding_duration = Histogram(
@@ -89,6 +130,7 @@ class MCPMetrics:
             "Time spent generating embeddings",
             ["provider"],
             buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+            registry=self.registry
         )
 
         # Rate limiting metrics
@@ -96,24 +138,28 @@ class MCPMetrics:
             "mcp_rate_limit_hits_total",
             "Number of rate limit hits",
             ["endpoint", "client_type"],
+            registry=self.registry
         )
 
         # Health metrics
         self.health_status = Gauge(
-            "mcp_health_status", "Health status of MCP components", ["component"]
+            "mcp_health_status", "Health status of MCP components", ["component"],
+            registry=self.registry
         )
 
         # Context metrics
         self.contexts_stored = Counter(
-            "mcp_contexts_stored_total", "Total contexts stored", ["type"]
+            "mcp_contexts_stored_total", "Total contexts stored", ["type"],
+            registry=self.registry
         )
 
         self.contexts_retrieved = Counter(
-            "mcp_contexts_retrieved_total", "Total contexts retrieved", ["search_mode"]
+            "mcp_contexts_retrieved_total", "Total contexts retrieved", ["search_mode"],
+            registry=self.registry
         )
 
         # Server info
-        self.server_info = Info("mcp_server_info", "MCP server information")
+        self.server_info = Info("mcp_server_info", "MCP server information", registry=self.registry)
 
         logger.info("✅ Prometheus metrics initialized")
 
