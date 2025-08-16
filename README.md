@@ -50,7 +50,7 @@ Veris Memory implements the **Agent-First Schema Protocol** - a structured appro
 - **⚡ Fast Lookup**: Key-value storage with Redis
 - **🤝 MCP Protocol**: Full Model Context Protocol v1.0 implementation
 - **🛡️ Schema Validation**: Comprehensive YAML validation
-- **🚀 Deploy Ready**: Docker + Fly.io deployment
+- **🚀 Deploy Ready**: Docker + cloud deployment ready
 
 ## Architecture
 
