@@ -1378,8 +1378,19 @@ async def refresh_dashboard():
 
 @app.get("/api/dashboard/health")
 async def dashboard_health():
-    """Dashboard API health check."""
+    """Dashboard API health check.
+    
+    Returns comprehensive health status of the dashboard system including:
+    - Dashboard component health (requires active collection loop)
+    - WebSocket connection health (under connection limits)
+    
+    The collection_running check is required because the dashboard is only
+    considered healthy when actively collecting metrics from services.
+    Without an active collection loop, metrics become stale and the
+    dashboard cannot provide accurate real-time monitoring.
+    """
     try:
+        # Dashboard is healthy when: exists, has recent updates, and collection is active
         dashboard_healthy = (dashboard is not None and 
                            dashboard.last_update is not None and
                            getattr(dashboard, '_collection_running', False))

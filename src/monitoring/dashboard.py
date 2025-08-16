@@ -238,7 +238,9 @@ class UnifiedDashboard:
             }
         }
 
-    def set_service_clients(self, neo4j_client=None, qdrant_client=None, redis_client=None):
+    def set_service_clients(self, neo4j_client: Optional[Any] = None, 
+                           qdrant_client: Optional[Any] = None, 
+                           redis_client: Optional[Any] = None) -> None:
         """Set service clients for real health checks."""
         if neo4j_client:
             self.service_clients['neo4j'] = neo4j_client
@@ -247,7 +249,7 @@ class UnifiedDashboard:
         if redis_client:
             self.service_clients['redis'] = redis_client
             
-    async def start_collection_loop(self):
+    async def start_collection_loop(self) -> None:
         """Start background collection loop."""
         if self._collection_running:
             logger.warning("Collection loop already running")
@@ -257,7 +259,7 @@ class UnifiedDashboard:
         self._collection_task = asyncio.create_task(self._collection_loop())
         logger.info("🔄 Dashboard collection loop started")
         
-    async def stop_collection_loop(self):
+    async def stop_collection_loop(self) -> None:
         """Stop background collection loop."""
         self._collection_running = False
         if self._collection_task:
@@ -268,21 +270,46 @@ class UnifiedDashboard:
                 pass
         logger.info("⏹️ Dashboard collection loop stopped")
         
-    async def _collection_loop(self):
-        """Background collection loop."""
+    async def _collection_loop(self) -> None:
+        """Background collection loop with enhanced error handling."""
         interval = self.config.get('collection_interval_seconds', 30)
+        consecutive_failures = 0
+        max_failures = 5
         
         while self._collection_running:
             try:
                 await self.collect_all_metrics(force_refresh=True)
+                consecutive_failures = 0  # Reset on success
                 logger.debug(f"Metrics collected at {datetime.utcnow()}")
-            except Exception as e:
-                logger.error(f"Collection loop error: {e}")
-                
-            # Wait for next collection
-            try:
-                await asyncio.sleep(interval)
             except asyncio.CancelledError:
+                logger.info("Collection loop cancelled")
+                break
+            except ConnectionError as e:
+                consecutive_failures += 1
+                logger.warning(f"Connection error in collection loop (attempt {consecutive_failures}): {e}")
+                if consecutive_failures >= max_failures:
+                    logger.error(f"Too many consecutive connection failures ({consecutive_failures}), stopping collection")
+                    self._collection_running = False
+                    break
+            except Exception as e:
+                consecutive_failures += 1
+                logger.error(f"Unexpected error in collection loop (attempt {consecutive_failures}): {e}", exc_info=True)
+                if consecutive_failures >= max_failures:
+                    logger.error(f"Too many consecutive failures ({consecutive_failures}), stopping collection")
+                    self._collection_running = False
+                    break
+                
+            # Wait for next collection with exponential backoff on failures
+            try:
+                sleep_interval = interval
+                if consecutive_failures > 0:
+                    # Exponential backoff: 30s, 60s, 120s, etc.
+                    sleep_interval = min(interval * (2 ** consecutive_failures), 300)  # Max 5 minutes
+                    logger.info(f"Using backoff interval: {sleep_interval}s due to {consecutive_failures} failures")
+                    
+                await asyncio.sleep(sleep_interval)
+            except asyncio.CancelledError:
+                logger.info("Collection loop sleep cancelled")
                 break
 
     async def collect_all_metrics(self, force_refresh: bool = False) -> Dict[str, Any]:
