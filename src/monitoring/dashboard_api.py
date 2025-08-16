@@ -11,14 +11,17 @@ import json
 import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Set
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 # Import monitoring components with fallback handling
 try:
     from .dashboard import UnifiedDashboard
     from .streaming import MetricsStreamer
+    from ..core.rate_limiter import get_rate_limiter, MCPRateLimiter
 except ImportError:
     # Fallback imports for testing
     import sys
@@ -28,8 +31,114 @@ except ImportError:
         sys.path.insert(0, project_root)
     from src.monitoring.dashboard import UnifiedDashboard
     from src.monitoring.streaming import MetricsStreamer
+    from src.core.rate_limiter import get_rate_limiter, MCPRateLimiter
 
 logger = logging.getLogger(__name__)
+
+
+class MonitoringRateLimitMiddleware(BaseHTTPMiddleware):
+    """Rate limiting middleware for monitoring endpoints."""
+    
+    def __init__(self, app, config: Optional[Dict[str, Any]] = None):
+        super().__init__(app)
+        self.config = config or {}
+        self.rate_limiter = get_rate_limiter()
+        
+        # Configure monitoring-specific rate limits
+        self.monitoring_limits = {
+            "/api/dashboard": {"rpm": 60, "burst": 10},  # 1 req/sec, burst 10
+            "/api/dashboard/ascii": {"rpm": 30, "burst": 5},  # 0.5 req/sec, burst 5
+            "/api/dashboard/system": {"rpm": 120, "burst": 20},  # 2 req/sec, burst 20
+            "/api/dashboard/services": {"rpm": 120, "burst": 20},  # 2 req/sec, burst 20
+            "/api/dashboard/security": {"rpm": 60, "burst": 10},  # 1 req/sec, burst 10
+            "/api/dashboard/refresh": {"rpm": 12, "burst": 3},  # 0.2 req/sec, burst 3
+            "/api/dashboard/health": {"rpm": 300, "burst": 50},  # 5 req/sec, burst 50
+            "/api/dashboard/connections": {"rpm": 60, "burst": 10},  # 1 req/sec, burst 10
+        }
+        
+        # Update rate limiter with monitoring endpoint limits
+        for endpoint, limits in self.monitoring_limits.items():
+            endpoint_key = f"monitoring{endpoint.replace('/api/dashboard', '')}"
+            if endpoint_key not in self.rate_limiter.endpoint_limits:
+                self.rate_limiter.endpoint_limits[endpoint_key] = limits
+    
+    async def dispatch(self, request: Request, call_next):
+        """Check rate limits for monitoring endpoints."""
+        # Only apply rate limiting to monitoring API endpoints
+        if not request.url.path.startswith("/api/dashboard"):
+            return await call_next(request)
+        
+        # Extract client information
+        client_info = {
+            "remote_addr": request.client.host if request.client else "unknown",
+            "user_agent": request.headers.get("user-agent", ""),
+            "client_id": request.headers.get("x-client-id", "")
+        }
+        
+        client_id = self.rate_limiter.get_client_id(client_info)
+        endpoint_path = request.url.path
+        
+        # Map endpoint path to monitoring key
+        endpoint_key = f"monitoring{endpoint_path.replace('/api/dashboard', '')}"
+        if not endpoint_key.replace("monitoring", ""):
+            endpoint_key = "monitoring"  # Root dashboard endpoint
+        
+        # Check rate limits
+        try:
+            allowed, error_msg = await self.rate_limiter._async_check_rate_limit(
+                endpoint_key, client_id, 1
+            )
+            
+            if not allowed:
+                logger.warning(f"Rate limit exceeded for {client_id} on {endpoint_path}: {error_msg}")
+                return Response(
+                    content=json.dumps({
+                        "error": "Rate limit exceeded",
+                        "message": error_msg,
+                        "endpoint": endpoint_path,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }),
+                    status_code=429,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Retry-After": "60",  # Standard retry header
+                        "X-RateLimit-Endpoint": endpoint_key
+                    }
+                )
+            
+            # Check burst protection
+            burst_ok, burst_msg = await self.rate_limiter._async_check_burst_protection(client_id)
+            if not burst_ok:
+                logger.warning(f"Burst protection triggered for {client_id} on {endpoint_path}: {burst_msg}")
+                return Response(
+                    content=json.dumps({
+                        "error": "Too many requests",
+                        "message": burst_msg,
+                        "endpoint": endpoint_path,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }),
+                    status_code=429,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Retry-After": "10",  # Shorter retry for burst protection
+                        "X-RateLimit-Type": "burst"
+                    }
+                )
+            
+            # Log successful rate limit check
+            logger.debug(f"Rate limit check passed for {client_id} on {endpoint_path}")
+            
+        except Exception as e:
+            logger.error(f"Rate limiting error for {endpoint_path}: {e}")
+            # Continue to endpoint on rate limiting errors
+        
+        response = await call_next(request)
+        
+        # Add rate limit headers to response
+        response.headers["X-RateLimit-Endpoint"] = endpoint_key
+        response.headers["X-RateLimit-Client"] = client_id[:8]  # Truncated for privacy
+        
+        return response
 
 
 class DashboardAPI:
@@ -77,6 +186,15 @@ class DashboardAPI:
 
     def _setup_middleware(self):
         """Setup FastAPI middleware."""
+        # Rate limiting middleware (added first to be applied early)
+        rate_limit_config = self.config.get('rate_limiting', {})
+        if rate_limit_config.get('enabled', True):
+            self.app.add_middleware(
+                MonitoringRateLimitMiddleware,
+                config=rate_limit_config
+            )
+            logger.info("✅ Monitoring rate limiting enabled")
+        
         # CORS middleware for cross-origin requests
         cors_config = self.config.get('cors', {})
         self.app.add_middleware(
@@ -135,6 +253,11 @@ class DashboardAPI:
         async def get_websocket_connections():
             """Get active WebSocket connection count."""
             return {"active_connections": len(self.websocket_connections)}
+
+        @self.app.get("/api/dashboard/rate-limit-status")
+        async def get_rate_limit_status(request: Request):
+            """Get rate limit status for debugging."""
+            return await self._get_rate_limit_status(request)
 
     async def _handle_websocket_connection(self, websocket: WebSocket):
         """Handle WebSocket connection for real-time dashboard updates."""
@@ -334,6 +457,52 @@ class DashboardAPI:
             return {
                 "success": False,
                 "healthy": False,
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+    async def _get_rate_limit_status(self, request: Request) -> Dict[str, Any]:
+        """Get rate limit status for the requesting client."""
+        try:
+            # Extract client information
+            client_info = {
+                "remote_addr": request.client.host if request.client else "unknown",
+                "user_agent": request.headers.get("user-agent", ""),
+                "client_id": request.headers.get("x-client-id", "")
+            }
+            
+            rate_limiter = get_rate_limiter()
+            client_id = rate_limiter.get_client_id(client_info)
+            
+            # Get status for all monitoring endpoints
+            endpoint_statuses = {}
+            for endpoint_path in ["/api/dashboard", "/api/dashboard/ascii", "/api/dashboard/system",
+                                "/api/dashboard/services", "/api/dashboard/security", 
+                                "/api/dashboard/refresh", "/api/dashboard/health",
+                                "/api/dashboard/connections"]:
+                endpoint_key = f"monitoring{endpoint_path.replace('/api/dashboard', '')}"
+                if not endpoint_key.replace("monitoring", ""):
+                    endpoint_key = "monitoring"
+                
+                if endpoint_key in rate_limiter.endpoint_limits:
+                    status = rate_limiter.get_rate_limit_info(endpoint_key, client_id)
+                    endpoint_statuses[endpoint_path] = status
+            
+            return {
+                "success": True,
+                "client_id": client_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "endpoint_statuses": endpoint_statuses,
+                "rate_limiting": {
+                    "enabled": True,
+                    "global_burst_protection": True
+                }
+            }
+        
+        except Exception as e:
+            logger.error(f"Failed to get rate limit status: {e}")
+            return {
+                "success": False,
                 "error": str(e),
                 "timestamp": datetime.utcnow().isoformat()
             }

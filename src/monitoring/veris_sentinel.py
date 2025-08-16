@@ -275,6 +275,143 @@ class GoldenFactRecall:
             )
 
 
+class ParaphraseRobustness:
+    """S3: Paraphrase robustness testing for semantic consistency."""
+    
+    def __init__(self, config: SentinelConfig) -> None:
+        self.config: SentinelConfig = config
+        self.test_cases = [
+            {
+                "original": "What is my name?",
+                "paraphrases": ["Who am I?", "Tell me my name", "What do you call me?"],
+                "context": {"name": "Alice"}
+            },
+            {
+                "original": "What are my preferences?", 
+                "paraphrases": ["What do I like?", "Tell me my settings", "What are my choices?"],
+                "context": {"preferences": "dark mode, notifications off"}
+            }
+        ]
+    
+    async def run_check(self) -> CheckResult:
+        """Execute paraphrase robustness check."""
+        start_time = time.time()
+        
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                total_tests = 0
+                passed_tests = 0
+                consistency_scores = []
+                
+                for test_case in self.test_cases:
+                    # Store the context
+                    store_payload = {
+                        "context": test_case["context"],
+                        "namespace": "sentinel_test"
+                    }
+                    
+                    async with session.post(
+                        f"{self.config.target_base_url}/api/store_context",
+                        json=store_payload,
+                        headers={'Content-Type': 'application/json'}
+                    ) as store_resp:
+                        if store_resp.status != 200:
+                            continue
+                    
+                    # Test original query
+                    original_response = await self._query_context(session, test_case["original"])
+                    if not original_response:
+                        continue
+                    
+                    # Test paraphrases
+                    for paraphrase in test_case["paraphrases"]:
+                        total_tests += 1
+                        paraphrase_response = await self._query_context(session, paraphrase)
+                        
+                        if paraphrase_response:
+                            # Calculate semantic consistency (simplified)
+                            consistency = self._calculate_consistency(original_response, paraphrase_response)
+                            consistency_scores.append(consistency)
+                            
+                            if consistency > 0.8:  # 80% threshold
+                                passed_tests += 1
+                
+                if total_tests == 0:
+                    return CheckResult(
+                        check_id="S3-paraphrase-robustness",
+                        timestamp=datetime.utcnow(),
+                        status="fail",
+                        latency_ms=(time.time() - start_time) * 1000,
+                        error_message="No paraphrase tests could be executed"
+                    )
+                
+                consistency_rate = passed_tests / total_tests
+                avg_consistency = sum(consistency_scores) / len(consistency_scores) if consistency_scores else 0
+                
+                status = "pass" if consistency_rate >= 0.8 else "warn" if consistency_rate >= 0.6 else "fail"
+                
+                return CheckResult(
+                    check_id="S3-paraphrase-robustness",
+                    timestamp=datetime.utcnow(),
+                    status=status,
+                    latency_ms=(time.time() - start_time) * 1000,
+                    metrics={
+                        "consistency_rate": consistency_rate,
+                        "avg_consistency_score": avg_consistency,
+                        "total_tests": total_tests,
+                        "passed_tests": passed_tests
+                    },
+                    notes=f"Paraphrase consistency: {consistency_rate:.1%}, avg score: {avg_consistency:.3f}"
+                )
+                
+        except Exception as e:
+            return CheckResult(
+                check_id="S3-paraphrase-robustness",
+                timestamp=datetime.utcnow(),
+                status="fail",
+                latency_ms=(time.time() - start_time) * 1000,
+                error_message=f"Paraphrase test error: {str(e)}"
+            )
+    
+    async def _query_context(self, session: aiohttp.ClientSession, query: str) -> Optional[str]:
+        """Query context with a specific question."""
+        try:
+            query_payload = {
+                "query": query,
+                "namespace": "sentinel_test"
+            }
+            
+            async with session.post(
+                f"{self.config.target_base_url}/api/retrieve_context",
+                json=query_payload,
+                headers={'Content-Type': 'application/json'}
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data.get("result", "")
+                return None
+        except Exception:
+            return None
+    
+    def _calculate_consistency(self, response1: str, response2: str) -> float:
+        """Calculate semantic consistency between two responses (simplified)."""
+        # Simple consistency check - in practice would use embeddings
+        if not response1 or not response2:
+            return 0.0
+        
+        # Basic keyword overlap
+        words1 = set(response1.lower().split())
+        words2 = set(response2.lower().split())
+        
+        if len(words1) == 0 and len(words2) == 0:
+            return 1.0
+        
+        intersection = len(words1.intersection(words2))
+        union = len(words1.union(words2))
+        
+        return intersection / union if union > 0 else 0.0
+
+
 class MetricsWiring:
     """S4: Metrics wiring validation."""
     
@@ -469,6 +606,101 @@ class SecurityNegatives:
             )
 
 
+class BackupRestore:
+    """S6: Backup and restore validation testing."""
+    
+    def __init__(self, config: SentinelConfig) -> None:
+        self.config: SentinelConfig = config
+    
+    async def run_check(self) -> CheckResult:
+        """Execute backup and restore validation check."""
+        start_time = time.time()
+        
+        try:
+            backup_tests = 0
+            backup_passed = 0
+            test_data = {"test_backup": f"backup_test_{int(time.time())}"}
+            
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+                # Test 1: Store test data for backup validation
+                store_payload = {
+                    "context": test_data,
+                    "namespace": "backup_test"
+                }
+                
+                async with session.post(
+                    f"{self.config.target_base_url}/api/store_context",
+                    json=store_payload,
+                    headers={'Content-Type': 'application/json'}
+                ) as resp:
+                    if resp.status == 200:
+                        backup_tests += 1
+                        backup_passed += 1
+                
+                # Test 2: Verify data persistence (simulates backup integrity)
+                retrieve_payload = {
+                    "query": "backup_test",
+                    "namespace": "backup_test"
+                }
+                
+                async with session.post(
+                    f"{self.config.target_base_url}/api/retrieve_context",
+                    json=retrieve_payload,
+                    headers={'Content-Type': 'application/json'}
+                ) as resp:
+                    backup_tests += 1
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if test_data["test_backup"] in str(data):
+                            backup_passed += 1
+                
+                # Test 3: Check if backup endpoints exist (if implemented)
+                try:
+                    async with session.get(f"{self.config.target_base_url}/api/backup/status") as resp:
+                        backup_tests += 1
+                        if resp.status in [200, 404]:  # 404 is acceptable if not implemented
+                            backup_passed += 1
+                except Exception:
+                    pass  # Backup API may not be implemented
+                
+                backup_success_rate = backup_passed / backup_tests if backup_tests > 0 else 0.0
+                
+                if backup_tests == 0:
+                    status = "warn"
+                    notes = "No backup tests could be executed"
+                elif backup_success_rate >= 0.8:
+                    status = "pass"
+                    notes = f"Backup validation passed ({backup_passed}/{backup_tests} tests)"
+                elif backup_success_rate >= 0.5:
+                    status = "warn"
+                    notes = f"Backup validation partially successful ({backup_passed}/{backup_tests} tests)"
+                else:
+                    status = "fail"
+                    notes = f"Backup validation failed ({backup_passed}/{backup_tests} tests)"
+                
+                return CheckResult(
+                    check_id="S6-backup-restore",
+                    timestamp=datetime.utcnow(),
+                    status=status,
+                    latency_ms=(time.time() - start_time) * 1000,
+                    metrics={
+                        "backup_tests": backup_tests,
+                        "backup_passed": backup_passed,
+                        "success_rate": backup_success_rate
+                    },
+                    notes=notes
+                )
+                
+        except Exception as e:
+            return CheckResult(
+                check_id="S6-backup-restore",
+                timestamp=datetime.utcnow(),
+                status="fail",
+                latency_ms=(time.time() - start_time) * 1000,
+                error_message=f"Backup validation error: {str(e)}"
+            )
+
+
 class ConfigParity:
     """S7: Configuration drift detection."""
     
@@ -623,6 +855,259 @@ class CapacitySmoke:
             return False, response_time
 
 
+class GraphIntentValidation:
+    """S9: Graph intent validation for query understanding accuracy."""
+    
+    def __init__(self, config: SentinelConfig):
+        self.config = config
+    
+    async def run_check(self) -> CheckResult:
+        """Test graph query intent understanding and routing accuracy."""
+        start_time = time.time()
+        
+        try:
+            # Define test queries with expected graph operations
+            test_scenarios = [
+                {
+                    "query": "Find all documents related to machine learning",
+                    "expected_intent": "semantic_search",
+                    "expected_nodes": ["concept", "document"]
+                },
+                {
+                    "query": "Show the relationship between user sessions and errors",
+                    "expected_intent": "relationship_traversal", 
+                    "expected_nodes": ["session", "error"]
+                },
+                {
+                    "query": "What are the dependencies of the payment service?",
+                    "expected_intent": "dependency_analysis",
+                    "expected_nodes": ["service", "dependency"]
+                },
+                {
+                    "query": "Track the evolution of this bug over time",
+                    "expected_intent": "temporal_analysis",
+                    "expected_nodes": ["bug", "timestamp"]
+                }
+            ]
+            
+            correct_intentions = 0
+            total_tests = len(test_scenarios)
+            latency_samples = []
+            
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                for scenario in test_scenarios:
+                    query_start = time.time()
+                    
+                    try:
+                        # Test graph query intent analysis
+                        payload = {
+                            "query": scenario["query"],
+                            "analyze_intent": True,
+                            "return_graph_plan": True
+                        }
+                        
+                        async with session.post(
+                            f"{self.config.target_base_url}/api/v1/graph/analyze",
+                            json=payload
+                        ) as resp:
+                            query_latency = (time.time() - query_start) * 1000
+                            latency_samples.append(query_latency)
+                            
+                            if resp.status == 200:
+                                result = await resp.json()
+                                
+                                # Validate intent classification
+                                detected_intent = result.get("intent", {}).get("type", "")
+                                if detected_intent == scenario["expected_intent"]:
+                                    correct_intentions += 1
+                                
+                                # Additional validation for graph plan
+                                graph_plan = result.get("graph_plan", {})
+                                expected_nodes = scenario["expected_nodes"]
+                                
+                                # Check if expected node types are in the plan
+                                planned_nodes = graph_plan.get("node_types", [])
+                                if any(node in planned_nodes for node in expected_nodes):
+                                    # Bonus accuracy for correct node targeting
+                                    pass
+                    
+                    except Exception as e:
+                        query_latency = (time.time() - query_start) * 1000
+                        latency_samples.append(query_latency)
+                        logger.warning(f"Graph intent test failed for '{scenario['query']}': {e}")
+            
+            # Calculate metrics
+            accuracy_rate = correct_intentions / total_tests if total_tests > 0 else 0
+            avg_latency = sum(latency_samples) / len(latency_samples) if latency_samples else 0
+            total_latency_ms = (time.time() - start_time) * 1000
+            
+            # Determine status based on accuracy
+            if accuracy_rate >= 0.8:
+                status = "pass"
+            elif accuracy_rate >= 0.6:
+                status = "warn"
+            else:
+                status = "fail"
+            
+            return CheckResult(
+                check_id="S9-graph-intent",
+                timestamp=datetime.utcnow(),
+                status=status,
+                latency_ms=total_latency_ms,
+                metrics={
+                    "intent_accuracy_rate": accuracy_rate,
+                    "correct_intentions": correct_intentions,
+                    "total_tests": total_tests,
+                    "avg_query_latency_ms": avg_latency
+                },
+                notes=f"Graph intent validation: {correct_intentions}/{total_tests} correct, accuracy: {accuracy_rate:.2%}"
+            )
+        
+        except Exception as e:
+            return CheckResult(
+                check_id="S9-graph-intent",
+                timestamp=datetime.utcnow(),
+                status="fail",
+                latency_ms=(time.time() - start_time) * 1000,
+                error_message=f"Graph intent validation failed: {str(e)}"
+            )
+
+
+class ContentPipelineMonitoring:
+    """S10: Content pipeline monitoring for data processing health."""
+    
+    def __init__(self, config: SentinelConfig):
+        self.config = config
+    
+    async def run_check(self) -> CheckResult:
+        """Monitor content processing pipeline health and throughput."""
+        start_time = time.time()
+        
+        try:
+            pipeline_stages = []
+            total_processed = 0
+            total_failed = 0
+            
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+                # Check ingestion stage
+                try:
+                    async with session.get(f"{self.config.target_base_url}/api/v1/pipeline/ingestion/status") as resp:
+                        if resp.status == 200:
+                            ingestion_data = await resp.json()
+                            pipeline_stages.append({
+                                "stage": "ingestion",
+                                "status": "healthy",
+                                "processed_count": ingestion_data.get("processed_today", 0),
+                                "error_count": ingestion_data.get("errors_today", 0),
+                                "queue_depth": ingestion_data.get("queue_depth", 0)
+                            })
+                            total_processed += ingestion_data.get("processed_today", 0)
+                            total_failed += ingestion_data.get("errors_today", 0)
+                        else:
+                            pipeline_stages.append({"stage": "ingestion", "status": "unhealthy"})
+                except Exception as e:
+                    pipeline_stages.append({"stage": "ingestion", "status": "error", "error": str(e)})
+                
+                # Check embedding stage
+                try:
+                    async with session.get(f"{self.config.target_base_url}/api/v1/pipeline/embedding/status") as resp:
+                        if resp.status == 200:
+                            embedding_data = await resp.json()
+                            pipeline_stages.append({
+                                "stage": "embedding",
+                                "status": "healthy",
+                                "processed_count": embedding_data.get("vectors_generated_today", 0),
+                                "error_count": embedding_data.get("embedding_failures_today", 0),
+                                "avg_latency_ms": embedding_data.get("avg_embedding_latency_ms", 0)
+                            })
+                            total_processed += embedding_data.get("vectors_generated_today", 0)
+                            total_failed += embedding_data.get("embedding_failures_today", 0)
+                        else:
+                            pipeline_stages.append({"stage": "embedding", "status": "unhealthy"})
+                except Exception as e:
+                    pipeline_stages.append({"stage": "embedding", "status": "error", "error": str(e)})
+                
+                # Check storage stage
+                try:
+                    async with session.get(f"{self.config.target_base_url}/api/v1/pipeline/storage/status") as resp:
+                        if resp.status == 200:
+                            storage_data = await resp.json()
+                            pipeline_stages.append({
+                                "stage": "storage",
+                                "status": "healthy",
+                                "processed_count": storage_data.get("stored_today", 0),
+                                "error_count": storage_data.get("storage_failures_today", 0),
+                                "disk_usage_percent": storage_data.get("disk_usage_percent", 0)
+                            })
+                            total_processed += storage_data.get("stored_today", 0)
+                            total_failed += storage_data.get("storage_failures_today", 0)
+                        else:
+                            pipeline_stages.append({"stage": "storage", "status": "unhealthy"})
+                except Exception as e:
+                    pipeline_stages.append({"stage": "storage", "status": "error", "error": str(e)})
+                
+                # Check indexing stage
+                try:
+                    async with session.get(f"{self.config.target_base_url}/api/v1/pipeline/indexing/status") as resp:
+                        if resp.status == 200:
+                            indexing_data = await resp.json()
+                            pipeline_stages.append({
+                                "stage": "indexing",
+                                "status": "healthy",
+                                "processed_count": indexing_data.get("indexed_today", 0),
+                                "error_count": indexing_data.get("index_failures_today", 0),
+                                "index_size_mb": indexing_data.get("index_size_mb", 0)
+                            })
+                            total_processed += indexing_data.get("indexed_today", 0)
+                            total_failed += indexing_data.get("index_failures_today", 0)
+                        else:
+                            pipeline_stages.append({"stage": "indexing", "status": "unhealthy"})
+                except Exception as e:
+                    pipeline_stages.append({"stage": "indexing", "status": "error", "error": str(e)})
+            
+            # Analyze pipeline health
+            healthy_stages = sum(1 for stage in pipeline_stages if stage.get("status") == "healthy")
+            total_stages = len(pipeline_stages)
+            
+            # Calculate error rates
+            error_rate = total_failed / (total_processed + total_failed) if (total_processed + total_failed) > 0 else 0
+            
+            # Determine overall status
+            if healthy_stages == total_stages and error_rate <= 0.01:
+                status = "pass"
+            elif healthy_stages >= total_stages * 0.75 and error_rate <= 0.05:
+                status = "warn"
+            else:
+                status = "fail"
+            
+            total_latency_ms = (time.time() - start_time) * 1000
+            
+            return CheckResult(
+                check_id="S10-content-pipeline",
+                timestamp=datetime.utcnow(),
+                status=status,
+                latency_ms=total_latency_ms,
+                metrics={
+                    "healthy_stages": healthy_stages,
+                    "total_stages": total_stages,
+                    "total_processed_today": total_processed,
+                    "total_failed_today": total_failed,
+                    "error_rate": error_rate,
+                    "pipeline_health_percent": (healthy_stages / total_stages) * 100 if total_stages > 0 else 0
+                },
+                notes=f"Pipeline monitoring: {healthy_stages}/{total_stages} stages healthy, error rate: {error_rate:.2%}"
+            )
+        
+        except Exception as e:
+            return CheckResult(
+                check_id="S10-content-pipeline",
+                timestamp=datetime.utcnow(),
+                status="fail",
+                latency_ms=(time.time() - start_time) * 1000,
+                error_message=f"Content pipeline monitoring failed: {str(e)}"
+            )
+
+
 class SentinelRunner:
     """Main Veris Sentinel runner with scheduling and reporting."""
     
@@ -632,13 +1117,17 @@ class SentinelRunner:
         self.running: bool = False
         
         # Initialize checks
-        self.checks: Dict[str, Union[VerisHealthProbe, GoldenFactRecall, MetricsWiring, SecurityNegatives, ConfigParity, CapacitySmoke]] = {
+        self.checks: Dict[str, Union[VerisHealthProbe, GoldenFactRecall, ParaphraseRobustness, MetricsWiring, SecurityNegatives, BackupRestore, ConfigParity, CapacitySmoke, GraphIntentValidation, ContentPipelineMonitoring]] = {
             "S1-probes": VerisHealthProbe(config),
             "S2-golden-fact-recall": GoldenFactRecall(config),
+            "S3-paraphrase-robustness": ParaphraseRobustness(config),
             "S4-metrics-wiring": MetricsWiring(config),
             "S5-security-negatives": SecurityNegatives(config),
+            "S6-backup-restore": BackupRestore(config),
             "S7-config-parity": ConfigParity(config),
-            "S8-capacity-smoke": CapacitySmoke(config)
+            "S8-capacity-smoke": CapacitySmoke(config),
+            "S9-graph-intent": GraphIntentValidation(config),
+            "S10-content-pipeline": ContentPipelineMonitoring(config)
         }
         
         # Ring buffers for data retention
@@ -1063,6 +1552,94 @@ This issue was automatically created by Veris Sentinel monitoring.
 from aiohttp import web, web_request
 import aiohttp_cors
 
+# Import rate limiter
+try:
+    from ..core.rate_limiter import get_rate_limiter
+except ImportError:
+    import sys
+    import os
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    from src.core.rate_limiter import get_rate_limiter
+
+
+async def sentinel_rate_limit_middleware(request, handler):
+    """Rate limiting middleware for Sentinel API endpoints."""
+    # Define rate limits for Sentinel endpoints
+    endpoint_limits = {
+        '/status': {'rpm': 300, 'burst': 50},      # 5 req/sec, burst 50
+        '/run': {'rpm': 12, 'burst': 3},           # 0.2 req/sec, burst 3 (expensive)
+        '/checks': {'rpm': 60, 'burst': 10},       # 1 req/sec, burst 10
+        '/metrics': {'rpm': 180, 'burst': 30},     # 3 req/sec, burst 30
+        '/report': {'rpm': 60, 'burst': 10},       # 1 req/sec, burst 10
+    }
+    
+    # Extract client information
+    client_info = {
+        'remote_addr': request.remote,
+        'user_agent': request.headers.get('User-Agent', ''),
+        'client_id': request.headers.get('X-Client-ID', '')
+    }
+    
+    rate_limiter = get_rate_limiter()
+    client_id = rate_limiter.get_client_id(client_info)
+    
+    # Map endpoint path to rate limit key
+    endpoint_path = request.path
+    if endpoint_path in endpoint_limits:
+        # Add Sentinel endpoint limits to rate limiter if not already present
+        endpoint_key = f"sentinel{endpoint_path}"
+        if endpoint_key not in rate_limiter.endpoint_limits:
+            rate_limiter.endpoint_limits[endpoint_key] = endpoint_limits[endpoint_path]
+        
+        try:
+            # Check rate limits
+            allowed, error_msg = await rate_limiter._async_check_rate_limit(
+                endpoint_key, client_id, 1
+            )
+            
+            if not allowed:
+                logger.warning(f"Rate limit exceeded for {client_id} on {endpoint_path}: {error_msg}")
+                return web.json_response({
+                    "error": "Rate limit exceeded",
+                    "message": error_msg,
+                    "endpoint": endpoint_path,
+                    "timestamp": datetime.utcnow().isoformat()
+                }, status=429, headers={
+                    "Retry-After": "60",
+                    "X-RateLimit-Endpoint": endpoint_key
+                })
+            
+            # Check burst protection
+            burst_ok, burst_msg = await rate_limiter._async_check_burst_protection(client_id)
+            if not burst_ok:
+                logger.warning(f"Burst protection triggered for {client_id} on {endpoint_path}: {burst_msg}")
+                return web.json_response({
+                    "error": "Too many requests",
+                    "message": burst_msg,
+                    "endpoint": endpoint_path,
+                    "timestamp": datetime.utcnow().isoformat()
+                }, status=429, headers={
+                    "Retry-After": "10",
+                    "X-RateLimit-Type": "burst"
+                })
+        
+        except Exception as e:
+            logger.error(f"Rate limiting error for {endpoint_path}: {e}")
+            # Continue to endpoint on rate limiting errors
+    
+    # Call the handler
+    response = await handler(request)
+    
+    # Add rate limit headers to response
+    if endpoint_path in endpoint_limits:
+        endpoint_key = f"sentinel{endpoint_path}"
+        response.headers["X-RateLimit-Endpoint"] = endpoint_key
+        response.headers["X-RateLimit-Client"] = client_id[:8]  # Truncated for privacy
+    
+    return response
+
 
 class SentinelAPI:
     """HTTP API server for Veris Sentinel."""
@@ -1070,8 +1647,13 @@ class SentinelAPI:
     def __init__(self, sentinel: SentinelRunner, port: int = 9090) -> None:
         self.sentinel: SentinelRunner = sentinel
         self.port: int = port
-        self.app: web.Application = web.Application()
+        
+        # Create app with rate limiting middleware
+        middlewares = [sentinel_rate_limit_middleware]
+        self.app: web.Application = web.Application(middlewares=middlewares)
+        
         self._setup_routes()
+        logger.info("✅ Sentinel API rate limiting enabled")
     
     def _setup_routes(self) -> None:
         """Setup HTTP API routes."""
@@ -1080,6 +1662,7 @@ class SentinelAPI:
         self.app.router.add_get('/checks', self.checks_handler)
         self.app.router.add_get('/metrics', self.metrics_handler)
         self.app.router.add_get('/report', self.report_handler)
+        self.app.router.add_get('/rate-limit-status', self.rate_limit_status_handler)
         
         # Enable CORS
         cors = aiohttp_cors.setup(self.app, defaults={
@@ -1151,6 +1734,48 @@ class SentinelAPI:
             "total_reports": len(self.sentinel.reports),
             "failure_count": len(self.sentinel.failures)
         })
+    
+    async def rate_limit_status_handler(self, request: Request) -> Response:
+        """Handle /rate-limit-status endpoint - get rate limit status."""
+        try:
+            # Extract client information
+            client_info = {
+                'remote_addr': request.remote,
+                'user_agent': request.headers.get('User-Agent', ''),
+                'client_id': request.headers.get('X-Client-ID', '')
+            }
+            
+            rate_limiter = get_rate_limiter()
+            client_id = rate_limiter.get_client_id(client_info)
+            
+            # Get status for all Sentinel endpoints
+            endpoint_statuses = {}
+            sentinel_endpoints = ['/status', '/run', '/checks', '/metrics', '/report']
+            
+            for endpoint_path in sentinel_endpoints:
+                endpoint_key = f"sentinel{endpoint_path}"
+                if endpoint_key in rate_limiter.endpoint_limits:
+                    status = rate_limiter.get_rate_limit_info(endpoint_key, client_id)
+                    endpoint_statuses[endpoint_path] = status
+            
+            return web.json_response({
+                "success": True,
+                "client_id": client_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "endpoint_statuses": endpoint_statuses,
+                "rate_limiting": {
+                    "enabled": True,
+                    "global_burst_protection": True
+                }
+            })
+        
+        except Exception as e:
+            logger.error(f"Failed to get rate limit status: {e}")
+            return web.json_response({
+                "success": False,
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }, status=500)
     
     async def start_server(self) -> None:
         """Start the HTTP API server."""

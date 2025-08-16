@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock, AsyncMock, patch
 from typing import Dict, Any, List
 
-from src.monitoring.dashboard import Dashboard
+from src.monitoring.dashboard import UnifiedDashboard
 from src.monitoring.request_metrics import RequestMetricsCollector
 
 
@@ -31,7 +31,12 @@ class TestDashboardAnalytics:
             'json': {
                 'enabled': True,
                 'include_trends': True,
-                'include_insights': True
+                'include_insights': True,
+                'pretty_print': True
+            },
+            'ascii': {
+                'enabled': True,
+                'colored': True
             },
             'thresholds': {
                 'error_rate_warning_percent': 1.0,
@@ -40,7 +45,7 @@ class TestDashboardAnalytics:
                 'latency_critical_ms': 500
             }
         }
-        return Dashboard(config)
+        return UnifiedDashboard(config)
     
     @pytest.fixture
     def mock_metrics_collector(self):
@@ -60,7 +65,7 @@ class TestDashboardAnalytics:
             'services': [{'name': 'Redis', 'status': 'healthy'}]
         }
         
-        with patch('src.monitoring.dashboard.get_metrics_collector') as mock_get_collector:
+        with patch('src.monitoring.request_metrics.get_metrics_collector') as mock_get_collector:
             mock_collector = Mock(spec=RequestMetricsCollector)
             mock_collector.get_trending_data.return_value = []
             mock_collector.get_endpoint_stats.return_value = {}
@@ -86,8 +91,8 @@ class TestDashboardAnalytics:
             # Should include analytics
             assert 'analytics' in result
             assert 'trending_data' in result['analytics']
-            assert 'endpoint_stats' in result['analytics']
-            assert 'global_stats' in result['analytics']
+            assert 'endpoint_statistics' in result['analytics']
+            assert 'global_request_stats' in result['analytics']
             
             # Should include insights
             assert 'insights' in result
@@ -114,7 +119,7 @@ class TestDashboardAnalytics:
         base_metrics = {'system': {'cpu_percent': 45.2}}
         
         # Mock import failure
-        with patch('src.monitoring.dashboard.get_metrics_collector', side_effect=ImportError("Module not found")):
+        with patch('src.monitoring.request_metrics.get_metrics_collector', side_effect=ImportError("Module not found")):
             result_json = await dashboard.generate_json_dashboard_with_analytics(
                 metrics=base_metrics,
                 include_trends=True
@@ -133,7 +138,7 @@ class TestDashboardAnalytics:
         with patch.object(dashboard, 'collect_all_metrics') as mock_collect:
             mock_collect.return_value = {'system': {'cpu_percent': 30.0}}
             
-            with patch('src.monitoring.dashboard.get_metrics_collector') as mock_get_collector:
+            with patch('src.monitoring.request_metrics.get_metrics_collector') as mock_get_collector:
                 mock_collector = Mock(spec=RequestMetricsCollector)
                 mock_collector.get_trending_data.return_value = []
                 mock_collector.get_endpoint_stats.return_value = {}
@@ -165,7 +170,7 @@ class TestPerformanceInsights:
                 'latency_critical_ms': 500
             }
         }
-        return Dashboard(config)
+        return UnifiedDashboard(config)
     
     @pytest.mark.asyncio
     async def test_performance_insights_healthy_system(self, dashboard):
@@ -371,7 +376,10 @@ class TestPerformanceInsights:
     async def test_performance_insights_default_thresholds(self):
         """Test performance insights with default thresholds."""
         # Dashboard without explicit thresholds should use defaults
-        dashboard = Dashboard({})
+        dashboard = UnifiedDashboard({
+            'json': {'enabled': True, 'pretty_print': True},
+            'ascii': {'enabled': True, 'colored': True}
+        })
         
         global_stats = {
             'error_rate_percent': 1.5,  # Should trigger warning with default 1%
@@ -442,8 +450,9 @@ class TestAnalyticsIntegration:
     @pytest.fixture
     def dashboard(self):
         """Create a Dashboard for integration testing."""
-        return Dashboard({
-            'json': {'enabled': True, 'include_trends': True},
+        return UnifiedDashboard({
+            'json': {'enabled': True, 'include_trends': True, 'pretty_print': True},
+            'ascii': {'enabled': True, 'colored': True},
             'collection_interval_seconds': 30
         })
     
@@ -452,7 +461,7 @@ class TestAnalyticsIntegration:
         """Test the structure of analytics data in JSON output."""
         base_metrics = {'system': {'cpu_percent': 45.0}}
         
-        with patch('src.monitoring.dashboard.get_metrics_collector') as mock_get_collector:
+        with patch('src.monitoring.request_metrics.get_metrics_collector') as mock_get_collector:
             mock_collector = Mock(spec=RequestMetricsCollector)
             
             # Mock trending data
@@ -533,7 +542,7 @@ class TestAnalyticsIntegration:
         """Test that analytics failures don't break the dashboard."""
         base_metrics = {'system': {'cpu_percent': 45.0}}
         
-        with patch('src.monitoring.dashboard.get_metrics_collector') as mock_get_collector:
+        with patch('src.monitoring.request_metrics.get_metrics_collector') as mock_get_collector:
             mock_collector = Mock(spec=RequestMetricsCollector)
             
             # Make collector methods fail
@@ -562,7 +571,7 @@ class TestAnalyticsIntegration:
         """Test analytics with different time windows."""
         base_metrics = {'system': {'cpu_percent': 45.0}}
         
-        with patch('src.monitoring.dashboard.get_metrics_collector') as mock_get_collector:
+        with patch('src.monitoring.request_metrics.get_metrics_collector') as mock_get_collector:
             mock_collector = Mock(spec=RequestMetricsCollector)
             mock_collector.get_trending_data.return_value = []
             mock_collector.get_endpoint_stats.return_value = {}

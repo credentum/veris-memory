@@ -262,3 +262,33 @@ def rate_limiter_mock():
     mock_limiter.get_rate_limit_info.return_value = {"status": "ok"}
 
     return mock_limiter
+
+
+@pytest.fixture(autouse=True)
+def clear_prometheus_registry():
+    """Clear Prometheus registry before each test to avoid collisions."""
+    try:
+        from prometheus_client import REGISTRY
+        # Clear the registry before each test
+        collectors = list(REGISTRY._collector_to_names.keys())
+        for collector in collectors:
+            try:
+                REGISTRY.unregister(collector)
+            except KeyError:
+                pass  # Already unregistered
+    except ImportError:
+        pass  # Prometheus not available
+    
+    yield
+    
+    # Clean up after test
+    try:
+        from prometheus_client import REGISTRY
+        collectors = list(REGISTRY._collector_to_names.keys())
+        for collector in collectors:
+            try:
+                REGISTRY.unregister(collector)
+            except KeyError:
+                pass
+    except ImportError:
+        pass

@@ -229,11 +229,15 @@ deploy_monitoring_config() {
             cp .env.production.template .env.production
             
             # Generate secure tokens
+            REDIS_PASS=\$(openssl rand -base64 32)
             NEO4J_PASS=\$(openssl rand -base64 32)
+            JWT_SECRET=\$(openssl rand -base64 48)
             ANALYTICS_TOKEN=\$(openssl rand -base64 48)
             
             # Update the environment file
+            sed -i \"s/your_secure_redis_password_here/\$REDIS_PASS/g\" .env.production
             sed -i \"s/your_secure_neo4j_password_here/\$NEO4J_PASS/g\" .env.production
+            sed -i \"s/your_secure_jwt_secret_key_here/\$JWT_SECRET/g\" .env.production
             sed -i \"s/your_secure_analytics_token_here/\$ANALYTICS_TOKEN/g\" .env.production
             
             echo '✅ Production environment file created with secure tokens'

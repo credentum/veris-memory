@@ -51,31 +51,61 @@ class MCPMetrics:
 
         self.enabled = True
 
-        # Request counters
-        self.request_total = Counter(
-            "mcp_requests_total", "Total number of MCP requests", ["endpoint", "status"]
-        )
+        # Request counters - use custom registry to avoid collisions in tests
+        try:
+            self.request_total = Counter(
+                "mcp_requests_total", "Total number of MCP requests", ["endpoint", "status"]
+            )
+        except ValueError:
+            # Already registered, get existing instance
+            from prometheus_client import REGISTRY
+            for collector in REGISTRY._collector_to_names:
+                if hasattr(collector, '_name') and collector._name == 'mcp_requests_total':
+                    self.request_total = collector
+                    break
 
-        self.request_duration = Histogram(
-            "mcp_request_duration_seconds",
-            "Time spent processing MCP requests",
-            ["endpoint"],
-            buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
-        )
+        try:
+            self.request_duration = Histogram(
+                "mcp_request_duration_seconds",
+                "Time spent processing MCP requests",
+                ["endpoint"],
+                buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+            )
+        except ValueError:
+            # Already registered, get existing instance
+            from prometheus_client import REGISTRY
+            for collector in REGISTRY._collector_to_names:
+                if hasattr(collector, '_name') and collector._name == 'mcp_request_duration_seconds':
+                    self.request_duration = collector
+                    break
 
         # Storage operation metrics
-        self.storage_operations = Counter(
-            "mcp_storage_operations_total",
-            "Total storage operations",
-            ["backend", "operation", "status"],
-        )
+        try:
+            self.storage_operations = Counter(
+                "mcp_storage_operations_total",
+                "Total storage operations",
+                ["backend", "operation", "status"],
+            )
+        except ValueError:
+            from prometheus_client import REGISTRY
+            for collector in REGISTRY._collector_to_names:
+                if hasattr(collector, '_name') and collector._name == 'mcp_storage_operations_total':
+                    self.storage_operations = collector
+                    break
 
-        self.storage_duration = Histogram(
-            "mcp_storage_duration_seconds",
-            "Time spent on storage operations",
-            ["backend", "operation"],
-            buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
-        )
+        try:
+            self.storage_duration = Histogram(
+                "mcp_storage_duration_seconds",
+                "Time spent on storage operations",
+                ["backend", "operation"],
+                buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
+            )
+        except ValueError:
+            from prometheus_client import REGISTRY
+            for collector in REGISTRY._collector_to_names:
+                if hasattr(collector, '_name') and collector._name == 'mcp_storage_duration_seconds':
+                    self.storage_duration = collector
+                    break
 
         # Vector operations
         self.embedding_operations = Counter(
