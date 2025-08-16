@@ -16,22 +16,10 @@ from typing import Dict, List, Optional, Callable
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-# Optional FastAPI imports for environments where it's not available
-try:
-    from fastapi import Request, Response, HTTPException
-    from fastapi.middleware.base import BaseHTTPMiddleware
-    FASTAPI_AVAILABLE = True
-except ImportError:
-    # Create dummy classes for testing environments
-    FASTAPI_AVAILABLE = False
-    class Request:
-        pass
-    class Response:
-        pass
-    class HTTPException(Exception):
-        pass
-    class BaseHTTPMiddleware:
-        pass
+# FastAPI imports - these are required dependencies
+from fastapi import Request, Response, HTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
+FASTAPI_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
 
