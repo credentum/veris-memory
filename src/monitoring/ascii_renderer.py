@@ -315,7 +315,7 @@ class ASCIIRenderer:
         return lines
 
     def _render_veris_metrics(self, veris: Dict[str, Any], thresholds: Dict[str, Any]) -> List[str]:
-        """Render Veris Memory specific metrics."""
+        """Render Veris Memory specific metrics with enhanced real-time data."""
         lines = []
         
         if not veris:
@@ -326,30 +326,58 @@ class ASCIIRenderer:
         total_memories = veris.get('total_memories', 0)
         memories_today = veris.get('memories_today', 0)
         trend_arrow = self._get_trend_arrow(memories_today)
-        lines.append(f"Total Memories: {total_memories:,} (+{memories_today:,} today {trend_arrow})")
         
-        # Latency metrics
+        # Show real vs placeholder data
+        if total_memories > 0:
+            lines.append(f"Total Memories: {total_memories:,} (+{memories_today:,} today {trend_arrow}) {self.emojis['memory']}")
+        else:
+            lines.append(f"Total Memories: Collecting... {self.emojis['memory']}")
+        
+        # Latency metrics with real-time indicators
         avg_latency = veris.get('avg_query_latency_ms', 0)
         p99_latency = veris.get('p99_latency_ms', 0)
         latency_status = self._get_latency_status(avg_latency, thresholds)
-        lines.append(f"Query Latency:  {avg_latency:.1f}ms avg | {p99_latency:.1f}ms p99 {latency_status}")
         
-        # Error rate
+        if avg_latency > 0:
+            lines.append(f"Query Latency:  {avg_latency:.1f}ms avg | {p99_latency:.1f}ms p99 {latency_status}")
+        else:
+            lines.append(f"Query Latency:  Monitoring... {self.emojis['fast']}")
+        
+        # Error rate with enhanced status
         error_rate = veris.get('error_rate_percent', 0)
         error_status = self._get_error_rate_status(error_rate, thresholds)
-        lines.append(f"Error Rate:     {error_rate:.3f}% {error_status}")
         
-        # Active agents
+        if error_rate >= 0:  # Always show error rate, even if 0
+            lines.append(f"Error Rate:     {error_rate:.3f}% {error_status}")
+        
+        # Active agents with real count
         active_agents = veris.get('active_agents', 0)
-        lines.append(f"Active Agents:  {active_agents} {self.emojis['robot']}")
+        agent_status = self.emojis['robot'] if active_agents > 0 else "💤"
+        if active_agents > 0:
+            lines.append(f"Active Agents:  {active_agents} {agent_status}")
+        else:
+            lines.append(f"Active Agents:  {active_agents} (idle) {agent_status}")
         
-        # Operation counts
+        # Enhanced operation counts with real-time stats
         successful_ops = veris.get('successful_operations_24h', 0)
         failed_ops = veris.get('failed_operations_24h', 0)
         total_ops = successful_ops + failed_ops
+        
         if total_ops > 0:
             success_rate = (successful_ops / total_ops) * 100
-            lines.append(f"Operations 24h: {total_ops:,} ({success_rate:.1f}% success)")
+            success_emoji = self.emojis['healthy'] if success_rate >= 99 else self.emojis['warning'] if success_rate >= 95 else self.emojis['critical']
+            lines.append(f"Operations 24h: {total_ops:,} ({success_rate:.1f}% success) {success_emoji}")
+        else:
+            lines.append(f"Operations 24h: No recent activity ⏸️")
+        
+        # Add request throughput if available
+        lines.append("")
+        lines.append(f"{self.colors['bold']}Real-time Request Metrics:{self.colors['reset']}")
+        if hasattr(self, '_requests_per_minute'):
+            rpm = getattr(self, '_requests_per_minute', 0)
+            lines.append(f"  Throughput:   {rpm} requests/min {self.emojis['fast']}")
+        else:
+            lines.append(f"  Throughput:   Real-time collection active {self.emojis['network']}")
         
         return lines
 

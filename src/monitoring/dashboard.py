@@ -592,36 +592,152 @@ class UnifiedDashboard:
         
         return services
 
+    async def _get_qdrant_memory_count(self) -> int:
+        """Get actual memory count from Qdrant collections."""
+        total_vectors = 0
+        
+        if not self.service_clients['qdrant']:
+            return 0
+            
+        try:
+            # Get collections info
+            collections_result = await asyncio.get_event_loop().run_in_executor(
+                None, self.service_clients['qdrant'].get_collections
+            )
+            
+            if hasattr(collections_result, 'collections'):
+                for collection in collections_result.collections:
+                    if hasattr(collection, 'name'):
+                        # Get collection details
+                        try:
+                            collection_info = await asyncio.get_event_loop().run_in_executor(
+                                None, self.service_clients['qdrant'].get_collection, collection.name
+                            )
+                            if hasattr(collection_info, 'vectors_count'):
+                                total_vectors += collection_info.vectors_count or 0
+                        except Exception as e:
+                            logger.debug(f"Error getting collection {collection.name} info: {e}")
+                            
+        except Exception as e:
+            logger.debug(f"Error getting Qdrant memory count: {e}")
+            
+        return total_vectors
+
+    async def _get_active_agent_count(self) -> int:
+        """Get actual active agent count from Redis scratchpad keys."""
+        active_agents = 0
+        
+        if not self.service_clients['redis']:
+            return 0
+            
+        try:
+            # Get scratchpad keys to count unique agents
+            keys = await asyncio.get_event_loop().run_in_executor(
+                None, self.service_clients['redis'].keys, "scratchpad:*"
+            )
+            
+            if keys:
+                # Extract unique agent IDs from keys like "scratchpad:agent_id:key"
+                agent_ids = set()
+                for key in keys:
+                    key_str = key.decode('utf-8') if isinstance(key, bytes) else str(key)
+                    parts = key_str.split(':')
+                    if len(parts) >= 2:
+                        agent_ids.add(parts[1])
+                active_agents = len(agent_ids)
+                
+        except Exception as e:
+            logger.debug(f"Error getting active agent count: {e}")
+            
+        return active_agents
+
+    async def _update_request_metrics(self) -> None:
+        """Update metrics from the global request metrics collector."""
+        try:
+            # Try to import and get request metrics
+            from .request_metrics import get_metrics_collector
+            request_collector = get_metrics_collector()
+            
+            # Get global stats from request collector
+            global_stats = await request_collector.get_global_stats()
+            
+            # Update our metrics collector with real data
+            if global_stats.get('avg_duration_ms'):
+                # Convert back to seconds for consistency
+                self.metrics_collector.record_metric(
+                    "request_duration_avg", 
+                    global_stats['avg_duration_ms'] / 1000
+                )
+            
+            if global_stats.get('p99_duration_ms'):
+                self.metrics_collector.record_metric(
+                    "request_duration_p99", 
+                    global_stats['p99_duration_ms'] / 1000
+                )
+            
+            if global_stats.get('error_rate_percent') is not None:
+                self.metrics_collector.record_metric(
+                    "error_rate_percent", 
+                    global_stats['error_rate_percent']
+                )
+            
+            # Record request counts as operations
+            if global_stats.get('total_requests'):
+                successful_requests = global_stats['total_requests'] - global_stats.get('total_errors', 0)
+                self.metrics_collector.record_metric("successful_operations", successful_requests)
+                self.metrics_collector.record_metric("failed_operations", global_stats.get('total_errors', 0))
+                
+        except Exception as e:
+            logger.debug(f"Could not update request metrics: {e}")
+
     async def _collect_veris_metrics(self) -> VerisMetrics:
-        """Collect Veris Memory specific metrics."""
-        # Get metrics from collectors
-        total_memories = self.metrics_collector.get_metric_value("contexts_stored_total") or 0
+        """Collect real Veris Memory specific metrics from actual storage backends."""
+        # Initialize default values
+        total_memories = 0
+        memories_today = 0
+        avg_latency_ms = 0.0
+        p99_latency_ms = 0.0
+        error_rate_percent = 0.0
+        active_agents = 0
+        successful_ops = 0
+        failed_ops = 0
         
-        # Calculate daily growth
-        memories_today = self.metrics_collector.get_metric_stats("contexts_stored_total", 1440).get("sum", 0)
-        
-        # Get latency metrics
-        latency_stats = self.metrics_collector.get_metric_stats("request_duration", 60)
-        avg_latency_ms = latency_stats.get("avg", 0) * 1000  # Convert to ms
-        p99_latency_ms = latency_stats.get("p99", 0) * 1000
-        
-        # Error rate calculation
-        error_rate = self.metrics_collector.get_metric_value("error_rate") or 0
-        
-        # Active agents (mock for now - would need actual agent tracking)
-        active_agents = len(self.metrics_collector.counters.get("active_sessions", {}))
-        
-        # Operation counts
-        successful_ops = self.metrics_collector.get_metric_stats("successful_operations", 1440).get("sum", 0)
-        failed_ops = self.metrics_collector.get_metric_stats("failed_operations", 1440).get("sum", 0)
+        try:
+            # Get actual memory count from Qdrant collections
+            total_memories = await self._get_qdrant_memory_count()
+            
+            # Get actual active agents from Redis scratchpad keys
+            active_agents = await self._get_active_agent_count()
+            
+            # Get real-time latency and error metrics from request collector
+            await self._update_request_metrics()
+            
+            # Get latency metrics from request metrics collector
+            latency_stats = self.metrics_collector.get_metric_stats("request_duration", 60)
+            avg_latency_ms = latency_stats.get("avg", 0) * 1000 if latency_stats.get("avg") else 0.0
+            p99_latency_ms = latency_stats.get("p99", 0) * 1000 if latency_stats.get("p99") else 0.0
+            
+            # Get error rate from request metrics
+            error_rate_percent = self.metrics_collector.get_metric_value("error_rate_percent") or 0.0
+            
+            # Get operation counts from request metrics
+            successful_ops = self.metrics_collector.get_metric_stats("successful_operations", 1440).get("sum", 0)
+            failed_ops = self.metrics_collector.get_metric_stats("failed_operations", 1440).get("sum", 0)
+            
+            # Calculate daily memory growth (placeholder for now)
+            memories_today = self.metrics_collector.get_metric_stats("memories_stored_today", 1440).get("sum", 0)
+            
+        except Exception as e:
+            logger.error(f"Error collecting Veris metrics: {e}")
+            # Use fallback values on error
 
         return VerisMetrics(
             total_memories=int(total_memories),
             memories_today=int(memories_today),
             avg_query_latency_ms=round(avg_latency_ms, 1),
             p99_latency_ms=round(p99_latency_ms, 1),
-            error_rate_percent=round(error_rate, 3),
-            active_agents=int(active_agents) if active_agents else 0,
+            error_rate_percent=round(error_rate_percent, 3),
+            active_agents=int(active_agents),
             successful_operations_24h=int(successful_ops),
             failed_operations_24h=int(failed_ops)
         )
@@ -666,6 +782,58 @@ class UnifiedDashboard:
         )
 
 
+    async def generate_json_dashboard_with_analytics(self, metrics: Optional[Dict[str, Any]] = None, include_trends: bool = True, minutes: int = 5) -> str:
+        """
+        Generate enhanced JSON format dashboard for agent consumption with analytics.
+        
+        Args:
+            metrics: Pre-collected metrics (optional)
+            include_trends: Include trending data for analytics
+            minutes: Minutes of trending data to include
+            
+        Returns:
+            JSON formatted dashboard string with analytics
+        """
+        if metrics is None:
+            metrics = await self.collect_all_metrics()
+        
+        # Enhanced metrics with analytics
+        enhanced_metrics = dict(metrics)
+        
+        if include_trends and self.config['json'].get('include_trends', True):
+            try:
+                # Get request metrics analytics
+                from .request_metrics import get_metrics_collector
+                request_collector = get_metrics_collector()
+                
+                # Add trending data
+                trending_data = await request_collector.get_trending_data(minutes)
+                endpoint_stats = await request_collector.get_endpoint_stats()
+                global_stats = await request_collector.get_global_stats()
+                
+                enhanced_metrics['analytics'] = {
+                    'trending_data': trending_data,
+                    'endpoint_statistics': endpoint_stats,
+                    'global_request_stats': global_stats,
+                    'analytics_window_minutes': minutes,
+                    'last_analytics_update': datetime.utcnow().isoformat()
+                }
+                
+                # Add performance insights
+                enhanced_metrics['insights'] = await self._generate_performance_insights(global_stats, endpoint_stats)
+                
+            except Exception as e:
+                logger.debug(f"Could not add analytics to JSON dashboard: {e}")
+                enhanced_metrics['analytics'] = {
+                    'error': 'Analytics data unavailable',
+                    'reason': str(e)
+                }
+
+        if self.config['json']['pretty_print']:
+            return json.dumps(enhanced_metrics, indent=2, default=str)
+        else:
+            return json.dumps(enhanced_metrics, default=str)
+
     def generate_json_dashboard(self, metrics: Optional[Dict[str, Any]] = None) -> str:
         """
         Generate JSON format dashboard for agent consumption.
@@ -706,6 +874,101 @@ class UnifiedDashboard:
         
         renderer = ASCIIRenderer(self.config['ascii'])
         return renderer.render_dashboard(metrics, self.config['thresholds'])
+
+    async def _generate_performance_insights(self, global_stats: Dict[str, float], endpoint_stats: Dict[str, Dict[str, float]]) -> Dict[str, Any]:
+        """Generate performance insights for AI agent analysis."""
+        insights = {
+            'performance_status': 'good',
+            'alerts': [],
+            'recommendations': [],
+            'key_metrics': {}
+        }
+        
+        # Analyze global performance
+        error_rate = global_stats.get('error_rate_percent', 0.0)
+        avg_latency = global_stats.get('avg_duration_ms', 0.0)
+        p99_latency = global_stats.get('p99_duration_ms', 0.0)
+        
+        # Performance thresholds from config
+        thresholds = self.config.get('thresholds', {})
+        error_warning = thresholds.get('error_rate_warning_percent', 1.0)
+        error_critical = thresholds.get('error_rate_critical_percent', 5.0)
+        latency_warning = thresholds.get('latency_warning_ms', 100)
+        latency_critical = thresholds.get('latency_critical_ms', 500)
+        
+        # Error rate analysis
+        if error_rate >= error_critical:
+            insights['performance_status'] = 'critical'
+            insights['alerts'].append({
+                'type': 'error_rate_critical',
+                'message': f'Error rate at {error_rate:.2f}% exceeds critical threshold ({error_critical}%)',
+                'severity': 'critical'
+            })
+            insights['recommendations'].append('Investigate failing requests immediately')
+        elif error_rate >= error_warning:
+            insights['performance_status'] = 'warning'
+            insights['alerts'].append({
+                'type': 'error_rate_warning',
+                'message': f'Error rate at {error_rate:.2f}% exceeds warning threshold ({error_warning}%)',
+                'severity': 'warning'
+            })
+        
+        # Latency analysis
+        if p99_latency >= latency_critical:
+            insights['performance_status'] = 'critical'
+            insights['alerts'].append({
+                'type': 'latency_critical',
+                'message': f'P99 latency at {p99_latency:.1f}ms exceeds critical threshold ({latency_critical}ms)',
+                'severity': 'critical'
+            })
+            insights['recommendations'].append('Optimize slow endpoints and database queries')
+        elif avg_latency >= latency_warning:
+            if insights['performance_status'] == 'good':
+                insights['performance_status'] = 'warning'
+            insights['alerts'].append({
+                'type': 'latency_warning',
+                'message': f'Average latency at {avg_latency:.1f}ms exceeds warning threshold ({latency_warning}ms)',
+                'severity': 'warning'
+            })
+        
+        # Endpoint-specific analysis
+        slow_endpoints = []
+        error_endpoints = []
+        
+        for endpoint, stats in endpoint_stats.items():
+            if stats.get('error_rate_percent', 0) > error_warning:
+                error_endpoints.append({
+                    'endpoint': endpoint,
+                    'error_rate': stats['error_rate_percent'],
+                    'request_count': stats.get('request_count', 0)
+                })
+            
+            if stats.get('avg_duration_ms', 0) > latency_warning:
+                slow_endpoints.append({
+                    'endpoint': endpoint,
+                    'avg_latency_ms': stats['avg_duration_ms'],
+                    'p99_latency_ms': stats.get('p99_duration_ms', 0)
+                })
+        
+        if slow_endpoints:
+            insights['slow_endpoints'] = sorted(slow_endpoints, key=lambda x: x['avg_latency_ms'], reverse=True)[:5]
+            insights['recommendations'].append('Focus optimization on slowest endpoints')
+        
+        if error_endpoints:
+            insights['error_endpoints'] = sorted(error_endpoints, key=lambda x: x['error_rate'], reverse=True)[:5]
+            insights['recommendations'].append('Investigate endpoints with highest error rates')
+        
+        # Key metrics summary
+        insights['key_metrics'] = {
+            'requests_per_minute': global_stats.get('requests_per_minute', 0),
+            'error_rate_percent': error_rate,
+            'avg_latency_ms': avg_latency,
+            'p99_latency_ms': p99_latency,
+            'total_requests': global_stats.get('total_requests', 0),
+            'unique_endpoints': len(endpoint_stats)
+        }
+        
+        return insights
 
     def _get_fallback_system_metrics(self) -> SystemMetrics:
         """Get fallback system metrics when psutil is unavailable."""
