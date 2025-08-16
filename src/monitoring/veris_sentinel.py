@@ -18,15 +18,20 @@ Provides continuous monitoring and testing of Veris Memory with:
 import asyncio
 import json
 import logging
+import os
 import time
 import sqlite3
 import random
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Union, AsyncIterator, Callable, Awaitable, AsyncContextManager
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from collections import deque, defaultdict
 import aiohttp
+from aiohttp import web
+from aiohttp.web import Request, Response
+import aiohttp_cors
 import uuid
 
 # Optional imports for external integrations
@@ -77,8 +82,8 @@ class SentinelConfig:
 class VerisHealthProbe:
     """S1: Health probes for live/ready endpoints."""
     
-    def __init__(self, config: SentinelConfig):
-        self.config = config
+    def __init__(self, config: SentinelConfig) -> None:
+        self.config: SentinelConfig = config
         
     async def run_check(self) -> CheckResult:
         """Execute health probe check."""
@@ -166,8 +171,8 @@ class VerisHealthProbe:
 class GoldenFactRecall:
     """S2: Golden fact recall testing with natural questions."""
     
-    def __init__(self, config: SentinelConfig):
-        self.config = config
+    def __init__(self, config: SentinelConfig) -> None:
+        self.config: SentinelConfig = config
         self.test_dataset = [
             {
                 "kv": {"name": "Matt"},
@@ -273,8 +278,8 @@ class GoldenFactRecall:
 class MetricsWiring:
     """S4: Metrics wiring validation."""
     
-    def __init__(self, config: SentinelConfig):
-        self.config = config
+    def __init__(self, config: SentinelConfig) -> None:
+        self.config: SentinelConfig = config
         
     async def run_check(self) -> CheckResult:
         """Execute metrics wiring check."""
@@ -343,8 +348,8 @@ class MetricsWiring:
 class SecurityNegatives:
     """S5: Security RBAC and WAF validation."""
     
-    def __init__(self, config: SentinelConfig):
-        self.config = config
+    def __init__(self, config: SentinelConfig) -> None:
+        self.config: SentinelConfig = config
         
     async def run_check(self) -> CheckResult:
         """Execute security negatives check."""
@@ -467,8 +472,8 @@ class SecurityNegatives:
 class ConfigParity:
     """S7: Configuration drift detection."""
     
-    def __init__(self, config: SentinelConfig):
-        self.config = config
+    def __init__(self, config: SentinelConfig) -> None:
+        self.config: SentinelConfig = config
         
     async def run_check(self) -> CheckResult:
         """Execute configuration parity check."""
@@ -538,8 +543,8 @@ class ConfigParity:
 class CapacitySmoke:
     """S8: Short burst performance testing."""
     
-    def __init__(self, config: SentinelConfig):
-        self.config = config
+    def __init__(self, config: SentinelConfig) -> None:
+        self.config: SentinelConfig = config
         
     async def run_check(self) -> CheckResult:
         """Execute capacity smoke test."""
@@ -621,13 +626,13 @@ class CapacitySmoke:
 class SentinelRunner:
     """Main Veris Sentinel runner with scheduling and reporting."""
     
-    def __init__(self, config: SentinelConfig, db_path: str = "/var/lib/sentinel/sentinel.db"):
-        self.config = config
-        self.db_path = db_path
-        self.running = False
+    def __init__(self, config: SentinelConfig, db_path: str = "/var/lib/sentinel/sentinel.db") -> None:
+        self.config: SentinelConfig = config
+        self.db_path: str = db_path
+        self.running: bool = False
         
         # Initialize checks
-        self.checks = {
+        self.checks: Dict[str, Union[VerisHealthProbe, GoldenFactRecall, MetricsWiring, SecurityNegatives, ConfigParity, CapacitySmoke]] = {
             "S1-probes": VerisHealthProbe(config),
             "S2-golden-fact-recall": GoldenFactRecall(config),
             "S4-metrics-wiring": MetricsWiring(config),
@@ -637,14 +642,164 @@ class SentinelRunner:
         }
         
         # Ring buffers for data retention
-        self.failures = deque(maxlen=200)
-        self.reports = deque(maxlen=50)
-        self.traces = deque(maxlen=500)
+        self.failures: deque = deque(maxlen=200)
+        self.reports: deque = deque(maxlen=50)
+        self.traces: deque = deque(maxlen=500)
+        
+        # External service resilience tracking
+        self.webhook_failures: int = 0
+        self.github_failures: int = 0
+        self.webhook_circuit_open: bool = False
+        self.github_circuit_open: bool = False
+        self.last_webhook_attempt: Optional[datetime] = None
+        self.last_github_attempt: Optional[datetime] = None
         
         # Initialize database
         self._init_database()
     
-    def _init_database(self):
+    def _is_webhook_circuit_open(self) -> bool:
+        """Check if webhook circuit breaker is open."""
+        if not self.webhook_circuit_open:
+            return False
+        
+        # Reset circuit after 5 minutes
+        if (self.last_webhook_attempt and 
+            datetime.utcnow() - self.last_webhook_attempt > timedelta(minutes=5)):
+            logger.info("Resetting webhook circuit breaker")
+            self.webhook_circuit_open = False
+            self.webhook_failures = 0
+            return False
+        
+        return True
+    
+    def _is_github_circuit_open(self) -> bool:
+        """Check if GitHub API circuit breaker is open."""
+        if not self.github_circuit_open:
+            return False
+        
+        # Reset circuit after 10 minutes
+        if (self.last_github_attempt and 
+            datetime.utcnow() - self.last_github_attempt > timedelta(minutes=10)):
+            logger.info("Resetting GitHub API circuit breaker")
+            self.github_circuit_open = False
+            self.github_failures = 0
+            return False
+        
+        return True
+    
+    async def _send_webhook_with_retry(self, alert_data: Dict[str, Any]) -> bool:
+        """Send webhook alert with retry logic and circuit breaker."""
+        if self._is_webhook_circuit_open():
+            logger.debug("Webhook circuit breaker is open, skipping alert")
+            return False
+        
+        max_retries = 3
+        base_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                self.last_webhook_attempt = datetime.utcnow()
+                
+                # Use exponential backoff
+                if attempt > 0:
+                    delay = base_delay * (2 ** (attempt - 1))
+                    logger.debug(f"Webhook retry {attempt} after {delay}s delay")
+                    await asyncio.sleep(delay)
+                
+                # Send webhook (in thread pool to avoid blocking)
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    lambda: requests.post(
+                        self.config.alert_webhook, 
+                        json=alert_data, 
+                        timeout=10,
+                        headers={'Content-Type': 'application/json'}
+                    )
+                )
+                
+                # Success - reset failure count
+                self.webhook_failures = 0
+                logger.debug("Webhook alert sent successfully")
+                return True
+                
+            except requests.exceptions.Timeout:
+                logger.warning(f"Webhook timeout on attempt {attempt + 1}")
+            except requests.exceptions.ConnectionError:
+                logger.warning(f"Webhook connection error on attempt {attempt + 1}")
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Webhook request error on attempt {attempt + 1}: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected webhook error on attempt {attempt + 1}: {e}")
+                break  # Don't retry on unexpected errors
+        
+        # All retries failed
+        self.webhook_failures += 1
+        if self.webhook_failures >= 5:
+            logger.error("Opening webhook circuit breaker after 5 failures")
+            self.webhook_circuit_open = True
+        
+        return False
+    
+    async def _create_github_issue_with_retry(self, issue_data: Dict[str, Any]) -> bool:
+        """Create GitHub issue with retry logic and circuit breaker."""
+        if not self.config.github_repo or self._is_github_circuit_open():
+            return False
+        
+        max_retries = 2
+        base_delay = 2.0
+        
+        for attempt in range(max_retries):
+            try:
+                self.last_github_attempt = datetime.utcnow()
+                
+                if attempt > 0:
+                    delay = base_delay * (2 ** (attempt - 1))
+                    logger.debug(f"GitHub API retry {attempt} after {delay}s delay")
+                    await asyncio.sleep(delay)
+                
+                # Create GitHub issue (in thread pool)
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: requests.post(
+                        f"https://api.github.com/repos/{self.config.github_repo}/issues",
+                        json=issue_data,
+                        timeout=15,
+                        headers={
+                            'Accept': 'application/vnd.github.v3+json',
+                            'Authorization': f'token {os.environ.get("GITHUB_TOKEN", "")}',
+                            'Content-Type': 'application/json'
+                        }
+                    )
+                )
+                
+                if response.status_code == 201:
+                    self.github_failures = 0
+                    logger.info("GitHub issue created successfully")
+                    return True
+                else:
+                    logger.warning(f"GitHub API returned status {response.status_code}")
+                    
+            except requests.exceptions.Timeout:
+                logger.warning(f"GitHub API timeout on attempt {attempt + 1}")
+            except requests.exceptions.ConnectionError:
+                logger.warning(f"GitHub API connection error on attempt {attempt + 1}")
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"GitHub API request error on attempt {attempt + 1}: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected GitHub API error on attempt {attempt + 1}: {e}")
+                break
+        
+        # All retries failed
+        self.github_failures += 1
+        if self.github_failures >= 3:
+            logger.error("Opening GitHub API circuit breaker after 3 failures")
+            self.github_circuit_open = True
+        
+        return False
+    
+    def _init_database(self) -> None:
         """Initialize SQLite database for persistence."""
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         
@@ -761,7 +916,7 @@ class SentinelRunner:
                     f"Check exception: {str(e)}"
                 )
     
-    def _store_cycle_results(self, results: List[CheckResult], cycle_report: Dict[str, Any]):
+    def _store_cycle_results(self, results: List[CheckResult], cycle_report: Dict[str, Any]) -> None:
         """Store cycle results in database."""
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -797,7 +952,7 @@ class SentinelRunner:
         except Exception as e:
             logger.error(f"Failed to store cycle results: {e}")
     
-    async def start_scheduler(self):
+    async def start_scheduler(self) -> None:
         """Start the continuous monitoring scheduler."""
         self.running = True
         logger.info("Starting Veris Sentinel scheduler")
@@ -826,7 +981,7 @@ class SentinelRunner:
                 logger.error(f"Scheduler error: {e}")
                 await asyncio.sleep(30)  # Recovery delay
     
-    async def _handle_failures(self, cycle_report: Dict[str, Any]):
+    async def _handle_failures(self, cycle_report: Dict[str, Any]) -> None:
         """Handle failures with alerting."""
         failed_results = [
             result for result in cycle_report["results"]
@@ -836,27 +991,57 @@ class SentinelRunner:
         for result in failed_results:
             logger.error(f"Check {result['check_id']} failed: {result.get('error_message', 'Unknown error')}")
             
-            # Send webhook alert if configured
+            # Send webhook alert if configured (with resilience)
             if self.config.alert_webhook and REQUESTS_AVAILABLE:
-                try:
-                    alert_data = {
-                        "text": f"🚨 Veris Sentinel Alert: {result['check_id']} failed",
-                        "attachments": [{
-                            "color": "danger",
-                            "fields": [
-                                {"title": "Check", "value": result['check_id'], "short": True},
-                                {"title": "Status", "value": result['status'], "short": True},
-                                {"title": "Error", "value": result.get('error_message', 'Unknown'), "short": False},
-                                {"title": "Latency", "value": f"{result['latency_ms']:.1f}ms", "short": True}
-                            ]
-                        }]
-                    }
-                    
-                    requests.post(self.config.alert_webhook, json=alert_data, timeout=10)
-                except Exception as e:
-                    logger.error(f"Failed to send webhook alert: {e}")
+                alert_data = {
+                    "text": f"🚨 Veris Sentinel Alert: {result['check_id']} failed",
+                    "attachments": [{
+                        "color": "danger",
+                        "fields": [
+                            {"title": "Check", "value": result['check_id'], "short": True},
+                            {"title": "Status", "value": result['status'], "short": True},
+                            {"title": "Error", "value": result.get('error_message', 'Unknown'), "short": False},
+                            {"title": "Latency", "value": f"{result['latency_ms']:.1f}ms", "short": True},
+                            {"title": "Timestamp", "value": datetime.utcnow().isoformat(), "short": True}
+                        ]
+                    }]
+                }
+                
+                webhook_success = await self._send_webhook_with_retry(alert_data)
+                if not webhook_success:
+                    logger.warning(f"Failed to send webhook alert for {result['check_id']} after retries")
+            
+            # Create GitHub issue for critical failures (with resilience)
+            if (result['status'] == 'fail' and 
+                self.config.github_repo and 
+                REQUESTS_AVAILABLE):
+                
+                issue_data = {
+                    "title": f"Veris Sentinel Critical Failure: {result['check_id']}",
+                    "body": f"""
+**Check ID**: {result['check_id']}
+**Status**: {result['status']}
+**Error**: {result.get('error_message', 'Unknown error')}
+**Latency**: {result['latency_ms']:.1f}ms
+**Timestamp**: {datetime.utcnow().isoformat()}
+
+**Cycle Report**:
+- Total Checks: {cycle_report['total_checks']}
+- Failed Checks: {cycle_report['failed_checks']}
+- Cycle Duration: {cycle_report['cycle_duration_ms']:.1f}ms
+
+This issue was automatically created by Veris Sentinel monitoring.
+""",
+                    "labels": ["bug", "monitoring", "sentinel", "critical"]
+                }
+                
+                github_success = await self._create_github_issue_with_retry(issue_data)
+                if github_success:
+                    logger.info(f"Created GitHub issue for critical failure: {result['check_id']}")
+                else:
+                    logger.warning(f"Failed to create GitHub issue for {result['check_id']}")
     
-    def stop(self):
+    def stop(self) -> None:
         """Stop the scheduler."""
         self.running = False
         logger.info("Stopping Veris Sentinel scheduler")
@@ -882,13 +1067,13 @@ import aiohttp_cors
 class SentinelAPI:
     """HTTP API server for Veris Sentinel."""
     
-    def __init__(self, sentinel: SentinelRunner, port: int = 9090):
-        self.sentinel = sentinel
-        self.port = port
-        self.app = web.Application()
+    def __init__(self, sentinel: SentinelRunner, port: int = 9090) -> None:
+        self.sentinel: SentinelRunner = sentinel
+        self.port: int = port
+        self.app: web.Application = web.Application()
         self._setup_routes()
     
-    def _setup_routes(self):
+    def _setup_routes(self) -> None:
         """Setup HTTP API routes."""
         self.app.router.add_get('/status', self.status_handler)
         self.app.router.add_post('/run', self.run_handler)
@@ -909,12 +1094,12 @@ class SentinelAPI:
         for route in list(self.app.router.routes()):
             cors.add(route)
     
-    async def status_handler(self, request: web_request.Request) -> web.Response:
+    async def status_handler(self, request: Request) -> Response:
         """Handle /status endpoint."""
         status = self.sentinel.get_status()
         return web.json_response(status)
     
-    async def run_handler(self, request: web_request.Request) -> web.Response:
+    async def run_handler(self, request: Request) -> Response:
         """Handle /run endpoint - trigger immediate cycle."""
         try:
             cycle_report = await self.sentinel.run_single_cycle()
@@ -928,7 +1113,7 @@ class SentinelAPI:
                 "error": str(e)
             }, status=500)
     
-    async def checks_handler(self, request: web_request.Request) -> web.Response:
+    async def checks_handler(self, request: Request) -> Response:
         """Handle /checks endpoint - list available checks."""
         checks = {
             check_id: {
@@ -939,7 +1124,7 @@ class SentinelAPI:
         }
         return web.json_response({"checks": checks})
     
-    async def metrics_handler(self, request: web_request.Request) -> web.Response:
+    async def metrics_handler(self, request: Request) -> Response:
         """Handle /metrics endpoint - Prometheus-style metrics."""
         # Simple text-based metrics for now
         metrics_text = "# Veris Sentinel Metrics\n"
@@ -956,7 +1141,7 @@ class SentinelAPI:
         
         return web.Response(text=metrics_text, content_type="text/plain")
     
-    async def report_handler(self, request: web_request.Request) -> web.Response:
+    async def report_handler(self, request: Request) -> Response:
         """Handle /report endpoint - JSON report of last N cycles."""
         n = int(request.query.get('n', 10))
         reports = list(self.sentinel.reports)[-n:]
@@ -967,7 +1152,7 @@ class SentinelAPI:
             "failure_count": len(self.sentinel.failures)
         })
     
-    async def start_server(self):
+    async def start_server(self) -> None:
         """Start the HTTP API server."""
         runner = web.AppRunner(self.app)
         await runner.setup()

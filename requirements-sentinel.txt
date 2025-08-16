@@ -1,5 +1,5 @@
 # Veris Sentinel Dependencies
-aiohttp==3.9.1
+aiohttp==3.9.5
 aiohttp-cors==0.7.0
 requests==2.31.0
 asyncio-mqtt==0.16.1

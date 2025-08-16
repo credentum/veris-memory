@@ -59,6 +59,125 @@ check_prerequisites() {
     log "✅ Prerequisites check passed"
 }
 
+# Validate environment variables for security compliance
+validate_environment_variables() {
+    log "🔒 Validating environment variables for security compliance..."
+    
+    # Check for required environment variables
+    local required_vars=(
+        "HETZNER_HOST"
+    )
+    
+    for var in "${required_vars[@]}"; do
+        if [[ -z "${!var:-}" ]]; then
+            error "Required environment variable $var is not set"
+        fi
+    done
+    
+    # Validate HETZNER_HOST format (should be IP or FQDN)
+    if [[ ! "$HETZNER_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$ ]] && [[ ! "$HETZNER_HOST" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        error "HETZNER_HOST must be a valid hostname or IP address"
+    fi
+    
+    # Validate HETZNER_USER if provided
+    if [[ -n "${HETZNER_USER:-}" ]]; then
+        if [[ ! "$HETZNER_USER" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
+            error "HETZNER_USER must be a valid username (alphanumeric, underscore, hyphen)"
+        fi
+        if [[ ${#HETZNER_USER} -gt 32 ]]; then
+            error "HETZNER_USER too long (max 32 characters)"
+        fi
+    fi
+    
+    # Check for potentially insecure environment variables
+    local insecure_patterns=(
+        "password=.*"
+        "token=.*"
+        "secret=.*"
+        "key=.*"
+    )
+    
+    for pattern in "${insecure_patterns[@]}"; do
+        if env | grep -i "$pattern" | grep -v "^_" > /dev/null 2>&1; then
+            warn "Potentially sensitive data found in environment variables"
+            warn "Ensure secrets are properly protected and not logged"
+        fi
+    done
+    
+    log "✅ Environment variable validation passed"
+}
+
+# Validate environment file content on remote host
+validate_remote_environment() {
+    log "🔐 Validating remote environment file security..."
+    
+    ssh "$SSH_TARGET" "
+        cd $REMOTE_DIR
+        
+        if [ -f .env.production ]; then
+            echo 'Validating .env.production file...'
+            
+            # Check file permissions
+            perm=\$(stat -c '%a' .env.production)
+            if [ \"\$perm\" != \"600\" ]; then
+                echo 'ERROR: .env.production has insecure permissions (\$perm). Should be 600.'
+                exit 1
+            fi
+            
+            # Check for placeholder values that weren't replaced
+            if grep -q 'your_secure.*_here' .env.production; then
+                echo 'ERROR: Found unreplaced placeholder values in .env.production'
+                grep 'your_secure.*_here' .env.production
+                exit 1
+            fi
+            
+            # Validate password complexity
+            if grep -q '^NEO4J_PASSWORD=' .env.production; then
+                neo4j_pass=\$(grep '^NEO4J_PASSWORD=' .env.production | cut -d'=' -f2)
+                if [ \${#neo4j_pass} -lt 16 ]; then
+                    echo 'ERROR: NEO4J_PASSWORD too short (minimum 16 characters)'
+                    exit 1
+                fi
+            fi
+            
+            # Validate required variables are present
+            required_vars=(
+                'VERIS_HOST'
+                'REDIS_PASSWORD'
+                'NEO4J_PASSWORD'
+                'JWT_SECRET_KEY'
+            )
+            
+            for var in \"\${required_vars[@]}\"; do
+                if ! grep -q \"^\$var=\" .env.production; then
+                    echo \"ERROR: Required variable \$var not found in .env.production\"
+                    exit 1
+                fi
+                
+                # Check for empty values
+                value=\$(grep \"^\$var=\" .env.production | cut -d'=' -f2)
+                if [ -z \"\$value\" ]; then
+                    echo \"ERROR: Variable \$var has empty value\"
+                    exit 1
+                fi
+            done
+            
+            # Validate JWT secret length
+            jwt_secret=\$(grep '^JWT_SECRET_KEY=' .env.production | cut -d'=' -f2)
+            if [ \${#jwt_secret} -lt 32 ]; then
+                echo 'ERROR: JWT_SECRET_KEY too short (minimum 32 characters)'
+                exit 1
+            fi
+            
+            echo '✅ Environment file validation passed'
+        else
+            echo 'WARNING: .env.production file not found'
+        fi
+    " || error "Environment validation failed on remote host"
+    
+    log "✅ Remote environment validation passed"
+}
+
 # Configure firewall for monitoring
 configure_firewall() {
     log "🔥 Configuring UFW firewall for monitoring endpoints..."
@@ -262,8 +381,10 @@ main() {
     log "Log file: $LOG_FILE"
     
     check_prerequisites
+    validate_environment_variables
     configure_firewall
     deploy_monitoring_config
+    validate_remote_environment
     deploy_services
     validate_deployment
     performance_test
