@@ -433,7 +433,17 @@ async def startup_event() -> None:
         if DASHBOARD_AVAILABLE:
             try:
                 dashboard = UnifiedDashboard()
-                print("✅ Dashboard monitoring initialized")
+                
+                # Set service clients for real health checks
+                dashboard.set_service_clients(
+                    neo4j_client=neo4j_client,
+                    qdrant_client=qdrant_client,
+                    redis_client=simple_redis
+                )
+                
+                # Start background collection loop
+                await dashboard.start_collection_loop()
+                print("✅ Dashboard monitoring initialized with background collection")
             except Exception as e:
                 print(f"⚠️ Dashboard initialization failed: {e}")
                 dashboard = None
@@ -453,6 +463,7 @@ async def shutdown_event() -> None:
     if kv_store:
         kv_store.close()
     if dashboard:
+        await dashboard.stop_collection_loop()
         await dashboard.shutdown()
 
     print("Storage clients and dashboard closed")
@@ -1369,7 +1380,9 @@ async def refresh_dashboard():
 async def dashboard_health():
     """Dashboard API health check."""
     try:
-        dashboard_healthy = dashboard is not None and dashboard.last_update is not None
+        dashboard_healthy = (dashboard is not None and 
+                           dashboard.last_update is not None and
+                           getattr(dashboard, '_collection_running', False))
         websocket_healthy = len(websocket_connections) <= 100  # Max connections
         overall_healthy = dashboard_healthy and websocket_healthy
         
@@ -1380,6 +1393,7 @@ async def dashboard_health():
             "components": {
                 "dashboard": {
                     "healthy": dashboard_healthy,
+                    "collection_running": getattr(dashboard, '_collection_running', False) if dashboard else False,
                     "last_update": dashboard.last_update.isoformat() if dashboard and dashboard.last_update else None
                 },
                 "websockets": {
