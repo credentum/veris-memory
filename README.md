@@ -1,19 +1,4 @@
 # ◎ Veris Memory
-
-[![Version](https://img.shields.io/badge/version-v1.0.0-blue.svg)](version)
-[![Protocol](https://img.shields.io/badge/MCP-1.0-green.svg)](protocol)
-[![Agent](https://img.shields.io/badge/agent_first_schema-purple.svg)](agent)
-
-## 🎯 Quick Coverage Check
-
-```bash
-# GET CODE COVERAGE - ONE COMMAND:
-python coverage.py
-
-# That's it. Results in coverage.json
-# Current coverage: ~25%
-```
-
 > **memory with covenant**
 > Truthful memory for agents. For those who remember.
 
@@ -708,4 +693,3 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 - [agent-context-template](https://github.com/credentum/agent-context-template) - Reference implementation using context-store
 - [MCP Specification](https://github.com/modelcontextprotocol/specification) - Model Context Protocol documentationtrigger CI
-# Test workflow deployment Tue Aug 12 22:23:37 UTC 2025
