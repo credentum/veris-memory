@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
@@ -48,6 +49,8 @@ try:
     from src.storage.graph_fact_store import GraphFactStore
     from src.storage.hybrid_scorer import HybridScorer, ScoringMode
     from src.core.graph_query_expander import GraphQueryExpander
+    # Metrics collection import
+    from src.monitoring.request_metrics import get_metrics_collector
 except ImportError:
     # Fallback for different import contexts
     import sys
@@ -73,6 +76,8 @@ except ImportError:
     from storage.fact_ranker import FactAwareRanker
     from core.query_rewriter import FactQueryRewriter
     from middleware.scope_validator import ScopeValidator, ScopeMiddleware
+    # Metrics collection import
+    from monitoring.request_metrics import get_metrics_collector
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -86,6 +91,9 @@ neo4j_client = None
 qdrant_client = None
 kv_store = None
 embedding_generator = None
+
+# Global metrics collector instance
+metrics_collector = None
 
 # Global fact system instances
 fact_store = None
@@ -120,9 +128,14 @@ except ImportError as e:
 
 async def initialize_storage_clients() -> Dict[str, Any]:
     """Initialize storage clients with SSL/TLS support."""
-    global neo4j_client, qdrant_client, kv_store, embedding_generator, fact_store, scope_middleware
+    global neo4j_client, qdrant_client, kv_store, embedding_generator, fact_store, scope_middleware, metrics_collector
 
     try:
+        # Initialize metrics collector
+        metrics_collector = get_metrics_collector()
+        await metrics_collector.start_queue_processor()
+        logger.info("✅ Metrics collector initialized")
+        
         # Validate configuration
         config_result = validate_all_configs()
         base_config = config_result.get("config", {})
@@ -800,65 +813,68 @@ async def list_tools() -> List[Tool]:
 async def call_tool(
     name: str, arguments: Dict[str, Any]
 ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
-    """Handle tool calls."""
-    if name == "store_context":
-        result = await store_context_tool(arguments)
+    """Handle tool calls with metrics tracking."""
+    start_time = time.time()
+    status_code = 200
+    error_msg = None
+    
+    try:
+        if name == "store_context":
+            result = await store_context_tool(arguments)
+        elif name == "retrieve_context":
+            result = await retrieve_context_tool(arguments)
+        elif name == "query_graph":
+            result = await query_graph_tool(arguments)
+        elif name == "update_scratchpad":
+            result = await update_scratchpad_tool(arguments)
+        elif name == "get_agent_state":
+            result = await get_agent_state_tool(arguments)
+        elif name == "detect_communities":
+            result = await detect_communities_tool(arguments)
+        elif name == "select_tools":
+            result = await select_tools_tool(arguments)
+        elif name == "list_available_tools":
+            result = await list_available_tools_tool(arguments)
+        elif name == "get_tool_info":
+            result = await get_tool_info_tool(arguments)
+        elif name == "store_fact":
+            result = await store_fact_tool(arguments)
+        elif name == "retrieve_fact":
+            result = await retrieve_fact_tool(arguments)
+        elif name == "list_user_facts":
+            result = await list_user_facts_tool(arguments)
+        elif name == "delete_user_facts":
+            result = await delete_user_facts_tool(arguments)
+        elif name == "classify_intent":
+            result = await classify_intent_tool(arguments)
+        else:
+            status_code = 404
+            error_msg = f"Unknown tool: {name}"
+            raise ValueError(error_msg)
+        
+        # Check if the result indicates failure
+        if isinstance(result, dict) and not result.get("success", True):
+            status_code = 400
+            error_msg = result.get("error", "Tool execution failed")
+        
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "retrieve_context":
-        result = await retrieve_context_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "query_graph":
-        result = await query_graph_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "update_scratchpad":
-        result = await update_scratchpad_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "get_agent_state":
-        result = await get_agent_state_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "detect_communities":
-        result = await detect_communities_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "select_tools":
-        result = await select_tools_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "list_available_tools":
-        result = await list_available_tools_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "get_tool_info":
-        result = await get_tool_info_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "store_fact":
-        result = await store_fact_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "retrieve_fact":
-        result = await retrieve_fact_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "list_user_facts":
-        result = await list_user_facts_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "delete_user_facts":
-        result = await delete_user_facts_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    elif name == "classify_intent":
-        result = await classify_intent_tool(arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-
-    else:
-        raise ValueError(f"Unknown tool: {name}")
+        
+    except Exception as e:
+        if status_code == 200:  # If not already set to error
+            status_code = 500
+            error_msg = str(e)
+        raise
+    finally:
+        # Record metrics for the MCP tool call
+        duration_ms = (time.time() - start_time) * 1000
+        if metrics_collector:
+            await metrics_collector.record_request(
+                method="MCP",
+                path=f"/tools/{name}",
+                status_code=status_code,
+                duration_ms=duration_ms,
+                error=error_msg
+            )
 
 
 async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:

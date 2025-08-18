@@ -218,6 +218,19 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
                 f"Generated semantic embedding with {embedding_dim} dimensions "
                 f"using sentence-transformers"
             )
+            
+            # Pad or truncate to match Qdrant collection dimensions (1536)
+            target_dim = 1536  # Match Config.EMBEDDING_DIMENSIONS
+            if embedding_dim < target_dim:
+                # Pad with zeros
+                padding = [0.0] * (target_dim - embedding_dim)
+                embedding = embedding + padding
+                logger.debug(f"Padded embedding from {embedding_dim} to {target_dim} dimensions")
+            elif embedding_dim > target_dim:
+                # Truncate
+                embedding = embedding[:target_dim]
+                logger.debug(f"Truncated embedding from {embedding_dim} to {target_dim} dimensions")
+            
             return embedding
 
         except Exception as e:
