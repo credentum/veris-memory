@@ -219,8 +219,8 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
                 f"using sentence-transformers"
             )
             
-            # Pad or truncate to match Qdrant collection dimensions (1536)
-            target_dim = 1536  # Match Config.EMBEDDING_DIMENSIONS
+            # Pad or truncate to match Qdrant collection dimensions
+            target_dim = Config.EMBEDDING_DIMENSIONS
             if embedding_dim < target_dim:
                 # Pad with zeros
                 padding = [0.0] * (target_dim - embedding_dim)

@@ -23,6 +23,48 @@ from src.embedding import (
     generate_embedding
 )
 
+class TestInitializationFailures:
+    """Test embedding service initialization failure scenarios."""
+    
+    @pytest.mark.asyncio
+    async def test_sentence_transformers_not_installed(self):
+        """Test behavior when sentence-transformers is not installed."""
+        config = EmbeddingConfig()
+        
+        with patch('sentence_transformers.SentenceTransformer', side_effect=ImportError("No module named 'sentence_transformers'")):
+            service = EmbeddingService(config)
+            
+            with pytest.raises(ModelLoadError, match="sentence-transformers package not installed"):
+                await service.initialize()
+    
+    @pytest.mark.asyncio 
+    async def test_model_loading_failure(self):
+        """Test behavior when model fails to load."""
+        config = EmbeddingConfig()
+        
+        with patch('sentence_transformers.SentenceTransformer', side_effect=RuntimeError("Model loading failed")):
+            service = EmbeddingService(config)
+            
+            with pytest.raises(ModelLoadError, match="Model initialization failed"):
+                await service.initialize()
+    
+    @pytest.mark.asyncio
+    async def test_model_dimension_detection_failure(self):
+        """Test when model dimension detection fails."""
+        config = EmbeddingConfig()
+        
+        with patch('sentence_transformers.SentenceTransformer') as mock_st:
+            mock_model = Mock()
+            mock_model.get_sentence_embedding_dimension.side_effect = Exception("Dimension error")
+            mock_st.return_value = mock_model
+            
+            service = EmbeddingService(config)
+            await service.initialize()
+            
+            # Should fallback to expected dimensions
+            dimensions = service.get_model_dimensions()
+            assert dimensions == config.model.value[1]
+
 class TestPhase1BasicFunctionality:
     """Test Phase 1: Basic embedding functionality and dimension fixes."""
     
@@ -298,6 +340,72 @@ class TestPhase3HealthAndMonitoring:
         assert config_dict["target_dimensions"] == 1536
         assert config_dict["max_retries"] == 5
         assert config_dict["cache_enabled"] is True
+
+class TestConcurrentAccess:
+    """Test concurrent access patterns and thread safety."""
+    
+    @pytest.mark.asyncio
+    async def test_concurrent_embedding_generation(self):
+        """Test that concurrent embedding generation works correctly."""
+        config = EmbeddingConfig(cache_enabled=True)
+        
+        with patch('sentence_transformers.SentenceTransformer') as mock_st:
+            mock_model = Mock()
+            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_model.encode.return_value = [0.1] * 384
+            mock_st.return_value = mock_model
+            
+            service = EmbeddingService(config)
+            await service.initialize()
+            
+            # Create multiple concurrent requests
+            tasks = []
+            for i in range(10):
+                task = service.generate_embedding(f"concurrent test {i}")
+                tasks.append(task)
+            
+            # Wait for all to complete
+            results = await asyncio.gather(*tasks)
+            
+            # Verify all results
+            assert len(results) == 10
+            for result in results:
+                assert len(result) == 1536  # Target dimensions
+            
+            # Check metrics
+            metrics = service.get_health_status()["metrics"]
+            assert metrics["total_requests"] == 10
+            assert metrics["successful_requests"] == 10
+    
+    @pytest.mark.asyncio
+    async def test_concurrent_cache_access(self):
+        """Test concurrent access to cache doesn't cause race conditions."""
+        config = EmbeddingConfig(cache_enabled=True)
+        
+        with patch('sentence_transformers.SentenceTransformer') as mock_st:
+            mock_model = Mock()
+            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_model.encode.return_value = [0.1] * 384
+            mock_st.return_value = mock_model
+            
+            service = EmbeddingService(config)
+            await service.initialize()
+            
+            # Generate same text concurrently to test cache behavior
+            tasks = []
+            for i in range(5):
+                task = service.generate_embedding("same text for caching")
+                tasks.append(task)
+            
+            results = await asyncio.gather(*tasks)
+            
+            # All results should be identical
+            for result in results[1:]:
+                assert result == results[0]
+            
+            # Should have cache hits (model called once, but multiple cache hits)
+            metrics = service.get_health_status()["metrics"] 
+            assert metrics["cache_hits"] >= 4  # At least 4 cache hits
 
 class TestEndToEndIntegration:
     """End-to-end integration tests."""

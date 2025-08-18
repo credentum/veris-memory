@@ -11,9 +11,57 @@ Provides a robust, configurable embedding generation service that handles:
 import asyncio
 import logging
 import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, OrderedDict
 from dataclasses import dataclass
 from enum import Enum
+from collections import OrderedDict
+
+# OpenTelemetry imports with fallback
+try:
+    from opentelemetry import trace, metrics
+    from opentelemetry.trace import Status, StatusCode
+    OTEL_AVAILABLE = True
+except ImportError:
+    OTEL_AVAILABLE = False
+    # Create dummy classes for when OpenTelemetry is not available
+    class DummyStatus:
+        def __init__(self, status_code, description=""):
+            pass
+    
+    class DummyStatusCode:
+        OK = "OK"
+        ERROR = "ERROR"
+    
+    Status = DummyStatus
+    StatusCode = DummyStatusCode
+    
+    class DummyTracer:
+        def start_span(self, name, **kwargs):
+            return DummySpan()
+    
+    class DummySpan:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def set_attribute(self, key, value):
+            pass
+        def set_status(self, status):
+            pass
+    
+    class DummyMeter:
+        def create_counter(self, name, **kwargs):
+            return DummyCounter()
+        def create_histogram(self, name, **kwargs):
+            return DummyHistogram()
+    
+    class DummyCounter:
+        def add(self, value, attributes=None):
+            pass
+    
+    class DummyHistogram:
+        def record(self, value, attributes=None):
+            pass
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +81,8 @@ class EmbeddingConfig:
     timeout_seconds: float = 30.0
     cache_enabled: bool = True
     cache_ttl_seconds: int = 3600
+    cache_max_size: int = 1000
+    cache_max_memory_mb: int = 100
     batch_size: int = 100
 
 class EmbeddingError(Exception):
@@ -63,15 +113,41 @@ class EmbeddingService:
         self.config = config or EmbeddingConfig()
         self._model = None
         self._model_loaded = False
-        self._cache = {} if self.config.cache_enabled else None
+        self._cache = OrderedDict() if self.config.cache_enabled else None
+        self._cache_memory_usage = 0  # Track memory usage in bytes
         self._metrics = {
             "total_requests": 0,
             "successful_requests": 0,
             "failed_requests": 0,
             "cache_hits": 0,
+            "cache_evictions": 0,
+            "cache_memory_usage_mb": 0.0,
             "average_generation_time": 0.0,
             "model_load_time": None
         }
+        
+        # Initialize OpenTelemetry instrumentation
+        if OTEL_AVAILABLE:
+            self._tracer = trace.get_tracer(__name__)
+            self._meter = metrics.get_meter(__name__)
+            self._embedding_counter = self._meter.create_counter(
+                "embedding_requests_total",
+                description="Total number of embedding requests"
+            )
+            self._embedding_duration = self._meter.create_histogram(
+                "embedding_generation_duration_seconds",
+                description="Time taken to generate embeddings"
+            )
+            self._cache_counter = self._meter.create_counter(
+                "embedding_cache_operations_total", 
+                description="Total cache operations"
+            )
+        else:
+            self._tracer = DummyTracer()
+            self._meter = DummyMeter()
+            self._embedding_counter = DummyCounter()
+            self._embedding_duration = DummyHistogram()
+            self._cache_counter = DummyCounter()
         
     async def initialize(self) -> bool:
         """
@@ -147,40 +223,72 @@ class EmbeddingService:
         start_time = time.time()
         self._metrics["total_requests"] += 1
         
-        try:
-            # Extract text from content
-            text = self._extract_text(content)
-            
-            # Check cache first
-            if self._cache is not None:
-                cache_key = self._get_cache_key(text)
-                cached_embedding = self._get_from_cache(cache_key)
-                if cached_embedding is not None:
-                    self._metrics["cache_hits"] += 1
-                    return cached_embedding
-            
-            # Generate embedding with retries
-            embedding = await self._generate_with_retries(text)
-            
-            # Adjust dimensions if requested
-            if adjust_dimensions:
-                embedding = self._adjust_dimensions(embedding)
-            
-            # Cache the result
-            if self._cache is not None:
-                self._store_in_cache(cache_key, embedding)
-            
-            # Update metrics
-            generation_time = time.time() - start_time
-            self._update_metrics(generation_time, success=True)
-            
-            logger.debug(f"Generated embedding in {generation_time:.3f}s")
-            return embedding
-            
-        except Exception as e:
-            self._update_metrics(time.time() - start_time, success=False)
-            logger.error(f"Embedding generation failed: {e}")
-            raise EmbeddingError(f"Failed to generate embedding: {e}")
+        # OpenTelemetry tracing
+        with self._tracer.start_span("embedding.generate") as span:
+            try:
+                span.set_attribute("embedding.model", self.config.model.value[0])
+                span.set_attribute("embedding.adjust_dimensions", adjust_dimensions)
+                
+                # Extract text from content
+                text = self._extract_text(content)
+                span.set_attribute("embedding.text_length", len(text))
+                
+                # Check cache first
+                cache_hit = False
+                if self._cache is not None:
+                    cache_key = self._get_cache_key(text)
+                    cached_embedding = self._get_from_cache(cache_key)
+                    if cached_embedding is not None:
+                        self._metrics["cache_hits"] += 1
+                        cache_hit = True
+                        span.set_attribute("embedding.cache_hit", True)
+                        self._cache_counter.add(1, {"operation": "hit"})
+                        return cached_embedding
+                
+                span.set_attribute("embedding.cache_hit", False)
+                self._cache_counter.add(1, {"operation": "miss"})
+                
+                # Generate embedding with retries
+                embedding = await self._generate_with_retries(text)
+                
+                # Adjust dimensions if requested
+                if adjust_dimensions:
+                    original_dims = len(embedding)
+                    embedding = self._adjust_dimensions(embedding)
+                    span.set_attribute("embedding.original_dimensions", original_dims)
+                    span.set_attribute("embedding.final_dimensions", len(embedding))
+                
+                # Cache the result
+                if self._cache is not None:
+                    self._store_in_cache(cache_key, embedding)
+                
+                # Update metrics and OpenTelemetry
+                generation_time = time.time() - start_time
+                self._update_metrics(generation_time, success=True)
+                
+                span.set_attribute("embedding.generation_time_seconds", generation_time)
+                span.set_status(Status(StatusCode.OK))
+                
+                # Record metrics
+                self._embedding_counter.add(1, {"status": "success", "cache_hit": str(cache_hit)})
+                self._embedding_duration.record(generation_time, {"status": "success"})
+                
+                logger.debug(f"Generated embedding in {generation_time:.3f}s")
+                return embedding
+                
+            except Exception as e:
+                generation_time = time.time() - start_time
+                self._update_metrics(generation_time, success=False)
+                
+                # OpenTelemetry error handling
+                span.set_attribute("embedding.error", str(e))
+                span.set_status(Status(StatusCode.ERROR, str(e)))
+                
+                self._embedding_counter.add(1, {"status": "error"})
+                self._embedding_duration.record(generation_time, {"status": "error"})
+                
+                logger.error(f"Embedding generation failed: {e}")
+                raise EmbeddingError(f"Failed to generate embedding: {e}")
     
     async def _generate_with_retries(self, text: str) -> List[float]:
         """Generate embedding with retry logic."""
@@ -263,27 +371,72 @@ class EmbeddingService:
         return hashlib.md5(text.encode()).hexdigest()
     
     def _get_from_cache(self, key: str) -> Optional[List[float]]:
-        """Get embedding from cache."""
-        if key in self._cache:
-            entry = self._cache[key]
-            if time.time() - entry["timestamp"] < self.config.cache_ttl_seconds:
-                return entry["embedding"]
-            else:
-                # Expired entry
-                del self._cache[key]
-        return None
+        """Get embedding from LRU cache."""
+        if self._cache is None or key not in self._cache:
+            return None
+            
+        entry = self._cache[key]
+        
+        # Check TTL
+        if time.time() - entry["timestamp"] >= self.config.cache_ttl_seconds:
+            self._remove_from_cache(key)
+            return None
+        
+        # Move to end (mark as recently used)
+        self._cache.move_to_end(key)
+        return entry["embedding"]
     
     def _store_in_cache(self, key: str, embedding: List[float]) -> None:
-        """Store embedding in cache."""
-        self._cache[key] = {
+        """Store embedding in LRU cache with memory management."""
+        if self._cache is None:
+            return
+            
+        # Calculate memory usage (rough estimate)
+        entry_size = len(embedding) * 8 + 64  # 8 bytes per float + overhead
+        
+        # Store entry
+        entry = {
             "embedding": embedding,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "size_bytes": entry_size
         }
         
-        # Simple cache size management (keep last 1000 entries)
-        if len(self._cache) > 1000:
-            oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k]["timestamp"])
-            del self._cache[oldest_key]
+        # Remove if already exists to update memory tracking
+        if key in self._cache:
+            self._remove_from_cache(key)
+            
+        self._cache[key] = entry
+        self._cache_memory_usage += entry_size
+        
+        # Evict entries if necessary
+        self._evict_if_necessary()
+    
+    def _remove_from_cache(self, key: str) -> None:
+        """Remove entry from cache and update memory tracking."""
+        if self._cache is None or key not in self._cache:
+            return
+            
+        entry = self._cache[key]
+        self._cache_memory_usage -= entry.get("size_bytes", 0)
+        del self._cache[key]
+        self._metrics["cache_evictions"] += 1
+    
+    def _evict_if_necessary(self) -> None:
+        """Evict entries if cache exceeds size or memory limits."""
+        if self._cache is None:
+            return
+        
+        max_memory_bytes = self.config.cache_max_memory_mb * 1024 * 1024
+        
+        # Evict based on size limit or memory limit
+        while (len(self._cache) > self.config.cache_max_size or 
+               self._cache_memory_usage > max_memory_bytes):
+            if not self._cache:
+                break
+                
+            # Remove oldest entry (LRU)
+            oldest_key = next(iter(self._cache))
+            self._remove_from_cache(oldest_key)
     
     def _update_metrics(self, generation_time: float, success: bool) -> None:
         """Update performance metrics."""
@@ -311,6 +464,9 @@ class EmbeddingService:
         
         # Calculate cache hit rate
         cache_hit_rate = (self._metrics["cache_hits"] / total_requests) if total_requests > 0 else 0.0
+        
+        # Update cache memory usage metric
+        self._metrics["cache_memory_usage_mb"] = self._cache_memory_usage / (1024 * 1024) if self._cache else 0.0
         
         # Determine alert levels
         alerts = []
