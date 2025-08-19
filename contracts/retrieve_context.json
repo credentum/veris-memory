@@ -61,6 +61,12 @@
         "type": "boolean",
         "default": false,
         "description": "Include graph relationships in results"
+      },
+      "sort_by": {
+        "type": "string",
+        "enum": ["timestamp", "relevance"],
+        "default": "timestamp",
+        "description": "Sort order for results. 'timestamp' returns newest first, 'relevance' returns highest score first"
       }
     }
   },

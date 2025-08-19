@@ -1537,6 +1537,12 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
                         # Multi-hop traversal query with configurable parameters
                         # Now includes hop distance for proper scoring
+                        # Performance Note: ORDER BY hop_distance may impact performance on large graphs.
+                        # Consider these optimizations if query performance degrades:
+                        # 1. Create index: CREATE INDEX FOR (n:Context) ON (n.created_at)
+                        # 2. Limit max_hops to 2-3 for most use cases
+                        # 3. Use SKIP/LIMIT pagination for large result sets
+                        # 4. Consider caching frequently accessed paths
                         cypher_query = f"""
                         MATCH path = (n:Context)-[r{rel_filter}*1..{max_hops}]->(m)
                         WHERE (n.type = $type OR $type = 'all')
