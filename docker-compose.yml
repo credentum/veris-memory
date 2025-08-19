@@ -125,7 +125,7 @@ services:
       - DASHBOARD_PORT=8080
       - MONITORING_ENABLED=true
       - LOG_LEVEL=info
-    command: ["python", "-m", "src.monitoring.dashboard_api"]
+    command: ["python", "-m", "src.monitoring"]
     depends_on:
       qdrant:
         condition: service_healthy
