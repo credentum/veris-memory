@@ -804,12 +804,13 @@ jobs:
             }
 
       # ---------- Block pipeline on blocking issues or coverage regression ----------
+      # Note: Coverage checks temporarily disabled - would normally include:
+      # || env.COVERAGE_FAILED == 'true'
       - name: Check for Blocking Issues
         if: |
           fromJson(env.REVIEW_JSON).verdict == 'REQUEST CHANGES' ||
           fromJson(env.REVIEW_JSON).verdict == 'REQUEST_CHANGES' ||
           fromJson(env.REVIEW_JSON).has_blockers == true
-          # || env.COVERAGE_FAILED == 'true'  # COVERAGE CHECKS TEMPORARILY DISABLED
         run: |
           echo "🚫 PR has blocking issues — failing build."
           echo "Review verdict: ${{ fromJson(env.REVIEW_JSON).verdict }}"
