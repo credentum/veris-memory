@@ -62,6 +62,8 @@ except ImportError:
     from core.rate_limiter import rate_limit_check
     from core.ssl_config import SSLConfigManager
     from security.cypher_validator import CypherValidator
+    # Metrics collection import for fallback path
+    from monitoring.request_metrics import get_metrics_collector
     from storage.kv_store import ContextKV
     from storage.neo4j_client import Neo4jInitializer
     from storage.qdrant_client import VectorDBInitializer
@@ -132,9 +134,13 @@ async def initialize_storage_clients() -> Dict[str, Any]:
 
     try:
         # Initialize metrics collector
-        metrics_collector = get_metrics_collector()
-        await metrics_collector.start_queue_processor()
-        logger.info("✅ Metrics collector initialized")
+        try:
+            metrics_collector = get_metrics_collector()
+            await metrics_collector.start_queue_processor()
+            logger.info("✅ Metrics collector initialized")
+        except Exception as metrics_error:
+            logger.warning(f"⚠️ Failed to initialize metrics collector: {metrics_error}")
+            metrics_collector = None  # Continue without metrics
         
         # Validate configuration
         config_result = validate_all_configs()
@@ -848,19 +854,26 @@ async def call_tool(
         elif name == "classify_intent":
             result = await classify_intent_tool(arguments)
         else:
-            status_code = 404
+            status_code = 400  # Client error for unknown tool
             error_msg = f"Unknown tool: {name}"
             raise ValueError(error_msg)
         
-        # Check if the result indicates failure
+        # Check if the result indicates failure (client error)
         if isinstance(result, dict) and not result.get("success", True):
-            status_code = 400
+            status_code = 400  # Client error for tool validation failures
             error_msg = result.get("error", "Tool execution failed")
         
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
         
+    except ValueError as e:
+        # Client errors (bad input, unknown tool, validation failures)
+        if status_code == 200:
+            status_code = 400
+        error_msg = str(e)
+        raise
     except Exception as e:
-        if status_code == 200:  # If not already set to error
+        # Server errors (internal failures, database issues)
+        if status_code == 200:
             status_code = 500
             error_msg = str(e)
         raise
