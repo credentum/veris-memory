@@ -1283,6 +1283,15 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         retrieval_mode = arguments.get("retrieval_mode", "hybrid")
         limit = arguments.get("limit", 10)
         sort_by = arguments.get("sort_by", "timestamp")  # Default to timestamp since relevance was broken
+        
+        # Validate sort_by parameter
+        if sort_by not in ["timestamp", "relevance"]:
+            return {
+                "success": False,
+                "results": [],
+                "message": f"Invalid sort_by value: '{sort_by}'. Must be 'timestamp' or 'relevance'",
+                "error_type": "invalid_parameter",
+            }
 
         # Validate query with comprehensive security checks
         query_validation = input_validator.validate_input(query, "query")
