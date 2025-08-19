@@ -145,6 +145,12 @@ Retrieve context using hybrid vector similarity and graph search with multiple s
       "maximum": 100,
       "default": 10,
       "description": "Maximum results to return (optional)"
+    },
+    "sort_by": {
+      "type": "string",
+      "enum": ["timestamp", "relevance"],
+      "default": "timestamp",
+      "description": "Sort order for results. 'timestamp' returns newest first, 'relevance' returns highest score first"
     }
   },
   "required": ["query"]
