@@ -104,6 +104,7 @@ jobs:
         
     - name: Comment on PR
       if: github.event_name == 'pull_request'
+      continue-on-error: true  # Don't fail the job if GitHub API times out
       uses: actions/github-script@v6
       with:
         script: |
@@ -122,12 +123,18 @@ jobs:
           \`\`\`
           </details>`;
           
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: message
-          });
+          try {
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: message
+            });
+            console.log('✅ Successfully posted PR comment');
+          } catch (error) {
+            console.log('⚠️ Failed to post PR comment (non-blocking):', error.message);
+            // Don't throw - this is optional functionality
+          }
           
   dimension-check:
     name: Check Dimension Consistency
