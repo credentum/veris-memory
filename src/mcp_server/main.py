@@ -219,8 +219,8 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
                 f"using sentence-transformers"
             )
             
-            # Pad or truncate to match Qdrant collection dimensions (1536)
-            target_dim = 1536  # Match Config.EMBEDDING_DIMENSIONS
+            # Pad or truncate to match Qdrant collection dimensions
+            target_dim = Config.EMBEDDING_DIMENSIONS
             if embedding_dim < target_dim:
                 # Pad with zeros
                 padding = [0.0] * (target_dim - embedding_dim)
@@ -765,6 +765,75 @@ def _is_in_startup_grace_period(grace_period_seconds: int = None) -> bool:
     return (time.time() - _server_startup_time) < grace_period_seconds
 
 
+@app.get("/health/embeddings")
+async def check_embeddings():
+    """Detailed health check for embedding service."""
+    try:
+        from ..embedding import get_embedding_service
+        
+        service = await get_embedding_service()
+        health_status = service.get_health_status()
+        
+        # Test embedding generation
+        test_start = time.time()
+        try:
+            test_embedding = await service.generate_embedding("health check test")
+            test_time = time.time() - test_start
+            embedding_test = {
+                "success": True,
+                "dimensions": len(test_embedding),
+                "generation_time_ms": round(test_time * 1000, 2)
+            }
+        except Exception as e:
+            embedding_test = {
+                "success": False,
+                "error": str(e),
+                "generation_time_ms": round((time.time() - test_start) * 1000, 2)
+            }
+        
+        # Check dimension compatibility
+        model_dims = health_status["model_dimensions"]
+        target_dims = health_status["target_dimensions"]
+        dimensions_compatible = model_dims > 0 and target_dims > 0
+        
+        # Determine overall status using enhanced health status
+        service_status = health_status.get("status", "unhealthy")
+        overall_healthy = (
+            health_status["model_loaded"] and 
+            embedding_test["success"] and
+            dimensions_compatible and
+            service_status in ["healthy", "warning"]  # Warning is still operational
+        )
+        
+        # Use service status if it's more specific than binary healthy/unhealthy
+        final_status = service_status if service_status in ["critical", "warning"] else ("healthy" if overall_healthy else "unhealthy")
+        
+        return {
+            "status": final_status,
+            "timestamp": time.time(),
+            "service": health_status,
+            "test": embedding_test,
+            "compatibility": {
+                "dimensions_compatible": dimensions_compatible,
+                "padding_required": model_dims < target_dims if model_dims > 0 else False,
+                "truncation_required": model_dims > target_dims if model_dims > 0 else False
+            },
+            "alerts": health_status.get("alerts", []),
+            "recommendations": [
+                "Monitor error rate and latency trends",
+                "Ensure sentence-transformers dependency is installed",
+                "Check model loading performance during startup"
+            ]
+        }
+        
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "timestamp": time.time(),
+            "error": str(e),
+            "service": {"model_loaded": False}
+        }
+
 @app.get("/health")
 async def health() -> Dict[str, Any]:
     """
@@ -1075,10 +1144,17 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
         vector_id = None
         if qdrant_client:
             try:
-                logger.info("Generating embedding for vector storage...")
-                # Create embedding from content using proper embedding service
-                embedding = await _generate_embedding(request.content)
-                logger.info(f"Generated embedding with {len(embedding)} dimensions")
+                logger.info("Generating embedding for vector storage using robust embedding service...")
+                # Use new robust embedding service with comprehensive error handling
+                from ..embedding import generate_embedding
+                try:
+                    embedding = await generate_embedding(request.content, adjust_dimensions=True)
+                    logger.info(f"Generated embedding with {len(embedding)} dimensions using robust service")
+                except Exception as embedding_error:
+                    logger.error(f"Robust embedding service failed: {embedding_error}")
+                    # Fall back to legacy method if robust service fails
+                    embedding = await _generate_embedding(request.content)
+                    logger.warning("Used legacy embedding generation as fallback")
 
                 logger.info("Storing vector in Qdrant...")
                 vector_id = qdrant_client.store_vector(
@@ -1161,9 +1237,10 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
         if request.search_mode in ["vector", "hybrid"] and qdrant_client:
             # Perform vector search using semantic embeddings
             try:
-                # Generate semantic embedding for query (same as storage)
-                query_vector = await _generate_embedding(request.query)
-                logger.info(f"Generated query embedding with {len(query_vector)} dimensions")
+                # Generate semantic embedding for query using robust service
+                from ..embedding import generate_embedding
+                query_vector = await generate_embedding(request.query, adjust_dimensions=True)
+                logger.info(f"Generated query embedding with {len(query_vector)} dimensions using robust service")
 
                 vector_results = qdrant_client.search(
                     query_vector=query_vector,
