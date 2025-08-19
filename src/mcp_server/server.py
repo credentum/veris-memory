@@ -477,9 +477,9 @@ async def list_tools() -> List[Tool]:
                     },
                     "sort_by": {
                         "type": "string",
-                        "enum": ["relevance", "timestamp"],
-                        "default": "relevance",
-                        "description": "Sort results by relevance score or timestamp (most recent first)",
+                        "enum": ["timestamp", "relevance"],
+                        "default": "timestamp",
+                        "description": "Sort results by timestamp (most recent first) or relevance score",
                     },
                     "max_hops": {
                         "type": "integer",
@@ -1240,8 +1240,8 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 Default: 'hybrid'
             - limit (int, optional): Maximum number of results to return (1-100)
                 Default: 10
-            - sort_by (str, optional): Sort results by 'relevance' or 'timestamp'
-                Default: 'relevance'
+            - sort_by (str, optional): Sort results by 'timestamp' or 'relevance'
+                Default: 'timestamp' (most recent first)
 
     Returns:
         Dict containing:
@@ -1282,7 +1282,7 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         search_mode = arguments.get("search_mode", "hybrid")
         retrieval_mode = arguments.get("retrieval_mode", "hybrid")
         limit = arguments.get("limit", 10)
-        sort_by = arguments.get("sort_by", "relevance")  # New parameter: 'relevance' or 'timestamp'
+        sort_by = arguments.get("sort_by", "timestamp")  # Default to timestamp since relevance was broken
 
         # Validate query with comprehensive security checks
         query_validation = input_validator.validate_input(query, "query")
