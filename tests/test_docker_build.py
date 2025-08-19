@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Quick test to verify the extracted components can be imported
+Test to verify the extracted components can be imported
 """
+import pytest
 
-try:
-    print("Testing imports...")
 
+def test_storage_imports():
+    """Test that all storage components can be imported successfully."""
     # Test storage imports
     from storage.hash_diff_embedder import (  # noqa: F401
         DocumentHash,
@@ -13,39 +14,17 @@ try:
         HashDiffEmbedder,
     )
 
-    print("✓ hash_diff_embedder imports successful")
-
     from storage.neo4j_client import Neo4jInitializer  # noqa: F401
-
-    print("✓ neo4j_client imports successful")
-
     from storage.qdrant_client import VectorDBInitializer  # noqa: F401
-
-    print("✓ qdrant_client imports successful")
-
     from storage.kv_store import ContextKV  # noqa: F401
 
-    print("✓ kv_store imports successful")
 
-    # Test core imports
+def test_core_imports():
+    """Test that all core components can be imported successfully."""
     from core.base_component import DatabaseComponent  # noqa: F401
-
-    print("✓ base_component imports successful")
-
     from core.utils import get_secure_connection_config  # noqa: F401
 
-    print("✓ utils imports successful")
 
-    # Test validator imports
+def test_validator_imports():
+    """Test that all validator components can be imported successfully."""
     from validators.kv_validators import validate_redis_key  # noqa: F401
-
-    print("✓ validators imports successful")
-
-    print("\n✅ All imports successful!")
-
-except ImportError as e:
-    print(f"\n❌ Import error: {e}")
-    exit(1)
-except Exception as e:
-    print(f"\n❌ Unexpected error: {e}")
-    exit(1)
