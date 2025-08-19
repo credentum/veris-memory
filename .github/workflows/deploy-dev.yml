@@ -98,6 +98,21 @@ jobs:
             # No need to navigate to context-store - everything is in repo root
             # cd context-store
             
+            # BACKUP PHASE - Preserve data before cleanup
+            echo "💾 BACKUP PHASE - Preserving Veris Memory data"
+            echo "======================================"
+            
+            # Run backup script if it exists
+            if [ -f "scripts/backup-restore-integration.sh" ]; then
+              echo "📦 Running backup script..."
+              chmod +x scripts/backup-restore-integration.sh
+              ./scripts/backup-restore-integration.sh backup dev || {
+                echo "⚠️  Backup failed, but continuing with deployment"
+              }
+            else
+              echo "⚠️  Backup script not found, skipping backup"
+            fi
+            
             # BULLETPROOF CONTAINER CLEANUP - Run this BEFORE any deployment script
             echo "🛡️  BULLETPROOF CONTAINER CLEANUP"
             echo "======================================"
@@ -296,9 +311,27 @@ jobs:
               echo "✅ Password verification passed"
               echo "🔍 ============================================"
               
-              # Bootstrap Qdrant if needed
+              # RESTORE PHASE - Recover data after deployment
+              echo "📥 RESTORE PHASE - Recovering Veris Memory data"
+              echo "======================================"
+              
+              # Wait a bit for containers to stabilize
+              sleep 10
+              
+              # Run restore script if it exists
+              if [ -f "scripts/backup-restore-integration.sh" ]; then
+                echo "📦 Running restore script..."
+                chmod +x scripts/backup-restore-integration.sh
+                ./scripts/backup-restore-integration.sh restore dev || {
+                  echo "⚠️  Restore failed, data may need manual recovery"
+                }
+              else
+                echo "⚠️  Restore script not found, skipping restore"
+              fi
+              
+              # Bootstrap Qdrant if needed (only if restore didn't work)
               echo "🔧 Bootstrapping Qdrant collection..."
-              sleep 10  # Give Qdrant time to fully start
+              sleep 5  # Give services time after restore
               python3 ops/bootstrap/qdrant_bootstrap.py --qdrant-url http://localhost:6333 --ensure-collection || echo "Bootstrap completed or not needed"
               
               # Wait for services with better error reporting
