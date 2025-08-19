@@ -584,6 +584,16 @@ async def startup_event() -> None:
                 dashboard = None
         else:
             print("⚠️ Dashboard monitoring not available")
+        
+        # Start metrics queue processor for request metrics
+        if REQUEST_METRICS_AVAILABLE:
+            try:
+                metrics_collector = get_metrics_collector()
+                await metrics_collector.start_queue_processor()
+                print("✅ Metrics queue processor started - analytics will now track operations")
+            except Exception as e:
+                print(f"⚠️ Failed to start metrics queue processor: {e}")
+                logger.warning(f"Metrics queue processor startup failed: {e}")
             
     except Exception as e:
         print(f"❌ Critical failure in storage initialization: {e}")
@@ -592,7 +602,7 @@ async def startup_event() -> None:
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
-    """Clean up storage clients on shutdown."""
+    """Clean up storage clients and metrics on shutdown."""
     if neo4j_client:
         neo4j_client.close()
     if kv_store:
@@ -600,8 +610,17 @@ async def shutdown_event() -> None:
     if dashboard:
         await dashboard.stop_collection_loop()
         await dashboard.shutdown()
+    
+    # Stop metrics queue processor
+    if REQUEST_METRICS_AVAILABLE:
+        try:
+            metrics_collector = get_metrics_collector()
+            await metrics_collector.stop_queue_processor()
+            print("Metrics queue processor stopped")
+        except Exception as e:
+            logger.warning(f"Error stopping metrics queue processor: {e}")
 
-    print("Storage clients and dashboard closed")
+    print("Storage clients, dashboard, and metrics closed")
 
 
 @app.get("/")
