@@ -200,6 +200,16 @@ async def handle_retrieve_context(arguments: Dict[str, Any]) -> Dict[str, Any]:
         query = arguments["query"].lower()
         context_type_filter = arguments.get("type")
         limit = arguments.get("limit", 10)
+        sort_by = arguments.get("sort_by", "timestamp")  # Default to timestamp
+        
+        # Validate sort_by parameter
+        if sort_by not in ["timestamp", "relevance"]:
+            return {
+                "success": False,
+                "results": [],
+                "message": f"Invalid sort_by value: '{sort_by}'. Must be 'timestamp' or 'relevance'",
+                "error_type": "invalid_parameter"
+            }
 
         results = []
 
@@ -219,11 +229,15 @@ async def handle_retrieve_context(arguments: Dict[str, Any]) -> Dict[str, Any]:
                         "content": ctx_data["content"],
                         "metadata": ctx_data["metadata"],
                         "relevance": 1.0 if query in ctx_id.lower() else 0.5,
+                        "created_at": ctx_data.get("metadata", {}).get("created_at", "")
                     }
                 )
 
-        # Sort by relevance and limit
-        results.sort(key=lambda x: x["relevance"], reverse=True)
+        # Sort based on sort_by parameter
+        if sort_by == "timestamp":
+            results.sort(key=lambda x: x.get("created_at", "") or "", reverse=True)
+        elif sort_by == "relevance":
+            results.sort(key=lambda x: x["relevance"], reverse=True)
         results = results[:limit]
 
         logger.info(f"Retrieved {len(results)} contexts for query: {query}")

@@ -158,6 +158,12 @@
           }
         },
         "default": {"title": 1.2, "headings": 1.1}
+      },
+      "sort_by": {
+        "type": "string",
+        "enum": ["timestamp", "relevance"],
+        "default": "timestamp",
+        "description": "Sort order for results. 'timestamp' returns newest first, 'relevance' returns highest score first"
       }
     },
     "required": ["query"]
