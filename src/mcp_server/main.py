@@ -362,6 +362,7 @@ class RetrieveContextRequest(BaseModel):
         limit: Maximum number of results to return
         filters: Optional additional filters
         include_relationships: Whether to include relationship data
+        sort_by: Sort order for results (timestamp or relevance)
     """
 
     query: str
@@ -370,6 +371,7 @@ class RetrieveContextRequest(BaseModel):
     limit: int = Field(10, ge=1, le=100)
     filters: Optional[Dict[str, Any]] = None
     include_relationships: bool = False
+    sort_by: str = Field("timestamp", pattern="^(timestamp|relevance)$")
 
 
 class QueryGraphRequest(BaseModel):
@@ -1321,6 +1323,16 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
             except Exception as e:
                 logger.warning(f"Graph search failed: {e}")
                 # Continue with vector results only
+
+        # Apply sorting based on sort_by parameter
+        if request.sort_by == "timestamp":
+            # Sort by timestamp (newest first)
+            results.sort(key=lambda x: x.get("created_at", "") or "", reverse=True)
+            logger.info("Sorted results by timestamp (newest first)")
+        elif request.sort_by == "relevance":
+            # Sort by relevance score (highest first)
+            results.sort(key=lambda x: x.get("score", 0) or 0, reverse=True)
+            logger.info("Sorted results by relevance score (highest first)")
 
         return {
             "success": True,
