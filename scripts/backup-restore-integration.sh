@@ -15,10 +15,22 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}🔧 Veris Memory Backup/Restore Integration${NC}"
-echo -e "${BLUE}==========================================${NC}"
-echo "Action: $ACTION"
-echo "Environment: $ENVIRONMENT"
+# Logging function
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [INFO] $*"
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [ERROR] $*" >&2
+}
+
+log_warning() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [WARNING] $*"
+}
+
+echo -e "${BLUE}🔧 Veris Memory Backup/Restore Integration v2.0${NC}"
+echo -e "${BLUE}===============================================${NC}"
+log "Action: $ACTION, Environment: $ENVIRONMENT"
 
 # Function to create backup
 create_backup() {
@@ -45,61 +57,197 @@ create_backup() {
 EOF
     
     # Backup Qdrant
+    log "Starting Qdrant backup..."
     if docker ps | grep -q "veris-memory-${ENVIRONMENT}-qdrant"; then
-        echo "  → Backing up Qdrant..."
+        local qdrant_container="veris-memory-${ENVIRONMENT}-qdrant-1"
+        log "Found Qdrant container: $qdrant_container"
         
         # Try using the API first
-        if docker exec veris-memory-${ENVIRONMENT}-qdrant-1 \
-            curl -s -X POST 'http://localhost:6333/collections/project_context/snapshots' > /dev/null 2>&1; then
+        log "Attempting Qdrant snapshot via API..."
+        if docker exec "$qdrant_container" curl -s -X POST 'http://localhost:6333/collections/project_context/snapshots' > /dev/null 2>&1; then
             
             # Get snapshot name and download
-            SNAPSHOT_NAME=$(docker exec veris-memory-${ENVIRONMENT}-qdrant-1 \
-                curl -s 'http://localhost:6333/collections/project_context/snapshots' | \
+            SNAPSHOT_NAME=$(docker exec "$qdrant_container" \
+                curl -s 'http://localhost:6333/collections/project_context/snapshots' 2>/dev/null | \
                 jq -r '.result[0].name' 2>/dev/null || echo "")
             
-            if [ -n "$SNAPSHOT_NAME" ]; then
-                docker exec veris-memory-${ENVIRONMENT}-qdrant-1 \
+            if [ -n "$SNAPSHOT_NAME" ] && [ "$SNAPSHOT_NAME" != "null" ]; then
+                log "Created snapshot: $SNAPSHOT_NAME"
+                if docker exec "$qdrant_container" \
                     curl -s "http://localhost:6333/collections/project_context/snapshots/${SNAPSHOT_NAME}" \
-                    -o "/tmp/${SNAPSHOT_NAME}" 2>/dev/null || true
-                
-                docker cp "veris-memory-${ENVIRONMENT}-qdrant-1:/tmp/${SNAPSHOT_NAME}" \
-                    "$BACKUP_DIR/qdrant.snapshot" 2>/dev/null || true
+                    -o "/tmp/${SNAPSHOT_NAME}" 2>/dev/null; then
+                    
+                    if docker cp "$qdrant_container:/tmp/${SNAPSHOT_NAME}" \
+                        "$BACKUP_DIR/qdrant.snapshot" 2>/dev/null; then
+                        log "✅ Qdrant API backup successful"
+                    else
+                        log_warning "Failed to copy Qdrant snapshot, trying fallback"
+                    fi
+                else
+                    log_warning "Failed to download Qdrant snapshot, trying fallback"
+                fi
+            else
+                log_warning "No snapshot name returned, trying fallback"
             fi
+        else
+            log_warning "Qdrant API backup failed, trying fallback"
         fi
         
         # Fallback: Direct volume copy
         if [ ! -f "$BACKUP_DIR/qdrant.snapshot" ]; then
-            echo "    Using fallback: volume copy..."
-            docker cp veris-memory-${ENVIRONMENT}-qdrant-1:/qdrant/storage \
-                "$BACKUP_DIR/qdrant-storage" 2>/dev/null || true
+            log "Using fallback: volume copy..."
+            if docker cp "$qdrant_container:/qdrant/storage" \
+                "$BACKUP_DIR/qdrant-storage" 2>/dev/null; then
+                log "✅ Qdrant fallback backup successful"
+            else
+                log_error "❌ Qdrant backup failed completely"
+            fi
         fi
+    else
+        log_warning "Qdrant container not found"
     fi
     
     # Backup Neo4j
+    log "Starting Neo4j backup..."
     if docker ps | grep -q "veris-memory-${ENVIRONMENT}-neo4j"; then
-        echo "  → Backing up Neo4j..."
-        docker exec veris-memory-${ENVIRONMENT}-neo4j-1 \
-            neo4j-admin database dump neo4j --to-path=/tmp 2>/dev/null || true
+        local neo4j_container="veris-memory-${ENVIRONMENT}-neo4j-1"
+        log "Found Neo4j container: $neo4j_container"
         
-        docker cp "veris-memory-${ENVIRONMENT}-neo4j-1:/tmp/neo4j.dump" \
-            "$BACKUP_DIR/neo4j.dump" 2>/dev/null || true
+        # Method 1: Try online backup using cypher-shell if available
+        log "Attempting Neo4j online backup via cypher-shell..."
+        if docker exec "$neo4j_container" cypher-shell -u neo4j -p "\${NEO4J_AUTH#neo4j/}" \
+            "CALL apoc.export.cypher.all('/tmp/neo4j-export.cypher', {format: 'cypher-shell'})" 2>/dev/null; then
+            
+            if docker cp "$neo4j_container:/tmp/neo4j-export.cypher" \
+                "$BACKUP_DIR/neo4j-export.cypher" 2>/dev/null; then
+                log "✅ Neo4j online backup successful (cypher export)"
+            else
+                log_warning "Failed to copy Neo4j cypher export"
+            fi
+        else
+            log_warning "Neo4j online backup failed (cypher-shell not available or APOC missing)"
+        fi
+        
+        # Method 2: Try graceful database stop, backup, restart  
+        if [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ]; then
+            log "Attempting Neo4j backup with graceful stop..."
+            
+            # Stop database gracefully
+            if docker exec "$neo4j_container" neo4j stop 2>/dev/null; then
+                log "Neo4j stopped gracefully"
+                sleep 3
+                
+                # Create dump
+                if docker exec "$neo4j_container" \
+                    neo4j-admin database dump neo4j --to-path=/tmp 2>/dev/null; then
+                    
+                    if docker cp "$neo4j_container:/tmp/neo4j.dump" \
+                        "$BACKUP_DIR/neo4j.dump" 2>/dev/null; then
+                        log "✅ Neo4j backup successful (graceful stop method)"
+                    else
+                        log_warning "Failed to copy Neo4j dump"
+                    fi
+                else
+                    log_warning "Neo4j dump failed even after stopping"
+                fi
+                
+                # Restart database
+                docker exec "$neo4j_container" neo4j start 2>/dev/null || log_warning "Failed to restart Neo4j"
+            else
+                log_warning "Failed to stop Neo4j gracefully"
+            fi
+        fi
+        
+        # Method 3: Fallback - copy data directory directly (may be inconsistent)
+        if [ ! -f "$BACKUP_DIR/neo4j.dump" ] && [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ]; then
+            log "Using fallback: direct data copy (may be inconsistent)..."
+            if docker cp "$neo4j_container:/var/lib/neo4j/data" \
+                "$BACKUP_DIR/neo4j-data" 2>/dev/null; then
+                log "⚠️ Neo4j fallback backup completed (data may be inconsistent)"
+            else
+                log_error "❌ Neo4j backup failed completely"
+            fi
+        fi
+    else
+        log_warning "Neo4j container not found"
     fi
     
     # Backup Redis
+    log "Starting Redis backup..."
     if docker ps | grep -q "veris-memory-${ENVIRONMENT}-redis"; then
-        echo "  → Backing up Redis..."
-        docker exec veris-memory-${ENVIRONMENT}-redis-1 \
-            redis-cli BGSAVE 2>/dev/null || true
-        sleep 2
+        local redis_container="veris-memory-${ENVIRONMENT}-redis-1"
+        log "Found Redis container: $redis_container"
         
-        docker cp "veris-memory-${ENVIRONMENT}-redis-1:/data/dump.rdb" \
-            "$BACKUP_DIR/redis.rdb" 2>/dev/null || true
+        # Trigger background save
+        if docker exec "$redis_container" redis-cli BGSAVE 2>/dev/null; then
+            log "Redis BGSAVE initiated"
+            
+            # Wait for BGSAVE to complete (check every second, max 30 seconds)
+            for i in {1..30}; do
+                if docker exec "$redis_container" redis-cli LASTSAVE 2>/dev/null > /tmp/lastsave_check; then
+                    sleep 1
+                    if docker exec "$redis_container" redis-cli LASTSAVE 2>/dev/null | cmp -s /tmp/lastsave_check -; then
+                        continue  # BGSAVE still running
+                    else
+                        log "BGSAVE completed after ${i} seconds"
+                        break
+                    fi
+                else
+                    log_warning "Could not check BGSAVE status"
+                    break
+                fi
+            done
+            
+            # Copy the RDB file
+            if docker cp "$redis_container:/data/dump.rdb" \
+                "$BACKUP_DIR/redis.rdb" 2>/dev/null; then
+                log "✅ Redis backup successful"
+            else
+                log_error "❌ Failed to copy Redis dump file"
+            fi
+        else
+            log_error "❌ Redis BGSAVE failed"
+        fi
+    else
+        log_warning "Redis container not found"
     fi
+    
+    # Create backup summary
+    log "Creating backup summary..."
+    local backup_success=0
+    local backup_methods=""
+    
+    [ -f "$BACKUP_DIR/qdrant.snapshot" ] && backup_success=$((backup_success + 1)) && backup_methods="$backup_methods Qdrant(API)"
+    [ -d "$BACKUP_DIR/qdrant-storage" ] && backup_success=$((backup_success + 1)) && backup_methods="$backup_methods Qdrant(Volume)"
+    [ -f "$BACKUP_DIR/neo4j-export.cypher" ] && backup_success=$((backup_success + 1)) && backup_methods="$backup_methods Neo4j(Online)"
+    [ -f "$BACKUP_DIR/neo4j.dump" ] && backup_success=$((backup_success + 1)) && backup_methods="$backup_methods Neo4j(Dump)"
+    [ -d "$BACKUP_DIR/neo4j-data" ] && backup_success=$((backup_success + 1)) && backup_methods="$backup_methods Neo4j(Data)"
+    [ -f "$BACKUP_DIR/redis.rdb" ] && backup_success=$((backup_success + 1)) && backup_methods="$backup_methods Redis"
+    
+    # Update metadata with results
+    cat >> "$BACKUP_DIR/metadata.json.tmp" << EOF
+{
+    "timestamp": "${TIMESTAMP}",
+    "environment": "${ENVIRONMENT}",
+    "created_at": "$(date -Iseconds)",
+    "type": "pre_deployment_backup",
+    "backup_methods": "$backup_methods",
+    "components_backed_up": $backup_success,
+    "backup_status": "$([ $backup_success -gt 0 ] && echo 'partial_success' || echo 'failed')"
+}
+EOF
+    mv "$BACKUP_DIR/metadata.json.tmp" "$BACKUP_DIR/metadata.json"
     
     # Create symlink to latest
     ln -sfn "$BACKUP_DIR" "${BACKUP_ROOT}/${ENVIRONMENT}/latest"
     
-    echo -e "${GREEN}✅ Backup completed: $BACKUP_DIR${NC}"
+    if [ $backup_success -gt 0 ]; then
+        log "✅ Backup completed: $BACKUP_DIR ($backup_success components:$backup_methods)"
+        echo -e "${GREEN}✅ Backup completed: $BACKUP_DIR${NC}"
+    else
+        log_error "❌ Backup failed: No components were backed up successfully"
+        echo -e "${RED}❌ Backup failed: No components were backed up successfully${NC}"
+    fi
     
     # Cleanup old backups (keep last 7)
     echo "  → Cleaning old backups..."
@@ -108,77 +256,322 @@ EOF
 
 # Function to restore backup
 restore_backup() {
+    log "🔄 RESTORE PHASE STARTED"
     echo -e "${YELLOW}📥 Restoring from backup...${NC}"
     
     # Find latest backup
     LATEST_BACKUP="${BACKUP_ROOT}/${ENVIRONMENT}/latest"
+    log "Looking for backup at: $LATEST_BACKUP"
     
-    if [ ! -L "$LATEST_BACKUP" ] || [ ! -d "$(readlink -f $LATEST_BACKUP)" ]; then
+    if [ ! -L "$LATEST_BACKUP" ]; then
+        log_warning "No latest backup symlink found at $LATEST_BACKUP"
         echo -e "${YELLOW}ℹ️  No backup found to restore${NC}"
         return 0
     fi
     
     BACKUP_DIR=$(readlink -f "$LATEST_BACKUP")
+    if [ ! -d "$BACKUP_DIR" ]; then
+        log_error "Backup directory not found: $BACKUP_DIR"
+        echo -e "${RED}❌ Backup directory not accessible${NC}"
+        return 1
+    fi
+    
+    log "✅ Found backup directory: $BACKUP_DIR"
     echo "  Using backup: $BACKUP_DIR"
     
-    # Wait for containers to be ready
+    # Check backup metadata
+    if [ -f "$BACKUP_DIR/metadata.json" ]; then
+        log "Backup metadata found, checking contents..."
+        if command -v jq > /dev/null 2>&1; then
+            local backup_status=$(jq -r '.backup_status // "unknown"' "$BACKUP_DIR/metadata.json" 2>/dev/null || echo "unknown")
+            local backup_methods=$(jq -r '.backup_methods // "unknown"' "$BACKUP_DIR/metadata.json" 2>/dev/null || echo "unknown")
+            log "Backup status: $backup_status, methods: $backup_methods"
+        fi
+    fi
+    
+    # Wait for containers to be ready with better logging
+    log "Waiting for containers to be ready..."
     echo "  ⏳ Waiting for containers to be ready..."
+    local containers_ready=false
     for i in {1..30}; do
         if docker ps | grep -q "veris-memory-${ENVIRONMENT}"; then
+            containers_ready=true
+            log "✅ Containers are ready after ${i} attempts"
             break
         fi
+        log "Attempt $i/30: No containers found, waiting 2 seconds..."
         sleep 2
     done
     
+    if [ "$containers_ready" = false ]; then
+        log_error "❌ Containers not ready after 60 seconds"
+        echo -e "${RED}❌ Containers not ready for restore${NC}"
+        return 1
+    fi
+    
     # Restore Qdrant
+    log "Starting Qdrant restore..."
+    local qdrant_restored=false
+    
     if [ -f "$BACKUP_DIR/qdrant.snapshot" ] && docker ps | grep -q "veris-memory-${ENVIRONMENT}-qdrant"; then
+        local qdrant_container="veris-memory-${ENVIRONMENT}-qdrant-1"
+        log "Attempting Qdrant restore from API snapshot..."
         echo "  → Restoring Qdrant from snapshot..."
         
         # Copy snapshot to container
-        docker cp "$BACKUP_DIR/qdrant.snapshot" \
-            "veris-memory-${ENVIRONMENT}-qdrant-1:/tmp/restore.snapshot" 2>/dev/null || true
-        
-        # Restore via API
-        docker exec veris-memory-${ENVIRONMENT}-qdrant-1 \
-            curl -X PUT 'http://localhost:6333/collections/project_context' \
-            -H 'Content-Type: application/octet-stream' \
-            --data-binary '@/tmp/restore.snapshot' 2>/dev/null || true
+        if docker cp "$BACKUP_DIR/qdrant.snapshot" \
+            "$qdrant_container:/tmp/restore.snapshot" 2>/dev/null; then
+            log "Snapshot copied to container successfully"
+            
+            # Wait for Qdrant to be ready
+            for i in {1..10}; do
+                if docker exec "$qdrant_container" \
+                    curl -s 'http://localhost:6333/health' > /dev/null 2>&1; then
+                    log "Qdrant is ready for restore"
+                    break
+                fi
+                log "Waiting for Qdrant to be ready... ($i/10)"
+                sleep 3
+            done
+            
+            # Restore via API (recreate collection from snapshot)
+            if docker exec "$qdrant_container" \
+                curl -X DELETE 'http://localhost:6333/collections/project_context' 2>/dev/null; then
+                log "Existing collection deleted"
+            fi
+            
+            if docker exec "$qdrant_container" \
+                curl -X PUT 'http://localhost:6333/collections/project_context/snapshots/restore' \
+                -H 'Content-Type: application/octet-stream' \
+                --data-binary '@/tmp/restore.snapshot' 2>/dev/null; then
+                log "✅ Qdrant restore from snapshot successful"
+                qdrant_restored=true
+            else
+                log_warning "Qdrant API restore failed, trying volume method"
+            fi
+        else
+            log_warning "Failed to copy snapshot to container"
+        fi
             
     elif [ -d "$BACKUP_DIR/qdrant-storage" ] && docker ps | grep -q "veris-memory-${ENVIRONMENT}-qdrant"; then
+        local qdrant_container="veris-memory-${ENVIRONMENT}-qdrant-1"
+        log "Attempting Qdrant restore from volume backup..."
         echo "  → Restoring Qdrant from volume backup..."
-        docker cp "$BACKUP_DIR/qdrant-storage/." \
-            "veris-memory-${ENVIRONMENT}-qdrant-1:/qdrant/storage/" 2>/dev/null || true
-        docker restart veris-memory-${ENVIRONMENT}-qdrant-1 2>/dev/null || true
+        
+        # Stop container, restore volume, restart
+        if docker stop "$qdrant_container" 2>/dev/null; then
+            log "Qdrant container stopped"
+            sleep 2
+            
+            if docker cp "$BACKUP_DIR/qdrant-storage/." \
+                "$qdrant_container:/qdrant/storage/" 2>/dev/null; then
+                log "Volume data copied successfully"
+                
+                if docker start "$qdrant_container" 2>/dev/null; then
+                    log "✅ Qdrant restore from volume successful"
+                    qdrant_restored=true
+                else
+                    log_error "Failed to restart Qdrant container"
+                fi
+            else
+                log_error "Failed to copy volume data"
+            fi
+        else
+            log_error "Failed to stop Qdrant container for volume restore"
+        fi
+    else
+        log_warning "No Qdrant backup found or container not running"
     fi
     
     # Restore Neo4j
-    if [ -f "$BACKUP_DIR/neo4j.dump" ] && docker ps | grep -q "veris-memory-${ENVIRONMENT}-neo4j"; then
-        echo "  → Restoring Neo4j..."
-        docker cp "$BACKUP_DIR/neo4j.dump" \
-            "veris-memory-${ENVIRONMENT}-neo4j-1:/tmp/neo4j.dump" 2>/dev/null || true
+    log "Starting Neo4j restore..."
+    local neo4j_restored=false
+    
+    if [ -f "$BACKUP_DIR/neo4j-export.cypher" ] && docker ps | grep -q "veris-memory-${ENVIRONMENT}-neo4j"; then
+        local neo4j_container="veris-memory-${ENVIRONMENT}-neo4j-1"
+        log "Attempting Neo4j restore from cypher export..."
+        echo "  → Restoring Neo4j from cypher export..."
         
-        # Stop Neo4j, restore, restart
-        docker exec veris-memory-${ENVIRONMENT}-neo4j-1 neo4j stop 2>/dev/null || true
-        sleep 5
-        docker exec veris-memory-${ENVIRONMENT}-neo4j-1 \
-            neo4j-admin database load neo4j --from-path=/tmp --overwrite-destination 2>/dev/null || true
-        docker restart veris-memory-${ENVIRONMENT}-neo4j-1 2>/dev/null || true
+        if docker cp "$BACKUP_DIR/neo4j-export.cypher" \
+            "$neo4j_container:/tmp/neo4j-export.cypher" 2>/dev/null; then
+            
+            # Wait for Neo4j to be ready
+            for i in {1..10}; do
+                if docker exec "$neo4j_container" cypher-shell -u neo4j -p "\${NEO4J_AUTH#neo4j/}" \
+                    "RETURN 1" 2>/dev/null; then
+                    log "Neo4j is ready for restore"
+                    break
+                fi
+                log "Waiting for Neo4j to be ready... ($i/10)"
+                sleep 5
+            done
+            
+            # Execute cypher restore
+            if docker exec "$neo4j_container" cypher-shell -u neo4j -p "\${NEO4J_AUTH#neo4j/}" \
+                -f /tmp/neo4j-export.cypher 2>/dev/null; then
+                log "✅ Neo4j restore from cypher successful"
+                neo4j_restored=true
+            else
+                log_warning "Neo4j cypher restore failed, trying dump method"
+            fi
+        else
+            log_warning "Failed to copy cypher export to container"
+        fi
+    fi
+    
+    if [ "$neo4j_restored" = false ] && [ -f "$BACKUP_DIR/neo4j.dump" ] && docker ps | grep -q "veris-memory-${ENVIRONMENT}-neo4j"; then
+        local neo4j_container="veris-memory-${ENVIRONMENT}-neo4j-1"
+        log "Attempting Neo4j restore from dump..."
+        echo "  → Restoring Neo4j from dump..."
+        
+        if docker cp "$BACKUP_DIR/neo4j.dump" \
+            "$neo4j_container:/tmp/neo4j.dump" 2>/dev/null; then
+            log "Dump file copied to container"
+            
+            # Stop Neo4j, restore, restart
+            if docker exec "$neo4j_container" neo4j stop 2>/dev/null; then
+                log "Neo4j stopped for restore"
+                sleep 5
+                
+                if docker exec "$neo4j_container" \
+                    neo4j-admin database load neo4j --from-path=/tmp --overwrite-destination 2>/dev/null; then
+                    log "Database loaded from dump"
+                    
+                    if docker exec "$neo4j_container" neo4j start 2>/dev/null; then
+                        log "✅ Neo4j restore from dump successful"
+                        neo4j_restored=true
+                    else
+                        log_error "Failed to restart Neo4j after restore"
+                    fi
+                else
+                    log_error "Failed to load database from dump"
+                fi
+            else
+                log_warning "Failed to stop Neo4j, trying container restart"
+                docker restart "$neo4j_container" 2>/dev/null || log_error "Container restart failed"
+            fi
+        else
+            log_error "Failed to copy dump to container"
+        fi
+    elif [ "$neo4j_restored" = false ] && [ -d "$BACKUP_DIR/neo4j-data" ] && docker ps | grep -q "veris-memory-${ENVIRONMENT}-neo4j"; then
+        local neo4j_container="veris-memory-${ENVIRONMENT}-neo4j-1"
+        log "Attempting Neo4j restore from data directory..."
+        echo "  → Restoring Neo4j from data backup..."
+        
+        # Stop container, restore data, restart
+        if docker stop "$neo4j_container" 2>/dev/null; then
+            log "Neo4j container stopped for data restore"
+            sleep 3
+            
+            if docker cp "$BACKUP_DIR/neo4j-data/." \
+                "$neo4j_container:/var/lib/neo4j/data/" 2>/dev/null; then
+                log "Data directory copied successfully"
+                
+                if docker start "$neo4j_container" 2>/dev/null; then
+                    log "⚠️ Neo4j restore from data directory completed (may be inconsistent)"
+                    neo4j_restored=true
+                else
+                    log_error "Failed to restart Neo4j container"
+                fi
+            else
+                log_error "Failed to copy data directory"
+            fi
+        else
+            log_error "Failed to stop Neo4j container"
+        fi
+    else
+        log_warning "No Neo4j backup found or container not running"
     fi
     
     # Restore Redis
+    log "Starting Redis restore..."
+    local redis_restored=false
+    
     if [ -f "$BACKUP_DIR/redis.rdb" ] && docker ps | grep -q "veris-memory-${ENVIRONMENT}-redis"; then
+        local redis_container="veris-memory-${ENVIRONMENT}-redis-1"
+        log "Attempting Redis restore from RDB backup..."
         echo "  → Restoring Redis..."
-        docker cp "$BACKUP_DIR/redis.rdb" \
-            "veris-memory-${ENVIRONMENT}-redis-1:/data/dump.rdb" 2>/dev/null || true
-        docker restart veris-memory-${ENVIRONMENT}-redis-1 2>/dev/null || true
+        
+        # Stop Redis, restore RDB, restart
+        if docker stop "$redis_container" 2>/dev/null; then
+            log "Redis container stopped"
+            sleep 2
+            
+            if docker cp "$BACKUP_DIR/redis.rdb" \
+                "$redis_container:/data/dump.rdb" 2>/dev/null; then
+                log "RDB file copied successfully"
+                
+                if docker start "$redis_container" 2>/dev/null; then
+                    log "✅ Redis restore successful"
+                    redis_restored=true
+                else
+                    log_error "Failed to restart Redis container"
+                fi
+            else
+                log_error "Failed to copy RDB file"
+            fi
+        else
+            log_error "Failed to stop Redis container"
+        fi
+    else
+        log_warning "No Redis backup found or container not running"
     fi
     
-    echo -e "${GREEN}✅ Restore completed from $BACKUP_DIR${NC}"
+    # Create restore summary
+    log "Creating restore summary..."
+    local restore_success=0
+    local restore_methods=""
+    
+    [ "$qdrant_restored" = true ] && restore_success=$((restore_success + 1)) && restore_methods="$restore_methods Qdrant"
+    [ "$neo4j_restored" = true ] && restore_success=$((restore_success + 1)) && restore_methods="$restore_methods Neo4j"
+    [ "$redis_restored" = true ] && restore_success=$((restore_success + 1)) && restore_methods="$restore_methods Redis"
+    
+    if [ $restore_success -gt 0 ]; then
+        log "✅ Restore completed: $restore_success components restored:$restore_methods"
+        echo -e "${GREEN}✅ Restore completed from $BACKUP_DIR ($restore_success components)${NC}"
+    else
+        log_error "❌ Restore failed: No components were restored successfully"
+        echo -e "${RED}❌ Restore failed: No components were restored successfully${NC}"
+    fi
     
     # Verify restore
+    log "Verifying services after restore..."
     sleep 5
     echo "  → Verifying services..."
     docker ps --filter "name=veris-memory-${ENVIRONMENT}" --format "table {{.Names}}\t{{.Status}}"
+    
+    # Health check
+    log "Performing post-restore health checks..."
+    local health_checks=0
+    
+    # Check Qdrant
+    if docker exec "veris-memory-${ENVIRONMENT}-qdrant-1" \
+        curl -s 'http://localhost:6333/health' > /dev/null 2>&1; then
+        log "✅ Qdrant health check passed"
+        health_checks=$((health_checks + 1))
+    else
+        log_warning "❌ Qdrant health check failed"
+    fi
+    
+    # Check Neo4j
+    if docker exec "veris-memory-${ENVIRONMENT}-neo4j-1" \
+        cypher-shell -u neo4j -p "\${NEO4J_AUTH#neo4j/}" "RETURN 1" > /dev/null 2>&1; then
+        log "✅ Neo4j health check passed"
+        health_checks=$((health_checks + 1))
+    else
+        log_warning "❌ Neo4j health check failed"
+    fi
+    
+    # Check Redis
+    if docker exec "veris-memory-${ENVIRONMENT}-redis-1" \
+        redis-cli ping > /dev/null 2>&1; then
+        log "✅ Redis health check passed"
+        health_checks=$((health_checks + 1))
+    else
+        log_warning "❌ Redis health check failed"
+    fi
+    
+    log "🔄 RESTORE PHASE COMPLETED - $health_checks/3 services healthy"
 }
 
 # Main execution
