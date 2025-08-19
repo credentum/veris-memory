@@ -475,6 +475,12 @@ async def list_tools() -> List[Tool]:
                         "default": 10,
                         "description": "Maximum results to return",
                     },
+                    "sort_by": {
+                        "type": "string",
+                        "enum": ["relevance", "timestamp"],
+                        "default": "relevance",
+                        "description": "Sort results by relevance score or timestamp (most recent first)",
+                    },
                     "max_hops": {
                         "type": "integer",
                         "minimum": 1,
@@ -1234,6 +1240,8 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 Default: 'hybrid'
             - limit (int, optional): Maximum number of results to return (1-100)
                 Default: 10
+            - sort_by (str, optional): Sort results by 'relevance' or 'timestamp'
+                Default: 'relevance'
 
     Returns:
         Dict containing:
@@ -1274,6 +1282,7 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         search_mode = arguments.get("search_mode", "hybrid")
         retrieval_mode = arguments.get("retrieval_mode", "hybrid")
         limit = arguments.get("limit", 10)
+        sort_by = arguments.get("sort_by", "relevance")  # New parameter: 'relevance' or 'timestamp'
 
         # Validate query with comprehensive security checks
         query_validation = input_validator.validate_input(query, "query")
@@ -1518,13 +1527,16 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                             rel_filter = ""  # Allow all relationship types
 
                         # Multi-hop traversal query with configurable parameters
+                        # Now includes hop distance for proper scoring
                         cypher_query = f"""
-                        MATCH (n:Context)-[r{rel_filter}*1..{max_hops}]->(m)
+                        MATCH path = (n:Context)-[r{rel_filter}*1..{max_hops}]->(m)
                         WHERE (n.type = $type OR $type = 'all')
                         AND (n.content CONTAINS $query OR n.metadata CONTAINS $query OR
                              m.content CONTAINS $query OR m.metadata CONTAINS $query)
                         RETURN DISTINCT m.id as id, m.type as type, m.content as content,
-                               m.metadata as metadata, m.created_at as created_at
+                               m.metadata as metadata, m.created_at as created_at,
+                               length(path) as hop_distance
+                        ORDER BY hop_distance ASC
                         LIMIT $limit
                         """
                     else:
@@ -1554,6 +1566,11 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                             content = record["content"]
                             metadata = record["metadata"]
 
+                        # Calculate score based on hop distance (closer = higher score)
+                        # Score ranges from 1.0 (direct connection) to lower values for distant nodes
+                        hop_distance = record.get("hop_distance", 1)
+                        graph_score = 1.0 / (hop_distance + 0.5)  # +0.5 to avoid division issues and smooth the curve
+
                         results.append(
                             {
                                 "id": record["id"],
@@ -1563,6 +1580,8 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                                 "created_at": (
                                     str(record["created_at"]) if record["created_at"] else None
                                 ),
+                                "score": graph_score,
+                                "hop_distance": hop_distance,
                                 "source": "graph",
                             }
                         )
@@ -1572,6 +1591,22 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
             except Exception as e:
                 logger.error(f"Graph search failed: {e}")
 
+        # Apply sorting based on sort_by parameter
+        if sort_by == "timestamp":
+            # Sort by created_at timestamp (most recent first)
+            results.sort(
+                key=lambda x: x.get("created_at", "") or "",
+                reverse=True  # Most recent first
+            )
+            logger.info(f"Applied timestamp sorting to {len(results)} results")
+        elif sort_by == "relevance":
+            # Sort by score (highest first) - default behavior
+            results.sort(
+                key=lambda x: x.get("score", 0),
+                reverse=True  # Highest score first
+            )
+            logger.info(f"Applied relevance sorting to {len(results)} results")
+        
         # Enhance results with GraphRAG features if requested
         enhanced_results = results[:limit]
         graphrag_metadata = {
