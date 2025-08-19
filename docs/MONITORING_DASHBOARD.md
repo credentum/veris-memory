@@ -146,16 +146,31 @@ The ASCII renderer automatically detects terminal capabilities:
 
 ```bash
 # Get dashboard metrics (JSON)
-GET /api/dashboard/metrics?format=json
+GET /api/dashboard
 
 # Get ASCII dashboard
-GET /api/dashboard/metrics?format=ascii
+GET /api/dashboard?format=ascii
 
 # Get specific sections
-GET /api/dashboard/metrics?sections=system,services
+GET /api/dashboard?sections=system,services
 
 # Force refresh metrics
 POST /api/dashboard/refresh
+```
+
+### Docker Network Access
+
+When running in Docker Compose, the dashboard is accessible at:
+
+```bash
+# From other containers in the same network
+http://monitoring-dashboard:8080/api/dashboard
+
+# From Docker host
+http://localhost:8080/api/dashboard
+
+# From Docker containers to host services
+http://172.17.0.1:8080/api/dashboard
 ```
 
 ### WebSocket API

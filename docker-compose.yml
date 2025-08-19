@@ -109,6 +109,40 @@ services:
     networks:
       - context-store-network
 
+  # Monitoring Dashboard Service
+  monitoring-dashboard:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - REDIS_URL=redis://redis:6379
+      - DASHBOARD_PORT=8080
+      - MONITORING_ENABLED=true
+      - LOG_LEVEL=info
+    command: ["python", "-m", "src.monitoring"]
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/dashboard/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - context-store-network
+
 volumes:
   qdrant_data:
     driver: local

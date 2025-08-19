@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Optional, Set
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 # Import monitoring components with comprehensive error handling
