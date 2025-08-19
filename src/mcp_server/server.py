@@ -51,6 +51,11 @@ try:
     from src.core.graph_query_expander import GraphQueryExpander
     # Metrics collection import
     from src.monitoring.request_metrics import get_metrics_collector
+    # Search enhancement imports
+    from src.mcp_server.search_enhancements import (
+        apply_search_enhancements,
+        is_technical_query
+    )
 except ImportError:
     # Fallback for different import contexts
     import sys
@@ -80,6 +85,11 @@ except ImportError:
     from middleware.scope_validator import ScopeValidator, ScopeMiddleware
     # Metrics collection import
     from monitoring.request_metrics import get_metrics_collector
+    # Search enhancement imports
+    from mcp_server.search_enhancements import (
+        apply_search_enhancements,
+        is_technical_query
+    )
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -1606,6 +1616,30 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
             except Exception as e:
                 logger.error(f"Graph search failed: {e}")
 
+        # Apply search enhancements before sorting (Phase 1 improvements)
+        # These enhancements address workspace 001's identified issues:
+        # 1. Exact match boosting for filenames
+        # 2. Context type weighting to prioritize code over conversations
+        # 3. Recency balancing to prevent new content from overshadowing older relevant content
+        # 4. Technical term recognition for better code discovery
+        
+        # Determine if this is a technical query
+        technical_query = is_technical_query(query)
+        
+        # Apply enhancements with all features enabled
+        # These can be made configurable via arguments in the future
+        if results:
+            logger.info(f"Applying search enhancements to {len(results)} results (technical_query={technical_query})")
+            results = apply_search_enhancements(
+                results=results,
+                query=query,
+                enable_exact_match=True,  # Phase 1: Exact match boosting
+                enable_type_weighting=True,  # Phase 1: Context type weighting
+                enable_recency_decay=True,  # Phase 2: Recency balancing
+                enable_technical_boost=technical_query  # Phase 2: Only boost technical terms for technical queries
+            )
+            logger.info(f"Search enhancements applied, top result score: {results[0].get('enhanced_score', 0):.3f}")
+        
         # Apply sorting based on sort_by parameter
         if sort_by == "timestamp":
             # Sort by created_at timestamp (most recent first)
@@ -1615,12 +1649,12 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
             )
             logger.info(f"Applied timestamp sorting to {len(results)} results")
         elif sort_by == "relevance":
-            # Sort by score (highest first) - default behavior
+            # Sort by enhanced score if available, otherwise original score
             results.sort(
-                key=lambda x: x.get("score", 0),
+                key=lambda x: x.get("enhanced_score", x.get("score", 0)),
                 reverse=True  # Highest score first
             )
-            logger.info(f"Applied relevance sorting to {len(results)} results")
+            logger.info(f"Applied relevance sorting to {len(results)} enhanced results")
         
         # Enhance results with GraphRAG features if requested
         enhanced_results = results[:limit]
@@ -1685,6 +1719,14 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "original_query": original_query,
                 "enhanced_queries": enhanced_queries[:3] if len(enhanced_queries) > 1 else [],
                 "fact_aware_ranking_applied": any("fact_boost" in r for r in enhanced_results)
+            },
+            "search_enhancements": {
+                "technical_query_detected": technical_query,
+                "exact_match_boosting": True,
+                "context_type_weighting": True,
+                "recency_balancing": True,
+                "technical_term_boosting": technical_query,
+                "top_result_boosts": enhanced_results[0].get("score_boosts", {}) if enhanced_results else {}
             }
         }
 
