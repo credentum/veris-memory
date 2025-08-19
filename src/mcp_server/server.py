@@ -1080,8 +1080,26 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                     embedding=embedding,
                     metadata=vector_metadata,
                 )
-                vector_id = context_id
-                logger.info(f"Stored vector with ID: {vector_id}")
+                
+                # Verify the vector was actually stored
+                try:
+                    import time
+                    time.sleep(0.1)  # Brief wait for write to complete
+                    stored_points = qdrant_client.client.retrieve(
+                        collection_name=qdrant_client.collection_name,
+                        ids=[context_id],
+                        with_payload=False,
+                        with_vectors=False
+                    )
+                    if stored_points and len(stored_points) > 0:
+                        vector_id = context_id
+                        logger.info(f"✅ Vector storage verified - stored and retrievable: {vector_id}")
+                    else:
+                        vector_id = None
+                        logger.error(f"❌ Vector storage failed - data not retrievable after write: {context_id}")
+                except Exception as verify_e:
+                    logger.warning(f"Vector storage verification failed: {verify_e}, assuming success")
+                    vector_id = context_id
                 
                 # Store stitched Q&A units as additional vectors (Phase 2 enhancement)
                 qa_vector_ids = []
@@ -1195,8 +1213,22 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         if graph_id:
             backend_status.append("graph")
 
+        # Determine if storage was actually successful
+        storage_successful = len(backend_status) > 0  # At least one backend must succeed
+        
         if not backend_status:
-            message = "Context stored with fallback (no backends available)"
+            return {
+                "success": False,
+                "context_id": None,
+                "vector_id": vector_id,
+                "graph_id": graph_id,
+                "message": "Storage failed: No backends available or all storage operations failed",
+                "backend_status": {
+                    "vector": "failed",
+                    "graph": "failed",
+                },
+                "error_type": "storage_failure"
+            }
         elif len(backend_status) == 2:
             message = "Context stored successfully in all backends"
         else:
@@ -1208,7 +1240,7 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
         return {
             "success": True,
-            "id": context_id,
+            "context_id": context_id,
             "vector_id": vector_id,
             "graph_id": graph_id,
             "message": message,
@@ -1227,8 +1259,9 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         logger.error(f"Error storing context: {e}")
         return {
             "success": False,
-            "id": None,
+            "context_id": None,
             "message": f"Failed to store context: {str(e)}",
+            "error_type": "exception"
         }
 
 
