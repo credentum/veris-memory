@@ -134,11 +134,11 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/dashboard/metrics"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/dashboard"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 90s
     restart: unless-stopped
     networks:
       - context-store-network
