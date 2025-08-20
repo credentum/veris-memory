@@ -153,6 +153,44 @@ volumes:
   redis_data:
     driver: local
 
+  # Sentinel Monitoring Service
+  sentinel:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.sentinel
+    container_name: veris-memory-${ENVIRONMENT:-dev}-sentinel
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - SENTINEL_CHECK_INTERVAL=60
+      - SENTINEL_TARGET_URL=http://context-store:8000
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - REDIS_URL=redis://redis:6379
+      - QDRANT_URL=http://qdrant:6333
+      - SENTINEL_DASHBOARD_URL=http://monitoring-dashboard:8080
+    ports:
+      - "9090:9090"
+    depends_on:
+      context-store:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - context-store-network
+
 networks:
   context-store-network:
     driver: bridge
