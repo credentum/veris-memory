@@ -34,9 +34,26 @@ class SimpleRedisClient:
         """
         try:
             # Get Redis configuration from environment
-            host = os.getenv("REDIS_HOST", "redis")
-            port = int(os.getenv("REDIS_PORT", "6379"))
-            db = int(os.getenv("REDIS_DB", "0"))
+            # First check REDIS_URL for Docker deployments
+            redis_url = os.getenv("REDIS_URL")
+            if redis_url:
+                # Parse redis://host:port format
+                import re
+                url_match = re.match(r"^redis://([^:/]+):?(\d+)?/?(\d+)?", redis_url)
+                if url_match:
+                    host = url_match.group(1)
+                    port = int(url_match.group(2)) if url_match.group(2) else 6379
+                    db = int(url_match.group(3)) if url_match.group(3) else 0
+                else:
+                    # Fallback to individual env vars
+                    host = os.getenv("REDIS_HOST", "redis")
+                    port = int(os.getenv("REDIS_PORT", "6379"))
+                    db = int(os.getenv("REDIS_DB", "0"))
+            else:
+                # Use individual environment variables
+                host = os.getenv("REDIS_HOST", "redis")
+                port = int(os.getenv("REDIS_PORT", "6379"))
+                db = int(os.getenv("REDIS_DB", "0"))
             
             # Create connection parameters
             connection_params = {

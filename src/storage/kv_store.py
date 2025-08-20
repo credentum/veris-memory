@@ -125,9 +125,29 @@ class RedisConnector(DatabaseComponent):
         # Password comes from environment variables or config, not hardcoded
         password = kwargs.get("password", None)
         redis_config = self.config.get("redis", {})
-        host = redis_config.get("host", "localhost")
-        port = redis_config.get("port", 6379)
-        db = redis_config.get("database", 0)
+        
+        # Check REDIS_URL environment variable first for Docker deployments
+        import os
+        redis_url = os.getenv("REDIS_URL")
+        if redis_url:
+            # Parse redis://host:port format
+            import re
+            url_match = re.match(r"^redis://([^:/]+):?(\d+)?/?(\d+)?", redis_url)
+            if url_match:
+                host = url_match.group(1)
+                port = int(url_match.group(2)) if url_match.group(2) else 6379
+                db = int(url_match.group(3)) if url_match.group(3) else 0
+            else:
+                # Fallback to config
+                host = redis_config.get("host", "localhost")
+                port = redis_config.get("port", 6379)
+                db = redis_config.get("database", 0)
+        else:
+            # Use config values
+            host = redis_config.get("host", "localhost")
+            port = redis_config.get("port", 6379)
+            db = redis_config.get("database", 0)
+        
         ssl = redis_config.get("ssl", False)
 
         pool_config = self.perf_config.get("connection_pool", {})

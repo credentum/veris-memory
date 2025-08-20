@@ -156,11 +156,63 @@ def get_secure_connection_config(config: dict[str, Any], service: str) -> dict[s
     else:
         default_ssl = service_config.get("ssl", False)
 
-    # Extract host and port from URI if provided (e.g., bolt://localhost:7687)
-    host = service_config.get("host", "localhost")
-    port = service_config.get("port")
+    # Check environment variables first for Docker deployment
+    # This allows Docker deployments to override config file settings
+    import os
+    
+    if service == "neo4j":
+        env_uri = os.getenv("NEO4J_URI")
+        if env_uri:
+            # Parse the URI to extract host and port
+            import re
+            uri_match = re.match(r"^[a-z+]+://([^:/]+):?(\d+)?", env_uri)
+            if uri_match:
+                host = uri_match.group(1)
+                port = int(uri_match.group(2)) if uri_match.group(2) else 7687
+            else:
+                host = service_config.get("host", "localhost")
+                port = service_config.get("port")
+        else:
+            host = service_config.get("host", "localhost")
+            port = service_config.get("port")
+    elif service == "redis":
+        # Check REDIS_URL environment variable
+        env_url = os.getenv("REDIS_URL")
+        if env_url:
+            # Parse redis://host:port format
+            import re
+            url_match = re.match(r"^redis://([^:/]+):?(\d+)?", env_url)
+            if url_match:
+                host = url_match.group(1)
+                port = int(url_match.group(2)) if url_match.group(2) else 6379
+            else:
+                host = service_config.get("host", "localhost")
+                port = service_config.get("port")
+        else:
+            host = service_config.get("host", "localhost")
+            port = service_config.get("port")
+    elif service == "qdrant":
+        # Check QDRANT_URL environment variable
+        env_url = os.getenv("QDRANT_URL")
+        if env_url:
+            # Parse http://host:port format
+            import re
+            url_match = re.match(r"^https?://([^:/]+):?(\d+)?", env_url)
+            if url_match:
+                host = url_match.group(1)
+                port = int(url_match.group(2)) if url_match.group(2) else 6333
+            else:
+                host = service_config.get("host", "localhost")
+                port = service_config.get("port")
+        else:
+            host = service_config.get("host", "localhost")
+            port = service_config.get("port")
+    else:
+        # Default for other services
+        host = service_config.get("host", "localhost")
+        port = service_config.get("port")
 
-    # Parse URI if present (common for Neo4j configuration)
+    # Parse URI if present (common for Neo4j configuration in config file)
     uri = service_config.get("uri")
     if uri and not port:
         import re
