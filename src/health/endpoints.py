@@ -80,7 +80,7 @@ class HealthChecker:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    f"{self.qdrant_url}/health",
+                    f"{self.qdrant_url}/",  # Qdrant doesn't have /health, use root
                     timeout=aiohttp.ClientTimeout(total=self.readiness_timeout)
                 ) as response:
                     latency = (time.time() - start) * 1000
@@ -138,14 +138,16 @@ class HealthChecker:
         
         try:
             async with aiohttp.ClientSession() as session:
-                # Neo4j REST API health check
+                # Neo4j REST API health check - just check if server responds
+                # We expect 401 (unauthorized) which still means the server is running
                 async with session.get(
                     f"{self.neo4j_url}/db/data/",
                     timeout=aiohttp.ClientTimeout(total=self.readiness_timeout)
                 ) as response:
                     latency = (time.time() - start) * 1000
                     
-                    if response.status == 200:
+                    # 200 = authenticated, 401 = unauthorized but server is up
+                    if response.status in [200, 401]:
                         return ComponentHealth(
                             name="neo4j",
                             status=HealthStatus.HEALTHY,
@@ -181,7 +183,7 @@ class HealthChecker:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    f"{self.api_url}/",
+                    f"{self.api_url}/health",  # Use health endpoint for context-store
                     timeout=aiohttp.ClientTimeout(total=self.readiness_timeout)
                 ) as response:
                     latency = (time.time() - start) * 1000

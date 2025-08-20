@@ -6,6 +6,7 @@ REST endpoints for system health monitoring, readiness probes,
 and component status checking.
 """
 
+import os
 from typing import Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,13 +16,19 @@ from ..models import HealthResponse, ComponentHealth, HealthStatus, ErrorRespons
 from ..dependencies import get_query_dispatcher
 from ...core.query_dispatcher import QueryDispatcher
 from ...health.endpoints import HealthChecker
+from ...health.endpoints import HealthStatus as EndpointHealthStatus
 from ...utils.logging_middleware import api_logger
 
 
 router = APIRouter()
 
-# Initialize health checker
-health_checker = HealthChecker()
+# Initialize health checker with Docker service names from environment
+health_config = {
+    "qdrant_url": os.getenv("QDRANT_URL", "http://qdrant:6333").replace("qdrant:6333", "qdrant:6333"),
+    "neo4j_url": "http://neo4j:7474",  # Neo4j HTTP endpoint
+    "api_url": "http://context-store:8000"  # MCP server (context-store service)
+}
+health_checker = HealthChecker(config=health_config)
 
 
 @router.get(
@@ -109,7 +116,8 @@ async def liveness_probe() -> Dict[str, Any]:
     try:
         status, response = await health_checker.liveness_check()
         
-        if status != HealthStatus.HEALTHY:
+        # Convert EndpointHealthStatus to API HealthStatus for comparison
+        if status != EndpointHealthStatus.HEALTHY:
             raise HTTPException(
                 status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=response

@@ -11,17 +11,18 @@ import subprocess
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from ..models import CheckResult
+from ..base_check import BaseCheck
+from ..models import CheckResult, SentinelConfig
 
 
-class S11FirewallStatus:
+class S11FirewallStatus(BaseCheck):
     """Check firewall status and configuration."""
     
     CHECK_ID = "S11-firewall-status"
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: SentinelConfig):
         """Initialize firewall status check."""
-        self.config = config or {}
+        super().__init__(config, self.CHECK_ID, "Firewall status and security monitoring")
         self.required_ports = [
             22,     # SSH
             2222,   # Claude container
@@ -34,7 +35,7 @@ class S11FirewallStatus:
             (60000, 61000),  # Mosh
         ]
     
-    async def check(self) -> CheckResult:
+    async def run_check(self) -> CheckResult:
         """
         Perform firewall status check.
         
