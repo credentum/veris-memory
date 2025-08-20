@@ -8,12 +8,14 @@ across vector, graph, and key-value backends with intelligent result merging.
 
 import asyncio
 import time
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, Callable
 from enum import Enum
 
 from ..interfaces.backend_interface import BackendSearchInterface, SearchOptions, BackendSearchError
 from ..interfaces.memory_result import MemoryResult, SearchResultResponse, merge_results, sort_results_by_score
 from ..utils.logging_middleware import search_logger, log_backend_timing, TimingCollector
+from ..ranking.policy_engine import RankingPolicyEngine, RankingContext, ranking_engine
+from ..filters.pre_filter import PreFilterEngine, TimeWindowFilter, FilterCriteria, FilterOperator, pre_filter_engine
 
 
 class SearchMode(str, Enum):
@@ -98,7 +100,10 @@ class QueryDispatcher:
         query: str,
         search_mode: SearchMode = SearchMode.HYBRID,
         options: Optional[SearchOptions] = None,
-        dispatch_policy: DispatchPolicy = None
+        dispatch_policy: DispatchPolicy = None,
+        ranking_policy: Optional[str] = None,
+        pre_filters: Optional[List[FilterCriteria]] = None,
+        time_window: Optional[TimeWindowFilter] = None
     ) -> SearchResultResponse:
         """
         Dispatch a search query to appropriate backends.
@@ -108,6 +113,9 @@ class QueryDispatcher:
             search_mode: Which backends to use
             options: Search configuration options
             dispatch_policy: How to execute the search across backends
+            ranking_policy: Name of ranking policy to use
+            pre_filters: List of pre-filtering criteria
+            time_window: Time window filter configuration
             
         Returns:
             SearchResultResponse with merged and ranked results
@@ -152,9 +160,21 @@ class QueryDispatcher:
                 query, options, target_backends, dispatch_policy, trace_id
             )
             
-            # Merge and rank results
+            # Merge results from all backends
             merged_results = merge_results(*all_results.values()) if all_results else []
-            ranked_results = self._rank_results(merged_results, query, search_mode)
+            
+            # Apply pre-filtering if specified
+            if pre_filters:
+                merged_results = pre_filter_engine.apply_criteria_filter(merged_results, pre_filters)
+                search_logger.debug(f"Applied {len(pre_filters)} pre-filters", results_after_filter=len(merged_results))
+            
+            # Apply time window filtering if specified
+            if time_window:
+                merged_results = pre_filter_engine.apply_time_window(merged_results, time_window)
+                search_logger.debug("Applied time window filter", results_after_filter=len(merged_results))
+            
+            # Apply ranking policy
+            ranked_results = self._rank_results(merged_results, query, search_mode, ranking_policy, trace_id)
             
             # Apply final limit
             final_results = ranked_results[:options.limit]
@@ -239,7 +259,40 @@ class QueryDispatcher:
             "timing_summary": self.timing_collector.get_summary(),
             "registered_backends": self.list_backends(),
             "backend_priorities": self.backend_priorities,
-            "default_policy": self.default_policy.value
+            "default_policy": self.default_policy.value,
+            "ranking_policies": ranking_engine.list_policies(),
+            "default_ranking_policy": ranking_engine.default_policy_name
+        }
+    
+    def get_available_ranking_policies(self) -> List[str]:
+        """Get list of available ranking policies."""
+        return ranking_engine.list_policies()
+    
+    def get_ranking_policy_info(self, policy_name: str) -> Optional[Dict[str, Any]]:
+        """Get information about a specific ranking policy."""
+        return ranking_engine.get_policy_info(policy_name)
+    
+    def set_default_ranking_policy(self, policy_name: str) -> bool:
+        """Set the default ranking policy."""
+        return ranking_engine.set_default_policy(policy_name)
+    
+    def register_custom_filter(self, name: str, filter_func: Callable) -> None:
+        """Register a custom pre-filter function."""
+        pre_filter_engine.register_custom_filter(name, filter_func)
+        search_logger.info(f"Registered custom filter in dispatcher: {name}")
+    
+    def get_filter_capabilities(self) -> Dict[str, Any]:
+        """Get information about filtering capabilities."""
+        return {
+            "time_window_filtering": True,
+            "tag_filtering": True,
+            "content_type_filtering": True,
+            "source_filtering": True,
+            "score_filtering": True,
+            "namespace_filtering": True,
+            "text_filtering": True,
+            "custom_filters": list(pre_filter_engine.custom_filters.keys()),
+            "supported_operators": [op.value for op in FilterOperator.__members__.values()]
         }
     
     # Private methods
@@ -404,30 +457,49 @@ class QueryDispatcher:
         self,
         results: List[MemoryResult],
         query: str,
-        search_mode: SearchMode
+        search_mode: SearchMode,
+        ranking_policy: Optional[str] = None,
+        trace_id: Optional[str] = None
     ) -> List[MemoryResult]:
-        """Apply ranking to merged results based on query and mode."""
+        """Apply ranking to merged results using specified or default policy."""
         if not results:
             return results
         
-        # For now, use simple score-based ranking
-        # This will be enhanced in Phase 3 with pluggable ranking policies
-        ranked = sort_results_by_score(results, descending=True)
+        # Create ranking context
+        ranking_context = RankingContext(
+            query=query,
+            search_mode=search_mode.value,
+            timestamp=time.time(),
+            custom_features={
+                "trace_id": trace_id
+            }
+        )
         
-        # Mode-specific adjustments
-        if search_mode == SearchMode.VECTOR:
-            # Vector results already have good relevance scores
-            pass
-        elif search_mode == SearchMode.GRAPH:
-            # Boost graph results slightly as they represent relationships
-            for result in ranked:
-                if result.source.value == "graph":
-                    result.score = min(1.0, result.score * 1.1)
-        elif search_mode == SearchMode.KV:
-            # KV results are direct matches, boost them
-            for result in ranked:
-                if result.source.value == "kv":
-                    result.score = min(1.0, result.score * 1.2)
-        
-        # Re-sort after adjustments
-        return sort_results_by_score(ranked, descending=True)
+        try:
+            # Use ranking engine to apply policy
+            ranked_results = ranking_engine.rank_results(
+                results, 
+                ranking_context, 
+                ranking_policy
+            )
+            
+            search_logger.debug(
+                f"Applied ranking policy",
+                policy=ranking_policy or "default",
+                input_count=len(results),
+                output_count=len(ranked_results),
+                trace_id=trace_id
+            )
+            
+            return ranked_results
+            
+        except Exception as e:
+            search_logger.warning(
+                f"Ranking failed, using fallback",
+                error=str(e),
+                policy=ranking_policy,
+                trace_id=trace_id
+            )
+            
+            # Fallback to simple score-based ranking
+            return sort_results_by_score(results, descending=True)

@@ -163,13 +163,12 @@ class SearchResultResponse(BaseModel):
 
 
 # Utility functions for result manipulation
-def merge_results(results1: List[MemoryResult], results2: List[MemoryResult]) -> List[MemoryResult]:
+def merge_results(*result_lists: List[MemoryResult]) -> List[MemoryResult]:
     """
-    Merge two result lists, removing duplicates based on ID.
+    Merge multiple result lists, removing duplicates based on ID.
     
     Args:
-        results1: First list of results
-        results2: Second list of results
+        *result_lists: Variable number of result lists to merge
         
     Returns:
         Merged list with duplicates removed (first occurrence wins)
@@ -177,10 +176,11 @@ def merge_results(results1: List[MemoryResult], results2: List[MemoryResult]) ->
     seen_ids = set()
     merged = []
     
-    for result in results1 + results2:
-        if result.id not in seen_ids:
-            seen_ids.add(result.id)
-            merged.append(result)
+    for result_list in result_lists:
+        for result in result_list:
+            if result.id not in seen_ids:
+                seen_ids.add(result.id)
+                merged.append(result)
     
     return merged
 
