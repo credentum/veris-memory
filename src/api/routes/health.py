@@ -71,7 +71,7 @@ async def health_check(
         if overall_status == HealthStatus.UNHEALTHY:
             raise HTTPException(
                 status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=health_response.dict()
+                detail=health_response.to_dict()
             )
         
         api_logger.info(
@@ -164,7 +164,7 @@ async def readiness_probe(
         if overall_status == HealthStatus.UNHEALTHY:
             raise HTTPException(
                 status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=health_response.dict()
+                detail=health_response.to_dict()
             )
         
         return health_response
