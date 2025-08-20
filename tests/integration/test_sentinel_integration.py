@@ -9,6 +9,7 @@ the health of the Veris Memory system end-to-end.
 import asyncio
 import os
 import time
+from typing import Optional, List, Dict, Any, AsyncGenerator
 import pytest
 import aiohttp
 from unittest.mock import patch, AsyncMock, MagicMock
@@ -20,7 +21,16 @@ from src.monitoring.alerts.telegram import TelegramAlert
 
 
 class TestSentinelIntegration:
-    """Integration tests for Sentinel monitoring system."""
+    """
+    Integration tests for the Sentinel monitoring system.
+    
+    This test class validates the core functionality of Sentinel including:
+    - Health check monitoring and failure detection
+    - Alert management and Telegram integration
+    - Recovery detection and circuit breaker behavior
+    - Concurrent check execution and graceful shutdown
+    - Error handling and resilience
+    """
     
     @pytest.fixture
     async def config(self) -> SentinelConfig:
@@ -35,7 +45,7 @@ class TestSentinelIntegration:
         })
     
     @pytest.fixture
-    async def runner(self, config: SentinelConfig) -> SentinelRunner:
+    async def runner(self, config: SentinelConfig) -> AsyncGenerator[SentinelRunner, None]:
         """Create a Sentinel runner instance."""
         runner = SentinelRunner(config)
         yield runner
@@ -168,9 +178,9 @@ class TestSentinelIntegration:
     @pytest.mark.asyncio
     async def test_concurrent_check_execution(self, runner: SentinelRunner) -> None:
         """Test that multiple checks run concurrently."""
-        execution_times = []
+        execution_times: List[float] = []
         
-        async def mock_check_run(self):
+        async def mock_check_run(self) -> CheckResult:
             start = time.time()
             await asyncio.sleep(0.5)  # Simulate check taking time
             execution_times.append(time.time() - start)
@@ -198,8 +208,11 @@ class TestSentinelIntegration:
     @pytest.mark.asyncio
     async def test_api_endpoint_health(self, runner: SentinelRunner) -> None:
         """Test Sentinel's own health check API endpoint."""
+        # Use dynamic port from environment or default
+        test_port: int = int(os.getenv('SENTINEL_TEST_PORT', '9091'))
+        
         # Start API server
-        api_task = asyncio.create_task(runner.start_api_server(port=9091))
+        api_task = asyncio.create_task(runner.start_api_server(port=test_port))
         
         try:
             await asyncio.sleep(1)  # Let server start
@@ -207,7 +220,7 @@ class TestSentinelIntegration:
             # Check health endpoint
             async with aiohttp.ClientSession() as session:
                 try:
-                    async with session.get("http://localhost:9091/status") as response:
+                    async with session.get(f"http://localhost:{test_port}/status") as response:
                         assert response.status == 200
                         data = await response.json()
                         assert "status" in data
@@ -225,7 +238,7 @@ class TestSentinelIntegration:
     @pytest.mark.asyncio
     async def test_circuit_breaker_behavior(self, runner: SentinelRunner) -> None:
         """Test circuit breaker prevents alert spam."""
-        check_id = "S1-health"
+        check_id: str = "S1-health"
         
         # Mock continuous failures
         with patch.object(runner.checks[0], 'run_check') as mock_check:
@@ -237,9 +250,9 @@ class TestSentinelIntegration:
                 details={}
             )
             
-            alert_count = 0
+            alert_count: int = 0
             
-            async def count_alerts(*args, **kwargs):
+            async def count_alerts(*args: Any, **kwargs: Any) -> None:
                 nonlocal alert_count
                 alert_count += 1
             
@@ -329,7 +342,7 @@ class TestSentinelIntegration:
                 await runner._run_check_cycle()
         
         # Check metrics
-        metrics = runner.get_metrics()
+        metrics: Dict[str, Any] = runner.get_metrics()
         assert "check_results" in metrics
         assert "failure_counts" in metrics
         assert "total_checks_run" in metrics
@@ -337,7 +350,16 @@ class TestSentinelIntegration:
 
 
 class TestSentinelScenarios:
-    """Test real-world failure scenarios."""
+    """
+    Test real-world failure scenarios for Sentinel.
+    
+    This test class focuses on specific failure scenarios that Sentinel
+    must detect and handle correctly:
+    - Database wipe detection (like the overnight incident)
+    - Service cascade failures
+    - Network partitions and timeout handling
+    - Data consistency violations
+    """
     
     @pytest.mark.asyncio
     async def test_database_wipe_detection(self) -> None:
@@ -358,9 +380,9 @@ class TestSentinelScenarios:
             mock_response.json = AsyncMock(return_value={"contexts": []})
             mock_post.return_value.__aenter__.return_value = mock_response
             
-            alert_sent = False
+            alert_sent: bool = False
             
-            async def capture_alert(*args, **kwargs):
+            async def capture_alert(*args: Any, **kwargs: Any) -> None:
                 nonlocal alert_sent
                 alert_sent = True
                 # Check alert mentions data loss
@@ -389,9 +411,9 @@ class TestSentinelScenarios:
         })
         
         runner = SentinelRunner(config)
-        alerts_sent = []
+        alerts_sent: List[tuple[str, str]] = []
         
-        async def track_alerts(check_id, message, *args, **kwargs):
+        async def track_alerts(check_id: str, message: str, *args: Any, **kwargs: Any) -> None:
             alerts_sent.append((check_id, message))
         
         with patch.object(runner.alert_manager, 'send_alert', side_effect=track_alerts):
