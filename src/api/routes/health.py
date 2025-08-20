@@ -6,6 +6,7 @@ REST endpoints for system health monitoring, readiness probes,
 and component status checking.
 """
 
+import os
 from typing import Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,8 +21,13 @@ from ...utils.logging_middleware import api_logger
 
 router = APIRouter()
 
-# Initialize health checker
-health_checker = HealthChecker()
+# Initialize health checker with Docker service names from environment
+health_config = {
+    "qdrant_url": os.getenv("QDRANT_URL", "http://qdrant:6333").replace("qdrant:6333", "qdrant:6333"),
+    "neo4j_url": "http://neo4j:7474",  # Neo4j HTTP endpoint
+    "api_url": "http://context-store:8000"  # MCP server (context-store service)
+}
+health_checker = HealthChecker(config=health_config)
 
 
 @router.get(
