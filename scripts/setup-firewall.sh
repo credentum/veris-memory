@@ -45,7 +45,8 @@ ufw allow 2222/tcp comment 'Claude CLI dev container'
 ufw allow 60000:61000/udp comment 'Mosh UDP range'
 
 # Veris Memory services
-ufw allow 8000/tcp comment 'Veris Memory API'
+ufw allow 8000/tcp comment 'Veris Memory MCP Server'
+ufw allow 8001/tcp comment 'Veris Memory REST API'
 ufw allow 8080/tcp comment 'Monitoring Dashboard'
 ufw allow 9090/tcp comment 'Sentinel Monitoring API'
 
@@ -106,7 +107,8 @@ echo "🔍 Services Protected:"
 echo "  ✅ SSH:        Port 22"
 echo "  ✅ Claude:     Port 2222"
 echo "  ✅ Mosh:       Ports 60000-61000/udp"
-echo "  ✅ API:        Port 8000"
+echo "  ✅ MCP Server: Port 8000
+  ✅ REST API:   Port 8001"
 echo "  ✅ Dashboard:  Port 8080"
 echo "  ✅ Sentinel:   Port 9090"
 
@@ -121,8 +123,11 @@ echo ""
 echo "🧪 Testing service accessibility..."
 
 # Test if services respond (don't fail script if they don't)
-echo -n "  API (8000): "
+echo -n "  MCP Server (8000): "
 timeout 2 curl -s http://localhost:8000 > /dev/null 2>&1 && echo "✅ Responding" || echo "⚠️ Not responding (service may be down)"
+
+echo -n "  REST API (8001): "
+timeout 2 curl -s http://localhost:8001 > /dev/null 2>&1 && echo "✅ Responding" || echo "⚠️ Not responding (service may be down)"
 
 echo -n "  Dashboard (8080): "
 timeout 2 curl -s http://localhost:8080 > /dev/null 2>&1 && echo "✅ Responding" || echo "⚠️ Not responding (service may be down)"

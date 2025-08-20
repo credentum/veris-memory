@@ -25,7 +25,8 @@ class S11FirewallStatus:
         self.required_ports = [
             22,     # SSH
             2222,   # Claude container
-            8000,   # API
+            8000,   # MCP Server
+            8001,   # REST API
             8080,   # Dashboard
             9090,   # Sentinel
         ]
