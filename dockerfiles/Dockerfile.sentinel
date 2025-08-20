@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:ce81dc539f0dd1b9cefdea87a080b1a41c182e4f6e9956c575d1a1738c6dd898
 
 WORKDIR /app
 
@@ -18,17 +18,7 @@ COPY config/ ./config/
 # Create necessary directories
 RUN mkdir -p /var/lib/sentinel
 
-# Environment variables with defaults
-ENV TELEGRAM_BOT_TOKEN=""
-ENV TELEGRAM_CHAT_ID=""
-ENV SENTINEL_CHECK_INTERVAL="60"
-ENV SENTINEL_TARGET_URL="http://context-store:8000"
-ENV SENTINEL_REDIS_URL="redis://redis:6379"
-ENV SENTINEL_QDRANT_URL="http://qdrant:6333"
-ENV SENTINEL_NEO4J_BOLT="bolt://neo4j:7687"
-ENV SENTINEL_NEO4J_USER="neo4j"
-ENV NEO4J_PASSWORD=""
-ENV SENTINEL_DASHBOARD_URL="http://monitoring-dashboard:8080"
+# Environment variables (configured via docker-compose)
 ENV PYTHONPATH="/app"
 
 # Health check endpoint

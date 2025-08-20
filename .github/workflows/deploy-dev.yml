@@ -227,16 +227,7 @@ jobs:
                 cp .env.template .env
               fi
               
-              # CRITICAL: Debug and fix password issues
-              echo "🔍 ============================================"
-              echo "🔍 DEBUG: Password Configuration"
-              echo "🔍 ============================================"
-              
-              # Show what's currently in .env (if it exists)
-              if [ -f .env ]; then
-                echo "📋 Current .env NEO4J entries BEFORE modification:"
-                grep NEO4J .env || echo "  No NEO4J entries found"
-              fi
+              # Configure environment variables
               
               # Remove ALL NEO4J lines (both PASSWORD and AUTH)
               echo "🗑️  Removing ALL existing NEO4J lines from .env..."
@@ -261,31 +252,22 @@ jobs:
                 echo "TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}" >> .env
               fi
               
-              # Verify what we wrote
-              echo "📋 NEW .env NEO4J entries AFTER modification:"
-              grep NEO4J .env || echo "  ERROR: No NEO4J entries found!"
-              
-              # Check password length to verify it's not empty (without exposing it)
-              PASSWORD_LENGTH=$(grep "^NEO4J_PASSWORD=" .env | cut -d= -f2 | wc -c)
-              echo "🔐 Password length: $PASSWORD_LENGTH characters"
-              
-              if [ "$PASSWORD_LENGTH" -lt 5 ]; then
-                echo "❌ ============================================"
-                echo "❌ FATAL ERROR: NEO4J_PASSWORD is too short or empty!"
-                echo "❌ Password must be at least 5 characters"
-                echo "❌ Check GitHub Secrets configuration"
-                echo "❌ ============================================"
+              # Verify configuration
+              if ! grep -q "^NEO4J_PASSWORD=" .env; then
+                echo "❌ ERROR: NEO4J_PASSWORD not found in .env!"
                 exit 1
               fi
               
-              # Also verify Neo4j container can use this password
-              echo "🔍 Neo4j will be configured with:"
-              echo "  - Username: neo4j"
-              echo "  - Password length: $PASSWORD_LENGTH characters"
-              echo "  - Password starts with: $(grep "^NEO4J_PASSWORD=" .env | cut -d= -f2 | cut -c1-3)***"
+              # Verify password was set (without exposing it)
+              if ! grep -q "^NEO4J_PASSWORD=.\+" .env; then
+                echo "❌ ERROR: NEO4J_PASSWORD is not configured!"
+                echo "❌ Check GitHub Secrets configuration"
+                exit 1
+              fi
               
-              echo "✅ Password configuration completed"
-              echo "🔍 ============================================"
+              echo "✅ Neo4j authentication configured"
+              
+              echo "✅ Environment configuration completed"
               
               # Containers and volumes already cleaned up by bulletproof cleanup above
               echo "✅ Using clean state from bulletproof cleanup"
@@ -311,16 +293,11 @@ jobs:
               
               echo "✅ Docker compose completed successfully"
               
-              # CRITICAL: Verify .env wasn't changed by docker-compose or any script
-              echo "🔍 ============================================"
-              echo "🔍 POST-DEPLOY: Verifying .env integrity"
-              echo "🔍 ============================================"
-              echo "📋 .env NEO4J entries AFTER docker-compose:"
-              grep NEO4J .env || echo "  ERROR: No NEO4J entries found!"
-              
-              # Check if password matches what we expect
-              ACTUAL_PASSWORD=$(grep "^NEO4J_PASSWORD=" .env | cut -d= -f2)
-              EXPECTED_START=$(echo "${{ secrets.NEO4J_PASSWORD }}" | cut -c1-3)
+              # Verify .env integrity after deployment
+              if ! grep -q "^NEO4J_PASSWORD=" .env; then
+                echo "❌ ERROR: NEO4J_PASSWORD was removed during deployment!"
+                exit 1
+              fi
               ACTUAL_START=$(echo "$ACTUAL_PASSWORD" | cut -c1-3)
               
               if [ "$ACTUAL_START" != "$EXPECTED_START" ]; then
