@@ -60,13 +60,14 @@ ENV LOG_LEVEL=info
 ENV ENVIRONMENT=production
 ENV USE_MOCK_BACKENDS=true
 
-# Health check for API on port 8001
-# Simplified to just verify Python works - for debugging container issues
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=10 \
-    CMD /usr/local/bin/python3 -c "import sys; sys.exit(0)" || exit 1
-
 # Switch to non-root user
 USER appuser
+
+# Health check for API on port 8001
+# Note: HEALTHCHECK runs as root by default regardless of USER directive position
+# Using netcat to check if port 8001 is listening (more reliable than Python in container)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=10 \
+    CMD nc -z localhost 8001 || exit 1
 
 # Expose port
 EXPOSE 8001
