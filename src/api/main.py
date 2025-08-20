@@ -89,20 +89,22 @@ async def lifespan(app: FastAPI):
         dispatcher = QueryDispatcher()
         
         # Initialize and register backends
-        # Note: In production, these would come from configuration
+        # Note: Using Docker service names for container deployment
+        import os
+        
         vector_backend = VectorBackend(
-            url="http://localhost:6333",
+            url=os.getenv("QDRANT_URL", "http://qdrant:6333"),
             collection_name="context_embeddings"
         )
         
         graph_backend = GraphBackend(
-            url="bolt://localhost:7687",
-            username="neo4j", 
-            password="password"
+            url=os.getenv("NEO4J_URI", "bolt://neo4j:7687"),
+            username=os.getenv("NEO4J_USER", "neo4j"),
+            password=os.getenv("NEO4J_PASSWORD", "password")
         )
         
         kv_backend = KVBackend(
-            url="redis://localhost:6379",
+            url=os.getenv("REDIS_URL", "redis://redis:6379"),
             db=0
         )
         
