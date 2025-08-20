@@ -66,6 +66,32 @@ class SentinelConfig:
         """Check if a specific check is enabled."""
         return check_id in self.enabled_checks
     
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get configuration value like a dictionary.
+        
+        This method allows the config to be used like a dictionary
+        for backward compatibility with checks.
+        """
+        # Map common keys to actual attributes
+        if key == 'veris_memory_url':
+            return self.target_base_url
+        elif key == 'api_url':
+            # Get API URL from environment or use default
+            import os
+            return os.getenv('SENTINEL_API_URL', 'http://localhost:8001')
+        elif key == 'qdrant_url':
+            import os
+            return os.getenv('QDRANT_URL', 'http://localhost:6333')
+        elif key == 'neo4j_url':
+            import os
+            return os.getenv('NEO4J_URI', 'bolt://localhost:7687')
+        elif key == 'redis_url':
+            import os
+            return os.getenv('REDIS_URL', 'redis://localhost:6379')
+        
+        # Try to get from object attributes
+        return getattr(self, key, default)
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format."""
         return asdict(self)

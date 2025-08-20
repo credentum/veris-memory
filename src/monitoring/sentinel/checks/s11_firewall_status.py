@@ -22,6 +22,7 @@ class S11FirewallStatus:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize firewall status check."""
         self.config = config or {}
+        self.is_enabled = True  # This check is always enabled when initialized
         self.required_ports = [
             22,     # SSH
             2222,   # Claude container
