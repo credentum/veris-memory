@@ -16,6 +16,7 @@ from ..models import HealthResponse, ComponentHealth, HealthStatus, ErrorRespons
 from ..dependencies import get_query_dispatcher
 from ...core.query_dispatcher import QueryDispatcher
 from ...health.endpoints import HealthChecker
+from ...health.endpoints import HealthStatus as EndpointHealthStatus
 from ...utils.logging_middleware import api_logger
 
 
@@ -115,7 +116,8 @@ async def liveness_probe() -> Dict[str, Any]:
     try:
         status, response = await health_checker.liveness_check()
         
-        if status != HealthStatus.HEALTHY:
+        # Convert EndpointHealthStatus to API HealthStatus for comparison
+        if status != EndpointHealthStatus.HEALTHY:
             raise HTTPException(
                 status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=response
