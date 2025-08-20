@@ -34,6 +34,12 @@ from aiohttp.web import Request, Response
 import aiohttp_cors
 import uuid
 
+# Import Phase 4 Sentinel checks and models
+from .sentinel.checks.s3_paraphrase_robustness import ParaphraseRobustness as ParaphraseRobustnessAdvanced
+from .sentinel.checks.s9_graph_intent import GraphIntentValidation as GraphIntentValidationAdvanced  
+from .sentinel.checks.s10_content_pipeline import ContentPipelineMonitoring as ContentPipelineMonitoringAdvanced
+from .sentinel.models import SentinelConfig as SentinelConfigAdvanced
+
 # Optional imports for external integrations
 try:
     import requests
@@ -42,6 +48,17 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+def _convert_config_for_advanced_checks(config: 'SentinelConfig') -> SentinelConfigAdvanced:
+    """Convert old SentinelConfig to new advanced SentinelConfig format."""
+    return SentinelConfigAdvanced({
+        "veris_memory_url": config.target_base_url,
+        "check_interval_seconds": config.schedule_cadence_sec,
+        "alert_threshold_failures": 3,
+        "webhook_url": config.alert_webhook,
+        "github_repo": config.github_repo
+    })
 
 
 @dataclass
@@ -864,257 +881,6 @@ class CapacitySmoke:
             return False, response_time
 
 
-class GraphIntentValidation:
-    """S9: Graph intent validation for query understanding accuracy."""
-    
-    def __init__(self, config: SentinelConfig):
-        self.config = config
-    
-    async def run_check(self) -> CheckResult:
-        """Test graph query intent understanding and routing accuracy."""
-        start_time = time.time()
-        
-        try:
-            # Define test queries with expected graph operations
-            test_scenarios = [
-                {
-                    "query": "Find all documents related to machine learning",
-                    "expected_intent": "semantic_search",
-                    "expected_nodes": ["concept", "document"]
-                },
-                {
-                    "query": "Show the relationship between user sessions and errors",
-                    "expected_intent": "relationship_traversal", 
-                    "expected_nodes": ["session", "error"]
-                },
-                {
-                    "query": "What are the dependencies of the payment service?",
-                    "expected_intent": "dependency_analysis",
-                    "expected_nodes": ["service", "dependency"]
-                },
-                {
-                    "query": "Track the evolution of this bug over time",
-                    "expected_intent": "temporal_analysis",
-                    "expected_nodes": ["bug", "timestamp"]
-                }
-            ]
-            
-            correct_intentions = 0
-            total_tests = len(test_scenarios)
-            latency_samples = []
-            
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                for scenario in test_scenarios:
-                    query_start = time.time()
-                    
-                    try:
-                        # Test graph query intent analysis
-                        payload = {
-                            "query": scenario["query"],
-                            "analyze_intent": True,
-                            "return_graph_plan": True
-                        }
-                        
-                        async with session.post(
-                            f"{self.config.target_base_url}/api/v1/graph/analyze",
-                            json=payload
-                        ) as resp:
-                            query_latency = (time.time() - query_start) * 1000
-                            latency_samples.append(query_latency)
-                            
-                            if resp.status == 200:
-                                result = await resp.json()
-                                
-                                # Validate intent classification
-                                detected_intent = result.get("intent", {}).get("type", "")
-                                if detected_intent == scenario["expected_intent"]:
-                                    correct_intentions += 1
-                                
-                                # Additional validation for graph plan
-                                graph_plan = result.get("graph_plan", {})
-                                expected_nodes = scenario["expected_nodes"]
-                                
-                                # Check if expected node types are in the plan
-                                planned_nodes = graph_plan.get("node_types", [])
-                                if any(node in planned_nodes for node in expected_nodes):
-                                    # Bonus accuracy for correct node targeting
-                                    pass
-                    
-                    except Exception as e:
-                        query_latency = (time.time() - query_start) * 1000
-                        latency_samples.append(query_latency)
-                        logger.warning(f"Graph intent test failed for '{scenario['query']}': {e}")
-            
-            # Calculate metrics
-            accuracy_rate = correct_intentions / total_tests if total_tests > 0 else 0
-            avg_latency = sum(latency_samples) / len(latency_samples) if latency_samples else 0
-            total_latency_ms = (time.time() - start_time) * 1000
-            
-            # Determine status based on accuracy
-            if accuracy_rate >= 0.8:
-                status = "pass"
-            elif accuracy_rate >= 0.6:
-                status = "warn"
-            else:
-                status = "fail"
-            
-            return CheckResult(
-                check_id="S9-graph-intent",
-                timestamp=datetime.utcnow(),
-                status=status,
-                latency_ms=total_latency_ms,
-                metrics={
-                    "intent_accuracy_rate": accuracy_rate,
-                    "correct_intentions": correct_intentions,
-                    "total_tests": total_tests,
-                    "avg_query_latency_ms": avg_latency
-                },
-                notes=f"Graph intent validation: {correct_intentions}/{total_tests} correct, accuracy: {accuracy_rate:.2%}"
-            )
-        
-        except Exception as e:
-            return CheckResult(
-                check_id="S9-graph-intent",
-                timestamp=datetime.utcnow(),
-                status="fail",
-                latency_ms=(time.time() - start_time) * 1000,
-                error_message=f"Graph intent validation failed: {str(e)}"
-            )
-
-
-class ContentPipelineMonitoring:
-    """S10: Content pipeline monitoring for data processing health."""
-    
-    def __init__(self, config: SentinelConfig):
-        self.config = config
-    
-    async def run_check(self) -> CheckResult:
-        """Monitor content processing pipeline health and throughput."""
-        start_time = time.time()
-        
-        try:
-            pipeline_stages = []
-            total_processed = 0
-            total_failed = 0
-            
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
-                # Check ingestion stage
-                try:
-                    async with session.get(f"{self.config.target_base_url}/api/v1/pipeline/ingestion/status") as resp:
-                        if resp.status == 200:
-                            ingestion_data = await resp.json()
-                            pipeline_stages.append({
-                                "stage": "ingestion",
-                                "status": "healthy",
-                                "processed_count": ingestion_data.get("processed_today", 0),
-                                "error_count": ingestion_data.get("errors_today", 0),
-                                "queue_depth": ingestion_data.get("queue_depth", 0)
-                            })
-                            total_processed += ingestion_data.get("processed_today", 0)
-                            total_failed += ingestion_data.get("errors_today", 0)
-                        else:
-                            pipeline_stages.append({"stage": "ingestion", "status": "unhealthy"})
-                except Exception as e:
-                    pipeline_stages.append({"stage": "ingestion", "status": "error", "error": str(e)})
-                
-                # Check embedding stage
-                try:
-                    async with session.get(f"{self.config.target_base_url}/api/v1/pipeline/embedding/status") as resp:
-                        if resp.status == 200:
-                            embedding_data = await resp.json()
-                            pipeline_stages.append({
-                                "stage": "embedding",
-                                "status": "healthy",
-                                "processed_count": embedding_data.get("vectors_generated_today", 0),
-                                "error_count": embedding_data.get("embedding_failures_today", 0),
-                                "avg_latency_ms": embedding_data.get("avg_embedding_latency_ms", 0)
-                            })
-                            total_processed += embedding_data.get("vectors_generated_today", 0)
-                            total_failed += embedding_data.get("embedding_failures_today", 0)
-                        else:
-                            pipeline_stages.append({"stage": "embedding", "status": "unhealthy"})
-                except Exception as e:
-                    pipeline_stages.append({"stage": "embedding", "status": "error", "error": str(e)})
-                
-                # Check storage stage
-                try:
-                    async with session.get(f"{self.config.target_base_url}/api/v1/pipeline/storage/status") as resp:
-                        if resp.status == 200:
-                            storage_data = await resp.json()
-                            pipeline_stages.append({
-                                "stage": "storage",
-                                "status": "healthy",
-                                "processed_count": storage_data.get("stored_today", 0),
-                                "error_count": storage_data.get("storage_failures_today", 0),
-                                "disk_usage_percent": storage_data.get("disk_usage_percent", 0)
-                            })
-                            total_processed += storage_data.get("stored_today", 0)
-                            total_failed += storage_data.get("storage_failures_today", 0)
-                        else:
-                            pipeline_stages.append({"stage": "storage", "status": "unhealthy"})
-                except Exception as e:
-                    pipeline_stages.append({"stage": "storage", "status": "error", "error": str(e)})
-                
-                # Check indexing stage
-                try:
-                    async with session.get(f"{self.config.target_base_url}/api/v1/pipeline/indexing/status") as resp:
-                        if resp.status == 200:
-                            indexing_data = await resp.json()
-                            pipeline_stages.append({
-                                "stage": "indexing",
-                                "status": "healthy",
-                                "processed_count": indexing_data.get("indexed_today", 0),
-                                "error_count": indexing_data.get("index_failures_today", 0),
-                                "index_size_mb": indexing_data.get("index_size_mb", 0)
-                            })
-                            total_processed += indexing_data.get("indexed_today", 0)
-                            total_failed += indexing_data.get("index_failures_today", 0)
-                        else:
-                            pipeline_stages.append({"stage": "indexing", "status": "unhealthy"})
-                except Exception as e:
-                    pipeline_stages.append({"stage": "indexing", "status": "error", "error": str(e)})
-            
-            # Analyze pipeline health
-            healthy_stages = sum(1 for stage in pipeline_stages if stage.get("status") == "healthy")
-            total_stages = len(pipeline_stages)
-            
-            # Calculate error rates
-            error_rate = total_failed / (total_processed + total_failed) if (total_processed + total_failed) > 0 else 0
-            
-            # Determine overall status
-            if healthy_stages == total_stages and error_rate <= 0.01:
-                status = "pass"
-            elif healthy_stages >= total_stages * 0.75 and error_rate <= 0.05:
-                status = "warn"
-            else:
-                status = "fail"
-            
-            total_latency_ms = (time.time() - start_time) * 1000
-            
-            return CheckResult(
-                check_id="S10-content-pipeline",
-                timestamp=datetime.utcnow(),
-                status=status,
-                latency_ms=total_latency_ms,
-                metrics={
-                    "healthy_stages": healthy_stages,
-                    "total_stages": total_stages,
-                    "total_processed_today": total_processed,
-                    "total_failed_today": total_failed,
-                    "error_rate": error_rate,
-                    "pipeline_health_percent": (healthy_stages / total_stages) * 100 if total_stages > 0 else 0
-                },
-                notes=f"Pipeline monitoring: {healthy_stages}/{total_stages} stages healthy, error rate: {error_rate:.2%}"
-            )
-        
-        except Exception as e:
-            return CheckResult(
-                check_id="S10-content-pipeline",
-                timestamp=datetime.utcnow(),
-                status="fail",
-                latency_ms=(time.time() - start_time) * 1000,
-                error_message=f"Content pipeline monitoring failed: {str(e)}"
-            )
 
 
 class SentinelRunner:
@@ -1125,18 +891,21 @@ class SentinelRunner:
         self.db_path: str = db_path
         self.running: bool = False
         
-        # Initialize checks
-        self.checks: Dict[str, Union[VerisHealthProbe, GoldenFactRecall, ParaphraseRobustness, MetricsWiring, SecurityNegatives, BackupRestore, ConfigParity, CapacitySmoke, GraphIntentValidation, ContentPipelineMonitoring]] = {
+        # Convert config for advanced checks
+        advanced_config = _convert_config_for_advanced_checks(config)
+        
+        # Initialize checks - using advanced Phase 4 implementations
+        self.checks: Dict[str, Union[VerisHealthProbe, GoldenFactRecall, ParaphraseRobustness, MetricsWiring, SecurityNegatives, BackupRestore, ConfigParity, CapacitySmoke, GraphIntentValidationAdvanced, ContentPipelineMonitoringAdvanced]] = {
             "S1-probes": VerisHealthProbe(config),
             "S2-golden-fact-recall": GoldenFactRecall(config),
-            "S3-paraphrase-robustness": ParaphraseRobustness(config),
+            "S3-paraphrase-robustness": ParaphraseRobustnessAdvanced(advanced_config),
             "S4-metrics-wiring": MetricsWiring(config),
             "S5-security-negatives": SecurityNegatives(config),
             "S6-backup-restore": BackupRestore(config),
             "S7-config-parity": ConfigParity(config),
             "S8-capacity-smoke": CapacitySmoke(config),
-            "S9-graph-intent": GraphIntentValidation(config),
-            "S10-content-pipeline": ContentPipelineMonitoring(config)
+            "S9-graph-intent": GraphIntentValidationAdvanced(advanced_config),
+            "S10-content-pipeline": ContentPipelineMonitoringAdvanced(advanced_config)
         }
         
         # Ring buffers for data retention
