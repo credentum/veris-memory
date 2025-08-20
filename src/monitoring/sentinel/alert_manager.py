@@ -213,9 +213,13 @@ class AlertManager:
         # Initialize Telegram if configured
         self.telegram = None
         if telegram_token and telegram_chat_id:
-            self.telegram = TelegramAlerter(telegram_token, telegram_chat_id)
-            # Don't log sensitive tokens
-            logger.info("Telegram alerting enabled (credentials loaded)")
+            try:
+                self.telegram = TelegramAlerter(telegram_token, telegram_chat_id)
+                # Don't log sensitive tokens
+                logger.info("Telegram alerting enabled (credentials loaded)")
+            except ValueError as e:
+                logger.warning(f"Telegram alerting disabled: {e}")
+                self.telegram = None
         
         # Initialize GitHub if configured
         self.github = None

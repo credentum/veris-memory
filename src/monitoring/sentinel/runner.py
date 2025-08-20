@@ -77,7 +77,8 @@ class SentinelRunner:
         dedup_window = int(os.getenv("ALERT_DEDUP_WINDOW_MIN", "30"))
         alert_threshold = int(os.getenv("ALERT_THRESHOLD_FAILURES", "3"))
         
-        if telegram_token or github_token:
+        # Always create AlertManager - it will handle missing/invalid services gracefully
+        try:
             return AlertManager(
                 telegram_token=telegram_token,
                 telegram_chat_id=telegram_chat_id,
@@ -86,9 +87,10 @@ class SentinelRunner:
                 dedup_window_minutes=dedup_window,
                 alert_threshold_failures=alert_threshold
             )
-        
-        logger.warning("No alerting configured (set TELEGRAM_BOT_TOKEN or GITHUB_TOKEN)")
-        return None
+        except Exception as e:
+            logger.warning(f"Alert manager initialization failed: {e}")
+            logger.warning("Alerts will be logged only")
+            return None
     
     def _initialize_checks(self) -> Dict[str, Any]:
         """Initialize check instances based on configuration."""
