@@ -35,6 +35,13 @@ class FilterOperator(str, Enum):
     RANGE = "range"
 
 
+class TagFilterMode(str, Enum):
+    """Tag filtering modes for multiple tag matching."""
+    ANY = "any"      # Match if result has ANY of the specified tags
+    ALL = "all"      # Match if result has ALL of the specified tags  
+    EXACT = "exact"  # Match if result has EXACTLY the specified tags
+
+
 @dataclass
 class FilterCriteria:
     """Criteria for filtering results."""
