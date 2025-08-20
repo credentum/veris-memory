@@ -47,6 +47,8 @@ class TestStoreContextTool:
             assert result["success"] is True
             assert "id" in result
             assert result["id"].startswith("ctx_")
+            assert "context_id" in result  # Backward compatibility
+            assert result["context_id"] == result["id"]  # Both should be the same
             assert "message" in result
             assert "Context stored successfully" in result["message"]
 
@@ -86,6 +88,9 @@ class TestStoreContextTool:
             result = await store_context_tool(arguments)
 
             assert result["success"] is True
+            assert "id" in result
+            assert "context_id" in result
+            assert result["context_id"] == result["id"]
             # Should have called session.run for node creation at least
             assert mock_session.run.call_count >= 1
 
@@ -104,6 +109,9 @@ class TestStoreContextTool:
             result = await store_context_tool(arguments)
 
             assert result["success"] is True
+            assert "id" in result
+            assert "context_id" in result
+            assert result["context_id"] == result["id"]
             assert result["vector_id"] is not None
             assert result["graph_id"] is None
 
@@ -131,6 +139,9 @@ class TestStoreContextTool:
             result = await store_context_tool(arguments)
 
             assert result["success"] is True
+            assert "id" in result
+            assert "context_id" in result
+            assert result["context_id"] == result["id"]
             assert result["vector_id"] is None
             assert result["graph_id"] is not None
 
@@ -146,6 +157,9 @@ class TestStoreContextTool:
             result = await store_context_tool(arguments)
 
             assert result["success"] is True
+            assert "id" in result
+            assert "context_id" in result
+            assert result["context_id"] == result["id"]
             assert result["vector_id"] is None
             assert result["graph_id"] is None
             # Note: current implementation still returns success even without backends
@@ -166,6 +180,9 @@ class TestStoreContextTool:
             result = await store_context_tool(arguments)
 
             assert result["success"] is True
+            assert "id" in result
+            assert "context_id" in result
+            assert result["context_id"] == result["id"]
             assert result["vector_id"] is None
 
     @pytest.mark.asyncio
@@ -182,6 +199,9 @@ class TestStoreContextTool:
             result = await store_context_tool(arguments)
 
             assert result["success"] is True
+            assert "id" in result
+            assert "context_id" in result
+            assert result["context_id"] == result["id"]
             assert result["graph_id"] is None
 
     @pytest.mark.asyncio
@@ -234,6 +254,9 @@ class TestStoreContextTool:
             result = await store_context_tool(arguments)
 
             assert result["success"] is True
+            assert "id" in result
+            assert "context_id" in result
+            assert result["context_id"] == result["id"]
             # Verify that complex content is properly serialized
             mock_qdrant.client.upsert.assert_called_once_with()
             call_args = mock_qdrant.client.upsert.call_args
