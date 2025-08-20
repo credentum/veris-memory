@@ -389,37 +389,10 @@ jobs:
             echo "🔥 Configuring firewall rules..."
             echo "=================================="
             
-            # Run comprehensive firewall setup if script exists
-            if [ -f "scripts/setup-firewall.sh" ]; then
-              echo "Running firewall setup script..."
-              chmod +x scripts/setup-firewall.sh
-              sudo ./scripts/setup-firewall.sh || {
-                echo "⚠️  Firewall setup failed, attempting basic configuration..."
-                # Fallback to basic rules
-                sudo ufw allow 22/tcp comment 'SSH' 2>/dev/null || true
-                sudo ufw allow 2222/tcp comment 'Claude CLI' 2>/dev/null || true
-                sudo ufw allow 8000/tcp comment 'Veris Memory API' 2>/dev/null || true
-                sudo ufw allow 8080/tcp comment 'Monitoring Dashboard' 2>/dev/null || true
-                sudo ufw allow 9090/tcp comment 'Sentinel Monitoring API' 2>/dev/null || true
-                sudo ufw --force enable 2>/dev/null || true
-                sudo ufw reload 2>/dev/null || true
-              }
-            else
-              echo "⚠️  Firewall setup script not found, using basic configuration..."
-              # Basic firewall configuration
-              sudo ufw allow 22/tcp comment 'SSH' 2>/dev/null || true
-              sudo ufw allow 2222/tcp comment 'Claude CLI' 2>/dev/null || true
-              sudo ufw allow 8000/tcp comment 'Veris Memory API' 2>/dev/null || true
-              sudo ufw allow 8080/tcp comment 'Monitoring Dashboard' 2>/dev/null || true  
-              sudo ufw allow 9090/tcp comment 'Sentinel Monitoring API' 2>/dev/null || true
-              sudo ufw --force enable 2>/dev/null || echo "  → Firewall already enabled"
-              sudo ufw reload 2>/dev/null || echo "  → Firewall reloaded"
-            fi
-            
-            # Verify firewall status
-            echo ""
-            echo "🔍 Firewall status:"
-            sudo ufw status | head -10 || echo "  → Unable to check firewall status"
+            # Run comprehensive firewall setup script
+            echo "Running firewall setup script..."
+            chmod +x scripts/setup-firewall.sh
+            sudo ./scripts/setup-firewall.sh
             
             echo "✅ Firewall configuration completed"
             
@@ -452,8 +425,11 @@ jobs:
             echo -n "  Qdrant: "
             curl -s http://localhost:6333/health > /dev/null 2>&1 && echo "✓ (6333)" || echo "✗"
             
-            echo -n "  API: "
+            echo -n "  MCP Server: "
             curl -s http://localhost:8000/health > /dev/null 2>&1 && echo "✓ (8000)" || echo "✗"
+            
+            echo -n "  REST API: "
+            curl -s http://localhost:8001/api/v1/health > /dev/null 2>&1 && echo "✓ (8001)" || echo "✗"
           EOF
 
       - name: Generate Deployment Report
@@ -510,11 +486,14 @@ jobs:
             echo "🧪 Running smoke tests on DEV environment..."
             cd /opt/veris-memory
             
-            # Dev uses standard ports (what we test with)
-            API_URL="http://localhost:8000"
+            # Dev uses standard ports (dual-service architecture)
+            MCP_URL="http://localhost:8000"
+            API_URL="http://localhost:8001"
             QDRANT_URL="http://localhost:6333"
             NEO4J_URL="http://localhost:7474"
-            echo "Testing dev environment on standard ports..."
+            echo "Testing dev environment with dual-service architecture..."
+            echo "  MCP Server: $MCP_URL"
+            echo "  REST API: $API_URL"
             
             # Run smoke tests if available
             if [ -f "ops/smoke/smoke_runner.py" ]; then
