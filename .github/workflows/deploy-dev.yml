@@ -77,7 +77,7 @@ jobs:
             echo "🔵 DEVELOPMENT DEPLOYMENT STARTING"
             echo "=================================="
             
-            # Set the password directly from GitHub Secrets
+            # Set secrets as environment variables (already masked by GitHub Actions)
             export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
             export TELEGRAM_BOT_TOKEN='${{ secrets.TELEGRAM_BOT_TOKEN }}'
             export TELEGRAM_CHAT_ID='${{ secrets.TELEGRAM_CHAT_ID }}'
@@ -236,10 +236,6 @@ jobs:
                 mv .env.tmp .env
               fi
               
-              # Write the correct password from GitHub Secrets
-              export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
-              export TELEGRAM_BOT_TOKEN='${{ secrets.TELEGRAM_BOT_TOKEN }}'
-              export TELEGRAM_CHAT_ID='${{ secrets.TELEGRAM_CHAT_ID }}'
               # Write secrets to .env without echoing them
               {
                 printf "NEO4J_PASSWORD=%s\n" "${{ secrets.NEO4J_PASSWORD }}"
@@ -284,11 +280,8 @@ jobs:
               # Containers and volumes already cleaned up by bulletproof cleanup above
               echo "✅ Using clean state from bulletproof cleanup"
               
-              # Start dev services with NEO4J_PASSWORD and Telegram vars exported for health checks
+              # Start dev services (secrets already exported at beginning)
               echo "🚀 Starting DEV services..."
-              export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
-              export TELEGRAM_BOT_TOKEN='${{ secrets.TELEGRAM_BOT_TOKEN }}'
-              export TELEGRAM_CHAT_ID='${{ secrets.TELEGRAM_CHAT_ID }}'
               
               # Try multiple approaches to ensure success
               echo "  → Attempt 1: Standard docker compose up..."

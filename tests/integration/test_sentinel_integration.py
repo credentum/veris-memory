@@ -238,33 +238,27 @@ class TestSentinelIntegration:
     @pytest.mark.asyncio
     async def test_circuit_breaker_behavior(self, runner: SentinelRunner) -> None:
         """Test circuit breaker prevents alert spam."""
-        check_id: str = "S1-health"
+        # Set up failure response
+        failed_result = CheckResult(
+            check_id="S1-health",
+            status="fail",
+            message="Service down",
+            timestamp=datetime.utcnow(),
+            details={}
+        )
         
-        # Mock continuous failures
-        with patch.object(runner.checks[0], 'run_check') as mock_check:
-            mock_check.return_value = CheckResult(
-                check_id=check_id,
-                status="fail",
-                message="Service down",
-                timestamp=datetime.utcnow(),
-                details={}
-            )
-            
-            alert_count: int = 0
-            
-            async def count_alerts(*args: Any, **kwargs: Any) -> None:
-                nonlocal alert_count
-                alert_count += 1
-            
-            with patch.object(runner.alert_manager, 'send_alert', side_effect=count_alerts):
-                # Run many check cycles
+        alert_count: int = 0
+        
+        with patch.object(runner.checks[0], 'run_check', return_value=failed_result):
+            with patch.object(runner.alert_manager, 'send_alert') as mock_alert:
+                mock_alert.side_effect = lambda *args, **kwargs: setattr(mock_alert, 'call_count', alert_count + 1)
+                
+                # Run multiple check cycles
                 for _ in range(10):
                     await runner._run_check_cycle()
-                    await asyncio.sleep(0.1)
                 
-                # Should not send alert for every failure
-                # Circuit breaker should limit alerts
-                assert alert_count < 10
+                # Circuit breaker should limit alerts (not one per failure)
+                assert mock_alert.call_count < 10
     
     @pytest.mark.asyncio
     async def test_graceful_shutdown(self, runner: SentinelRunner) -> None:
