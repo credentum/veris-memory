@@ -9,6 +9,7 @@ check execution, scheduling, data persistence, and reporting.
 import asyncio
 import json
 import logging
+import os
 import sqlite3
 import time
 from collections import deque, defaultdict
@@ -18,6 +19,7 @@ from typing import Dict, List, Any, Optional, Union
 
 from .models import CheckResult, SentinelConfig
 from .checks import CHECK_REGISTRY
+from .alert_manager import AlertManager
 from ...core.import_utils import safe_import
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,9 @@ class SentinelRunner:
         
         # Initialize checks based on configuration
         self.checks = self._initialize_checks()
+        
+        # Initialize alert manager
+        self.alert_manager = self._initialize_alert_manager()
         
         # Ring buffers for data retention
         self.failures: deque = deque(maxlen=200)
@@ -56,6 +61,35 @@ class SentinelRunner:
         # Initialize database
         self._init_database()
     
+    def _initialize_alert_manager(self) -> Optional[AlertManager]:
+        """Initialize alert manager if configured."""
+        import os
+        
+        # Check if Telegram is configured
+        telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        
+        # Check if GitHub is configured
+        github_token = os.getenv("GITHUB_TOKEN")
+        github_repo = os.getenv("GITHUB_REPO", "credentum/veris-memory")
+        
+        # Get configuration parameters
+        dedup_window = int(os.getenv("ALERT_DEDUP_WINDOW_MIN", "30"))
+        alert_threshold = int(os.getenv("ALERT_THRESHOLD_FAILURES", "3"))
+        
+        if telegram_token or github_token:
+            return AlertManager(
+                telegram_token=telegram_token,
+                telegram_chat_id=telegram_chat_id,
+                github_token=github_token,
+                github_repo=github_repo,
+                dedup_window_minutes=dedup_window,
+                alert_threshold_failures=alert_threshold
+            )
+        
+        logger.warning("No alerting configured (set TELEGRAM_BOT_TOKEN or GITHUB_TOKEN)")
+        return None
+    
     def _initialize_checks(self) -> Dict[str, Any]:
         """Initialize check instances based on configuration."""
         checks = {}
@@ -74,8 +108,21 @@ class SentinelRunner:
     def _init_database(self) -> None:
         """Initialize SQLite database for persistent storage."""
         try:
+            # Validate database path to prevent directory traversal
+            db_path = Path(self.db_path).resolve()
+            
+            # Ensure path is within expected directory
+            allowed_dirs = [
+                Path("/var/lib/sentinel").resolve(),
+                Path("/tmp").resolve(),
+                Path.home().resolve() / ".sentinel"
+            ]
+            
+            if not any(str(db_path).startswith(str(allowed)) for allowed in allowed_dirs):
+                raise ValueError(f"Database path {db_path} is not in an allowed directory")
+            
             # Ensure directory exists
-            Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+            db_path.parent.mkdir(parents=True, exist_ok=True)
             
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute('''
@@ -128,6 +175,9 @@ class SentinelRunner:
         self.running = True
         logger.info("Starting Veris Sentinel monitoring")
         
+        # Start periodic summary task
+        summary_task = asyncio.create_task(self._periodic_summary_task())
+        
         try:
             while self.running:
                 await self._run_check_cycle()
@@ -141,6 +191,56 @@ class SentinelRunner:
         """Stop the sentinel monitoring."""
         self.running = False
         logger.info("Stopping Veris Sentinel monitoring")
+    
+    async def _periodic_summary_task(self) -> None:
+        """Send periodic summaries via alert manager."""
+        while self.running:
+            try:
+                # Wait for 24 hours (configurable)
+                summary_interval = int(os.getenv("SUMMARY_INTERVAL_HOURS", "24"))
+                await asyncio.sleep(summary_interval * 3600)
+                
+                if not self.running:
+                    break
+                
+                # Collect results from the last period
+                cutoff_time = datetime.utcnow() - timedelta(hours=summary_interval)
+                check_results = []
+                
+                try:
+                    with sqlite3.connect(self.db_path) as conn:
+                        cursor = conn.execute('''
+                            SELECT check_id, timestamp, status, latency_ms, message, details
+                            FROM check_results
+                            WHERE timestamp > ?
+                            ORDER BY timestamp DESC
+                        ''', (cutoff_time.isoformat(),))
+                        
+                        for row in cursor.fetchall():
+                            result = CheckResult(
+                                check_id=row[0],
+                                timestamp=datetime.fromisoformat(row[1]),
+                                status=row[2],
+                                latency_ms=row[3],
+                                message=row[4],
+                                details=json.loads(row[5]) if row[5] else None
+                            )
+                            check_results.append(result)
+                
+                except Exception as e:
+                    logger.error(f"Failed to collect summary data: {e}")
+                    continue
+                
+                # Send summary via alert manager
+                if self.alert_manager and check_results:
+                    await self.alert_manager.send_summary(
+                        period_hours=summary_interval,
+                        check_results=check_results
+                    )
+                    logger.info(f"Sent {summary_interval}-hour summary")
+                
+            except Exception as e:
+                logger.error(f"Error in periodic summary task: {e}")
     
     async def _run_check_cycle(self) -> None:
         """Execute one complete cycle of all enabled checks."""
@@ -295,10 +395,15 @@ class SentinelRunner:
         await self._send_external_alerts(alert_message, result)
     
     async def _send_external_alerts(self, message: str, result: CheckResult) -> None:
-        """Send alerts to external services."""
-        # TODO: Implement webhook and GitHub issue creation
-        # This is a placeholder for external alerting
-        logger.info(f"External alert: {message}")
+        """Send alerts to external services via alert manager."""
+        if self.alert_manager:
+            try:
+                await self.alert_manager.process_check_result(result)
+            except Exception as e:
+                logger.error(f"Failed to send external alert: {e}")
+        else:
+            # Fallback to logging if alert manager not configured
+            logger.info(f"External alert (no manager configured): {message}")
     
     def get_status_summary(self) -> Dict[str, Any]:
         """Get overall status summary."""
