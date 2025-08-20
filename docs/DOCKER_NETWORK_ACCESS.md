@@ -1,10 +1,25 @@
 # 🐳 Docker Network Access Guide for AI Agents
 
-## Quick Reference for Connecting to Veris Memory
+## Connection Methods
 
-When you're running as a container in the same Docker network as Veris Memory, use these connection details:
+### 🚀 **Recommended: MCP Protocol Connection**
+If you're using Claude CLI or have MCP client support:
+```bash
+# Connect via Model Context Protocol (preferred)
+claude /mcp server veris-memory
+```
 
-### 🚀 **Primary Endpoint**
+**Benefits of MCP Connection:**
+- ✅ Type-safe tool calls
+- ✅ Automatic error handling  
+- ✅ Protocol compliance
+- ✅ Native integration
+- ✅ No manual HTTP handling
+
+### 🔧 **Alternative: Direct HTTP API**
+For agents without MCP support, use direct HTTP calls to the Docker network endpoint:
+
+**HTTP Endpoint:**
 ```
 http://172.17.0.1:8000
 ```
@@ -126,6 +141,13 @@ Expected response includes:
 
 ### 💡 **Tips for AI Agents**
 
+#### **For MCP Connections (Recommended):**
+1. **Use Claude CLI**: `/mcp server veris-memory` for easy setup
+2. **Native tool calls**: Use tools directly without manual HTTP handling
+3. **Automatic validation**: MCP protocol handles response validation
+4. **Type safety**: Benefit from structured tool definitions
+
+#### **For HTTP Connections:**
 1. **Always check health first**: `GET /health` before using tools
 2. **Use proper Content-Type**: Include `Content-Type: application/json` header
 3. **Handle rate limits**: Respect the 60 req/min limit
