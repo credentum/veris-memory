@@ -108,8 +108,21 @@ class SentinelRunner:
     def _init_database(self) -> None:
         """Initialize SQLite database for persistent storage."""
         try:
+            # Validate database path to prevent directory traversal
+            db_path = Path(self.db_path).resolve()
+            
+            # Ensure path is within expected directory
+            allowed_dirs = [
+                Path("/var/lib/sentinel").resolve(),
+                Path("/tmp").resolve(),
+                Path.home().resolve() / ".sentinel"
+            ]
+            
+            if not any(str(db_path).startswith(str(allowed)) for allowed in allowed_dirs):
+                raise ValueError(f"Database path {db_path} is not in an allowed directory")
+            
             # Ensure directory exists
-            Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+            db_path.parent.mkdir(parents=True, exist_ok=True)
             
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute('''

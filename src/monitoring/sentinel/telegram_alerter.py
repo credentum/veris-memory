@@ -72,6 +72,14 @@ class TelegramAlerter:
             chat_id: Target chat/channel ID
             rate_limit: Max messages per minute (default: 30)
         """
+        # Validate bot token format
+        if not self._validate_bot_token(bot_token):
+            raise ValueError("Invalid bot token format")
+        
+        # Validate chat ID format
+        if not self._validate_chat_id(chat_id):
+            raise ValueError("Invalid chat ID format")
+        
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.rate_limit = rate_limit
@@ -85,7 +93,8 @@ class TelegramAlerter:
         self.message_queue: List[TelegramMessage] = []
         self.queue_lock = asyncio.Lock()
         
-        logger.info(f"Telegram alerter initialized for chat {chat_id}")
+        # Log initialization without exposing sensitive data
+        logger.info(f"Telegram alerter initialized for chat [REDACTED]")
     
     async def send_alert(
         self,
@@ -344,6 +353,7 @@ class TelegramAlerter:
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace('"', "&quot;")
+            .replace("'", "&#x27;")
         )
     
     async def test_connection(self) -> bool:
@@ -374,3 +384,74 @@ class TelegramAlerter:
         except Exception as e:
             logger.error(f"Failed to test Telegram connection: {e}")
             return False
+    
+    def _validate_bot_token(self, token: str) -> bool:
+        """
+        Validate Telegram bot token format.
+        
+        Args:
+            token: Bot token to validate
+        
+        Returns:
+            True if valid, False otherwise
+        """
+        if not token or not isinstance(token, str):
+            return False
+        
+        # Check for placeholder values
+        placeholders = [
+            "YOUR_BOT_TOKEN_HERE",
+            "YOUR_TOKEN_HERE",
+            "BOT_TOKEN",
+            "test_token",
+            "example_token"
+        ]
+        if token.upper() in [p.upper() for p in placeholders]:
+            return False
+        
+        # Telegram bot tokens have format: <bot_id>:<hash>
+        if ":" not in token:
+            return False
+        
+        parts = token.split(":")
+        if len(parts) != 2:
+            return False
+        
+        # Bot ID should be numeric (usually 10 digits)
+        if not parts[0].isdigit() or len(parts[0]) < 8:
+            return False
+        
+        # Hash should be alphanumeric with possible - and _
+        # and should be at least 35 characters
+        if len(parts[1]) < 35:
+            return False
+        
+        if not all(c.isalnum() or c in "-_" for c in parts[1]):
+            return False
+        
+        return True
+    
+    def _validate_chat_id(self, chat_id: str) -> bool:
+        """
+        Validate Telegram chat ID format.
+        
+        Args:
+            chat_id: Chat ID to validate
+        
+        Returns:
+            True if valid, False otherwise
+        """
+        if not chat_id or not isinstance(chat_id, str):
+            return False
+        
+        # Check for placeholder values
+        if chat_id.upper() in ["YOUR_CHAT_ID_HERE", "CHAT_ID", "test_chat"]:
+            return False
+        
+        # Chat ID should be numeric or start with - for groups
+        if chat_id.startswith("-"):
+            # Group chat ID
+            return chat_id[1:].isdigit() and len(chat_id) > 5
+        else:
+            # Private chat ID
+            return chat_id.isdigit() and len(chat_id) > 5

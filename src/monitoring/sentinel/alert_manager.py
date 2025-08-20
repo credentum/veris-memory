@@ -14,9 +14,10 @@ import hashlib
 import json
 import logging
 import os
+import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Set
-from collections import defaultdict
+from typing import Any, Dict, List, Optional, Set, Deque
+from collections import defaultdict, deque
 import aiohttp
 
 from .telegram_alerter import TelegramAlerter, AlertSeverity
@@ -91,10 +92,10 @@ class AlertDeduplicator:
 
 class GitHubIssueCreator:
     """
-    Creates GitHub issues for critical alerts.
+    Creates GitHub issues for critical alerts with rate limiting.
     """
     
-    def __init__(self, token: str, repo: str, labels: List[str] = None):
+    def __init__(self, token: str, repo: str, labels: List[str] = None, rate_limit: int = 10):
         """
         Initialize GitHub issue creator.
         
@@ -102,6 +103,7 @@ class GitHubIssueCreator:
             token: GitHub API token
             repo: Repository in format "owner/repo"
             labels: Default labels for issues
+            rate_limit: Max issues per hour (default: 10)
         """
         self.token = token
         self.repo = repo
@@ -111,6 +113,9 @@ class GitHubIssueCreator:
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json"
         }
+        self.rate_limit = rate_limit
+        self.issue_times: Deque[datetime] = deque(maxlen=rate_limit)
+        self.lock = asyncio.Lock()
     
     async def create_issue(
         self,
@@ -119,7 +124,7 @@ class GitHubIssueCreator:
         labels: Optional[List[str]] = None
     ) -> Optional[str]:
         """
-        Create a GitHub issue.
+        Create a GitHub issue with rate limiting.
         
         Args:
             title: Issue title
@@ -129,6 +134,23 @@ class GitHubIssueCreator:
         Returns:
             Issue URL if created successfully
         """
+        # Check rate limit
+        async with self.lock:
+            now = datetime.utcnow()
+            cutoff = now - timedelta(hours=1)
+            
+            # Clean old entries
+            while self.issue_times and self.issue_times[0] < cutoff:
+                self.issue_times.popleft()
+            
+            # Check if we've hit rate limit
+            if len(self.issue_times) >= self.rate_limit:
+                logger.warning(f"GitHub API rate limit reached ({self.rate_limit} issues/hour)")
+                return None
+            
+            # Record this issue creation
+            self.issue_times.append(now)
+        
         try:
             all_labels = self.labels.copy()
             if labels:
@@ -192,13 +214,15 @@ class AlertManager:
         self.telegram = None
         if telegram_token and telegram_chat_id:
             self.telegram = TelegramAlerter(telegram_token, telegram_chat_id)
-            logger.info("Telegram alerting enabled")
+            # Don't log sensitive tokens
+            logger.info("Telegram alerting enabled (credentials loaded)")
         
         # Initialize GitHub if configured
         self.github = None
         if github_token and github_repo:
             self.github = GitHubIssueCreator(github_token, github_repo)
-            logger.info("GitHub issue creation enabled")
+            # Don't log sensitive tokens
+            logger.info(f"GitHub issue creation enabled for repo: {github_repo}")
         
         # Initialize deduplicator
         self.deduplicator = AlertDeduplicator(dedup_window_minutes)
@@ -208,7 +232,7 @@ class AlertManager:
         self.failure_counts: Dict[str, int] = defaultdict(int)
         self.failure_lock = asyncio.Lock()
         
-        logger.info("Alert manager initialized")
+        logger.info("Alert manager initialized with configured services")
     
     async def process_check_result(self, result: CheckResult) -> None:
         """
@@ -312,9 +336,13 @@ class AlertManager:
         if self.github and severity == AlertSeverity.CRITICAL:
             tasks.append(self._create_github_issue(result))
         
-        # Execute all tasks concurrently
+        # Execute all tasks concurrently with retry for critical alerts
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            if severity == AlertSeverity.CRITICAL:
+                # Retry critical alerts with exponential backoff
+                await self._execute_with_retry(tasks, max_retries=3)
+            else:
+                await asyncio.gather(*tasks, return_exceptions=True)
     
     async def _send_telegram_alert(self, result: CheckResult, severity: AlertSeverity) -> None:
         """Send alert to Telegram."""
@@ -471,3 +499,33 @@ This is a critical alert requiring immediate investigation.
                 results["github"] = False
         
         return results
+    
+    async def _execute_with_retry(
+        self,
+        tasks: List,
+        max_retries: int = 3,
+        base_delay: float = 1.0
+    ) -> None:
+        """
+        Execute tasks with exponential backoff retry for critical alerts.
+        
+        Args:
+            tasks: List of async tasks to execute
+            max_retries: Maximum number of retry attempts
+            base_delay: Base delay in seconds for exponential backoff
+        """
+        for attempt in range(max_retries):
+            try:
+                results = await asyncio.gather(*tasks, return_exceptions=False)
+                # If successful, return
+                return
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"Critical alert delivery failed (attempt {attempt + 1}/{max_retries}), retrying in {delay}s: {e}")
+                    await asyncio.sleep(delay)
+                    # Recreate tasks for retry
+                    continue
+                else:
+                    logger.error(f"Critical alert delivery failed after {max_retries} attempts: {e}")
+                    raise

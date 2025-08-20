@@ -176,14 +176,16 @@ class TestAlertManager:
     @pytest.fixture
     def manager(self):
         """Create an AlertManager instance."""
-        return AlertManager(
-            telegram_token="tg_token",
-            telegram_chat_id="chat_id",
-            github_token="gh_token",
-            github_repo="owner/repo",
-            dedup_window_minutes=30,
-            alert_threshold_failures=3
-        )
+        with patch('src.monitoring.sentinel.alert_manager.TelegramAlerter'):
+            with patch('src.monitoring.sentinel.alert_manager.GitHubIssueCreator'):
+                return AlertManager(
+                    telegram_token="FAKE_TG_TOKEN_123456789:TEST_HASH_ONLY",
+                    telegram_chat_id="FAKE_CHAT_123456",
+                    github_token="FAKE_GH_TOKEN_ghp_TEST123456789",
+                    github_repo="test-owner/test-repo",
+                    dedup_window_minutes=30,
+                    alert_threshold_failures=3
+                )
     
     def test_initialization_with_telegram(self):
         """Test initialization with Telegram configured."""

@@ -23,20 +23,29 @@ class TestTelegramAlerter:
     @pytest.fixture
     def alerter(self):
         """Create a TelegramAlerter instance."""
-        return TelegramAlerter(
-            bot_token="test_token",
-            chat_id="test_chat",
-            rate_limit=30
-        )
+        # Mock the validation methods for testing
+        with patch.object(TelegramAlerter, '_validate_bot_token', return_value=True):
+            with patch.object(TelegramAlerter, '_validate_chat_id', return_value=True):
+                return TelegramAlerter(
+                    bot_token="TEST_TOKEN_123456789:FAKE_HASH_FOR_TESTING_ONLY",
+                    chat_id="TEST_CHAT_12345",
+                    rate_limit=30
+                )
     
     def test_initialization(self):
         """Test alerter initialization."""
-        alerter = TelegramAlerter("token123", "chat456", rate_limit=60)
+        with patch.object(TelegramAlerter, '_validate_bot_token', return_value=True):
+            with patch.object(TelegramAlerter, '_validate_chat_id', return_value=True):
+                alerter = TelegramAlerter(
+                    "TEST_BOT_123456789:FAKE_TEST_HASH_ABCDEFGHIJKLMNOPQRSTUV",
+                    "TEST_CHAT_999999",
+                    rate_limit=60
+                )
         
-        assert alerter.bot_token == "token123"
-        assert alerter.chat_id == "chat456"
+        assert alerter.bot_token == "TEST_BOT_123456789:FAKE_TEST_HASH_ABCDEFGHIJKLMNOPQRSTUV"
+        assert alerter.chat_id == "TEST_CHAT_999999"
         assert alerter.rate_limit == 60
-        assert alerter.api_url == "https://api.telegram.org/bottoken123"
+        assert alerter.api_url == "https://api.telegram.org/botTEST_BOT_123456789:FAKE_TEST_HASH_ABCDEFGHIJKLMNOPQRSTUV"
         assert len(alerter.message_times) == 0
         assert len(alerter.message_queue) == 0
     
@@ -366,3 +375,46 @@ class TestTelegramAlerter:
         assert AlertSeverity.HIGH.value == "high"
         assert AlertSeverity.WARNING.value == "warning"
         assert AlertSeverity.INFO.value == "info"
+    
+    def test_token_validation(self):
+        """Test bot token validation."""
+        with patch.object(TelegramAlerter, '_validate_bot_token', return_value=True):
+            with patch.object(TelegramAlerter, '_validate_chat_id', return_value=True):
+                alerter = TelegramAlerter(
+                    "TEST_BOT_123456789:FAKE_TEST_HASH_ABCDEFGHIJKLMNOPQRSTUV",
+                    "TEST_CHAT_999999",
+                    rate_limit=30
+                )
+        
+        # Test validation directly
+        # Valid tokens
+        assert alerter._validate_bot_token("123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk") is True
+        
+        # Invalid tokens
+        assert alerter._validate_bot_token("YOUR_BOT_TOKEN_HERE") is False
+        assert alerter._validate_bot_token("test_token") is False
+        assert alerter._validate_bot_token("invalid") is False
+        assert alerter._validate_bot_token("") is False
+        assert alerter._validate_bot_token(None) is False
+    
+    def test_chat_id_validation(self):
+        """Test chat ID validation."""
+        with patch.object(TelegramAlerter, '_validate_bot_token', return_value=True):
+            with patch.object(TelegramAlerter, '_validate_chat_id', return_value=True):
+                alerter = TelegramAlerter(
+                    "TEST_BOT_123456789:FAKE_TEST_HASH_ABCDEFGHIJKLMNOPQRSTUV",
+                    "TEST_CHAT_999999",
+                    rate_limit=30
+                )
+        
+        # Test validation directly
+        # Valid chat IDs
+        assert alerter._validate_chat_id("123456789") is True
+        assert alerter._validate_chat_id("-123456789") is True
+        
+        # Invalid chat IDs
+        assert alerter._validate_chat_id("YOUR_CHAT_ID_HERE") is False
+        assert alerter._validate_chat_id("test_chat") is False
+        assert alerter._validate_chat_id("abc") is False
+        assert alerter._validate_chat_id("") is False
+        assert alerter._validate_chat_id(None) is False
