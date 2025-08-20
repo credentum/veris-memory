@@ -384,6 +384,45 @@ jobs:
               fi
             fi
             
+            # Configure firewall for exposed services
+            echo ""
+            echo "🔥 Configuring firewall rules..."
+            echo "=================================="
+            
+            # Run comprehensive firewall setup if script exists
+            if [ -f "scripts/setup-firewall.sh" ]; then
+              echo "Running firewall setup script..."
+              chmod +x scripts/setup-firewall.sh
+              sudo ./scripts/setup-firewall.sh || {
+                echo "⚠️  Firewall setup failed, attempting basic configuration..."
+                # Fallback to basic rules
+                sudo ufw allow 22/tcp comment 'SSH' 2>/dev/null || true
+                sudo ufw allow 2222/tcp comment 'Claude CLI' 2>/dev/null || true
+                sudo ufw allow 8000/tcp comment 'Veris Memory API' 2>/dev/null || true
+                sudo ufw allow 8080/tcp comment 'Monitoring Dashboard' 2>/dev/null || true
+                sudo ufw allow 9090/tcp comment 'Sentinel Monitoring API' 2>/dev/null || true
+                sudo ufw --force enable 2>/dev/null || true
+                sudo ufw reload 2>/dev/null || true
+              }
+            else
+              echo "⚠️  Firewall setup script not found, using basic configuration..."
+              # Basic firewall configuration
+              sudo ufw allow 22/tcp comment 'SSH' 2>/dev/null || true
+              sudo ufw allow 2222/tcp comment 'Claude CLI' 2>/dev/null || true
+              sudo ufw allow 8000/tcp comment 'Veris Memory API' 2>/dev/null || true
+              sudo ufw allow 8080/tcp comment 'Monitoring Dashboard' 2>/dev/null || true  
+              sudo ufw allow 9090/tcp comment 'Sentinel Monitoring API' 2>/dev/null || true
+              sudo ufw --force enable 2>/dev/null || echo "  → Firewall already enabled"
+              sudo ufw reload 2>/dev/null || echo "  → Firewall reloaded"
+            fi
+            
+            # Verify firewall status
+            echo ""
+            echo "🔍 Firewall status:"
+            sudo ufw status | head -10 || echo "  → Unable to check firewall status"
+            
+            echo "✅ Firewall configuration completed"
+            
             echo ""
             echo "🔵 DEV DEPLOYMENT COMPLETED"
             echo "=================================="

@@ -58,7 +58,8 @@ class SentinelConfig:
                 "S7-config-parity",
                 "S8-capacity-smoke",
                 "S9-graph-intent",
-                "S10-content-pipeline"
+                "S10-content-pipeline",
+                "S11-firewall-status"
             ]
     
     def is_check_enabled(self, check_id: str) -> bool:

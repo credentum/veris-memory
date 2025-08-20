@@ -15,6 +15,7 @@ Each check is responsible for a specific aspect of Veris Memory monitoring:
 - S8: Capacity Smoke (performance limits)
 - S9: Graph Intent Validation (query correctness)
 - S10: Content Pipeline (data processing)
+- S11: Firewall Status (security infrastructure)
 """
 
 from .s1_health_probes import VerisHealthProbe
@@ -27,6 +28,7 @@ from .s7_config_parity import ConfigParity
 from .s8_capacity_smoke import CapacitySmoke
 from .s9_graph_intent import GraphIntentValidation
 from .s10_content_pipeline import ContentPipelineMonitoring
+from .s11_firewall_status import S11FirewallStatus
 
 # Registry of all available checks
 CHECK_REGISTRY = {
@@ -40,6 +42,7 @@ CHECK_REGISTRY = {
     "S8-capacity-smoke": CapacitySmoke,
     "S9-graph-intent": GraphIntentValidation,
     "S10-content-pipeline": ContentPipelineMonitoring,
+    "S11-firewall-status": S11FirewallStatus,
 }
 
 __all__ = [
@@ -53,5 +56,6 @@ __all__ = [
     'CapacitySmoke',
     'GraphIntentValidation',
     'ContentPipelineMonitoring',
+    'S11FirewallStatus',
     'CHECK_REGISTRY',
 ]
