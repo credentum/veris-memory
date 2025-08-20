@@ -18,6 +18,8 @@ if project_root not in sys.path:
 
 from src.monitoring.sentinel.runner import SentinelRunner
 from src.monitoring.sentinel.models import SentinelConfig
+from src.monitoring.sentinel.api import SentinelAPI
+from aiohttp import web
 
 
 def setup_logging():
@@ -45,18 +47,22 @@ async def main():
     # Create configuration from environment
     config = SentinelConfig.from_env()
     
-    # Create and start runner
+    # Create runner
     runner = SentinelRunner(config)
     
     try:
         # Start API server if not disabled
         if not args.no_api:
-            api_task = asyncio.create_task(runner.start_api_server(port=args.api_port))
+            api = SentinelAPI(runner, config)
+            app_runner = web.AppRunner(api.app)
+            await app_runner.setup()
+            site = web.TCPSite(app_runner, '0.0.0.0', args.api_port)
+            await site.start()
             logger.info(f"✅ API server started on port {args.api_port}")
         
         # Start monitoring
         logger.info("✅ Starting monitoring checks")
-        await runner.start_monitoring()
+        await runner.start()
         
     except KeyboardInterrupt:
         logger.info("⚠️ Received shutdown signal")
