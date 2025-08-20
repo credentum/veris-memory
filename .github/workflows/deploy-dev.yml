@@ -36,6 +36,8 @@ jobs:
           # Mask secrets in logs
           echo "::add-mask::${{ secrets.HETZNER_SSH_KEY }}"
           echo "::add-mask::${{ secrets.NEO4J_PASSWORD }}"
+          echo "::add-mask::${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          echo "::add-mask::${{ secrets.TELEGRAM_CHAT_ID }}"
           
           # Create SSH key with secure permissions
           # Use printf to preserve newlines in the key
@@ -75,8 +77,10 @@ jobs:
             echo "🔵 DEVELOPMENT DEPLOYMENT STARTING"
             echo "=================================="
             
-            # Set the password directly from GitHub Secrets
+            # Set secrets as environment variables (already masked by GitHub Actions)
             export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
+            export TELEGRAM_BOT_TOKEN='${{ secrets.TELEGRAM_BOT_TOKEN }}'
+            export TELEGRAM_CHAT_ID='${{ secrets.TELEGRAM_CHAT_ID }}'
             
             # Verify password was set
             if [ -z "\${NEO4J_PASSWORD}" ]; then
@@ -85,6 +89,14 @@ jobs:
             fi
             
             echo "✅ NEO4J_PASSWORD successfully set (length: \${#NEO4J_PASSWORD} characters)"
+            
+            # Check Telegram configuration
+            if [ -n "\${TELEGRAM_BOT_TOKEN}" ] && [ -n "\${TELEGRAM_CHAT_ID}" ]; then
+              echo "✅ Telegram alerting configured"
+            else
+              echo "⚠️  Telegram alerting not configured (optional)"
+            fi
+            
             export ENVIRONMENT=dev
             
             # Navigate to veris-memory repository
@@ -215,16 +227,7 @@ jobs:
                 cp .env.template .env
               fi
               
-              # CRITICAL: Debug and fix password issues
-              echo "🔍 ============================================"
-              echo "🔍 DEBUG: Password Configuration"
-              echo "🔍 ============================================"
-              
-              # Show what's currently in .env (if it exists)
-              if [ -f .env ]; then
-                echo "📋 Current .env NEO4J entries BEFORE modification:"
-                grep NEO4J .env || echo "  No NEO4J entries found"
-              fi
+              # Configure environment variables
               
               # Remove ALL NEO4J lines (both PASSWORD and AUTH)
               echo "🗑️  Removing ALL existing NEO4J lines from .env..."
@@ -233,44 +236,52 @@ jobs:
                 mv .env.tmp .env
               fi
               
-              # Write the correct password from GitHub Secrets
-              export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
-              echo "✏️  Writing NEO4J_PASSWORD from GitHub Secrets..."
-              echo "NEO4J_PASSWORD=${{ secrets.NEO4J_PASSWORD }}" >> .env
-              echo "NEO4J_AUTH=neo4j/${{ secrets.NEO4J_PASSWORD }}" >> .env
+              # Write secrets to .env without echoing them
+              {
+                printf "NEO4J_PASSWORD=%s\n" "${{ secrets.NEO4J_PASSWORD }}"
+                printf "NEO4J_AUTH=neo4j/%s\n" "${{ secrets.NEO4J_PASSWORD }}"
+                
+                # Add Telegram configuration if available
+                if [ -n "${{ secrets.TELEGRAM_BOT_TOKEN }}" ]; then
+                  printf "TELEGRAM_BOT_TOKEN=%s\n" "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+                fi
+                if [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ]; then
+                  printf "TELEGRAM_CHAT_ID=%s\n" "${{ secrets.TELEGRAM_CHAT_ID }}"
+                fi
+              } >> .env 2>/dev/null
               
-              # Verify what we wrote
-              echo "📋 NEW .env NEO4J entries AFTER modification:"
-              grep NEO4J .env || echo "  ERROR: No NEO4J entries found!"
-              
-              # Check password length to verify it's not empty (without exposing it)
-              PASSWORD_LENGTH=$(grep "^NEO4J_PASSWORD=" .env | cut -d= -f2 | wc -c)
-              echo "🔐 Password length: $PASSWORD_LENGTH characters"
-              
-              if [ "$PASSWORD_LENGTH" -lt 5 ]; then
-                echo "❌ ============================================"
-                echo "❌ FATAL ERROR: NEO4J_PASSWORD is too short or empty!"
-                echo "❌ Password must be at least 5 characters"
-                echo "❌ Check GitHub Secrets configuration"
-                echo "❌ ============================================"
+              # Verify configuration was written correctly
+              if ! grep -q "^NEO4J_PASSWORD=" .env; then
+                echo "❌ ERROR: NEO4J_PASSWORD not found in .env!"
                 exit 1
               fi
               
-              # Also verify Neo4j container can use this password
-              echo "🔍 Neo4j will be configured with:"
-              echo "  - Username: neo4j"
-              echo "  - Password length: $PASSWORD_LENGTH characters"
-              echo "  - Password starts with: $(grep "^NEO4J_PASSWORD=" .env | cut -d= -f2 | cut -c1-3)***"
+              # Verify password was set (without exposing it)
+              if ! grep -q "^NEO4J_PASSWORD=.\+" .env; then
+                echo "❌ ERROR: NEO4J_PASSWORD is not configured!"
+                echo "❌ Check GitHub Secrets configuration"
+                exit 1
+              fi
               
-              echo "✅ Password configuration completed"
-              echo "🔍 ============================================"
+              # Verify Telegram configuration if provided
+              if [ -n "${{ secrets.TELEGRAM_BOT_TOKEN }}" ]; then
+                if ! grep -q "^TELEGRAM_BOT_TOKEN=" .env; then
+                  echo "⚠️  WARNING: TELEGRAM_BOT_TOKEN was not written to .env"
+                fi
+              fi
+              if [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ]; then
+                if ! grep -q "^TELEGRAM_CHAT_ID=" .env; then
+                  echo "⚠️  WARNING: TELEGRAM_CHAT_ID was not written to .env"
+                fi
+              fi
+              
+              echo "✅ Environment configuration completed"
               
               # Containers and volumes already cleaned up by bulletproof cleanup above
               echo "✅ Using clean state from bulletproof cleanup"
               
-              # Start dev services with NEO4J_PASSWORD exported for health checks
+              # Start dev services (secrets already exported at beginning)
               echo "🚀 Starting DEV services..."
-              export NEO4J_PASSWORD='${{ secrets.NEO4J_PASSWORD }}'
               
               # Try multiple approaches to ensure success
               echo "  → Attempt 1: Standard docker compose up..."
@@ -287,16 +298,11 @@ jobs:
               
               echo "✅ Docker compose completed successfully"
               
-              # CRITICAL: Verify .env wasn't changed by docker-compose or any script
-              echo "🔍 ============================================"
-              echo "🔍 POST-DEPLOY: Verifying .env integrity"
-              echo "🔍 ============================================"
-              echo "📋 .env NEO4J entries AFTER docker-compose:"
-              grep NEO4J .env || echo "  ERROR: No NEO4J entries found!"
-              
-              # Check if password matches what we expect
-              ACTUAL_PASSWORD=$(grep "^NEO4J_PASSWORD=" .env | cut -d= -f2)
-              EXPECTED_START=$(echo "${{ secrets.NEO4J_PASSWORD }}" | cut -c1-3)
+              # Verify .env integrity after deployment
+              if ! grep -q "^NEO4J_PASSWORD=" .env; then
+                echo "❌ ERROR: NEO4J_PASSWORD was removed during deployment!"
+                exit 1
+              fi
               ACTUAL_START=$(echo "$ACTUAL_PASSWORD" | cut -c1-3)
               
               if [ "$ACTUAL_START" != "$EXPECTED_START" ]; then

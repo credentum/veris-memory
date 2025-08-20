@@ -1,39 +1,32 @@
-# Veris Sentinel - Autonomous Monitoring Agent
 FROM python:3.11-slim@sha256:1591aa8c01b5b37ab31dbe5662c5bdcf40c2f1bce4ef1c1fd24802dae3d01052
 
-# Security: Run as non-root user
-RUN groupadd -r sentinel && useradd -r -g sentinel -u 10001 sentinel
+WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
-    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
-WORKDIR /app
+# Copy requirements first for better caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy requirements and install Python dependencies
-COPY requirements-sentinel.txt .
-RUN pip install --no-cache-dir -r requirements-sentinel.txt
+# Copy source code
+COPY src/ ./src/
+COPY config/ ./config/
 
-# Copy application code
-COPY src/monitoring/veris_sentinel.py /app/
-COPY scripts/sentinel-entrypoint.sh /app/
+# Create necessary directories
+RUN mkdir -p /var/lib/sentinel
 
-# Create required directories with proper permissions
-RUN mkdir -p /var/lib/sentinel /run/secrets /run/certs && \
-    chown -R sentinel:sentinel /var/lib/sentinel /app
+# Environment variables (configured via docker-compose)
+ENV PYTHONPATH="/app"
 
-# Security: Drop all capabilities
-USER 10001:10001
+# Health check endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:9090/status || exit 1
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:9090/status || exit 1
-
-# Expose metrics port
+# Expose API port
 EXPOSE 9090
 
-# Entry point
-ENTRYPOINT ["python", "veris_sentinel.py"]
+# Run Sentinel with standalone mode
+CMD ["python", "-m", "src.monitoring.sentinel", "--standalone", "--api-port", "9090"]
