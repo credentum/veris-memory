@@ -26,9 +26,6 @@ from .dependencies import set_query_dispatcher, get_query_dispatcher
 
 # Core components  
 from ..core.query_dispatcher import QueryDispatcher
-from ..backends.vector_backend import VectorBackend
-from ..backends.graph_backend import GraphBackend
-from ..backends.kv_backend import KVBackend
 from ..utils.logging_middleware import api_logger
 
 # Configuration
@@ -88,25 +85,30 @@ async def lifespan(app: FastAPI):
         # Initialize query dispatcher and backends
         dispatcher = QueryDispatcher()
         
-        # Initialize and register backends
-        # Note: Using Docker service names for container deployment
+        # Initialize backends - using mock backends for now until proper initialization is fixed
+        # TODO: Replace with proper backend initialization that creates the required client objects
         import os
+        use_mock_backends = os.getenv("USE_MOCK_BACKENDS", "true").lower() == "true"
         
-        vector_backend = VectorBackend(
-            url=os.getenv("QDRANT_URL", "http://qdrant:6333"),
-            collection_name="context_embeddings"
-        )
-        
-        graph_backend = GraphBackend(
-            url=os.getenv("NEO4J_URI", "bolt://neo4j:7687"),
-            username=os.getenv("NEO4J_USER", "neo4j"),
-            password=os.getenv("NEO4J_PASSWORD", "password")
-        )
-        
-        kv_backend = KVBackend(
-            url=os.getenv("REDIS_URL", "redis://redis:6379"),
-            db=0
-        )
+        if use_mock_backends:
+            # Use mock backends for development/testing
+            from ..storage.mock_backends import MockVectorBackend, MockGraphBackend, MockKVBackend
+            
+            vector_backend = MockVectorBackend()
+            graph_backend = MockGraphBackend()
+            kv_backend = MockKVBackend()
+            
+            api_logger.info("Using mock backends for API")
+        else:
+            # TODO: Implement proper backend initialization
+            # The real backends need proper client instances, not just URLs
+            # For now, fall back to mock backends
+            from ..storage.mock_backends import MockVectorBackend, MockGraphBackend, MockKVBackend
+            
+            api_logger.warning("Real backend initialization not yet implemented, using mock backends")
+            vector_backend = MockVectorBackend()
+            graph_backend = MockGraphBackend()
+            kv_backend = MockKVBackend()
         
         # Register backends with dispatcher
         dispatcher.register_backend("vector", vector_backend)
