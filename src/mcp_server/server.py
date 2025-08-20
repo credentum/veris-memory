@@ -51,6 +51,8 @@ try:
     from src.core.graph_query_expander import GraphQueryExpander
     # Metrics collection import
     from src.monitoring.request_metrics import get_metrics_collector
+    # Response validation import
+    from src.core.response_validator import validate_mcp_response
     # Search enhancement imports
     from src.mcp_server.search_enhancements import (
         apply_search_enhancements,
@@ -1217,9 +1219,10 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         storage_successful = len(backend_status) > 0  # At least one backend must succeed
         
         if not backend_status:
-            return {
+            failure_response = {
                 "success": False,
-                "context_id": None,
+                "id": None,  # Primary field expected by MCP contract
+                "context_id": None,  # Backward compatibility
                 "vector_id": vector_id,
                 "graph_id": graph_id,
                 "message": "Storage failed: No backends available or all storage operations failed",
@@ -1229,6 +1232,13 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 },
                 "error_type": "storage_failure"
             }
+            
+            # Validate response before returning
+            validation_result = validate_mcp_response("store_context", failure_response, log_results=True)
+            if not validation_result:
+                logger.error(f"store_context failure response failed validation: {[e.message for e in validation_result.errors]}")
+            
+            return failure_response
         elif len(backend_status) == 2:
             message = "Context stored successfully in all backends"
         else:
@@ -1238,9 +1248,10 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 f"Context stored successfully in {available} (warning: {failed} backend failed)"
             )
 
-        return {
+        success_response = {
             "success": True,
-            "context_id": context_id,
+            "id": context_id,  # Primary field expected by MCP contract
+            "context_id": context_id,  # Backward compatibility
             "vector_id": vector_id,
             "graph_id": graph_id,
             "message": message,
@@ -1254,15 +1265,30 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "fact_attributes": [pair.fact_attribute for pair in qa_pairs_generated] if qa_pairs_generated else []
             }
         }
+        
+        # Validate response before returning
+        validation_result = validate_mcp_response("store_context", success_response, log_results=True)
+        if not validation_result:
+            logger.error(f"store_context success response failed validation: {[e.message for e in validation_result.errors]}")
+        
+        return success_response
 
     except Exception as e:
         logger.error(f"Error storing context: {e}")
-        return {
+        error_response = {
             "success": False,
-            "context_id": None,
+            "id": None,  # Primary field expected by MCP contract
+            "context_id": None,  # Backward compatibility
             "message": f"Failed to store context: {str(e)}",
             "error_type": "exception"
         }
+        
+        # Validate response before returning
+        validation_result = validate_mcp_response("store_context", error_response, log_results=True)
+        if not validation_result:
+            logger.error(f"store_context error response failed validation: {[e.message for e in validation_result.errors]}")
+        
+        return error_response
 
 
 async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
