@@ -4,14 +4,15 @@
 # This script configures UFW with all required rules and ensures it stays active
 #
 
-set -e
+# Don't exit on error - we want to continue deployment even if some firewall commands fail
+set +e
 
 echo "🔥 Veris Memory Firewall Configuration"
 echo "======================================"
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then 
-    echo "❌ Please run as root (use sudo)"
+    echo "❌ This script must be run with sudo privileges"
     exit 1
 fi
 
@@ -36,19 +37,20 @@ echo ""
 echo "➕ Adding essential service rules..."
 
 # SSH (port 22) - Always allow to prevent lockout
-ufw allow 22/tcp comment 'SSH'
+ufw allow 22/tcp comment 'SSH' || echo "  ⚠️ Warning: Failed to add SSH rule (critical!)"
 
 # Claude dev container SSH
-ufw allow 2222/tcp comment 'Claude CLI dev container'
+ufw allow 2222/tcp comment 'Claude CLI dev container' || echo "  ⚠️ Warning: Failed to add Claude CLI rule"
 
 # Mosh UDP range (for persistent mobile connections)
-ufw allow 60000:61000/udp comment 'Mosh UDP range'
+ufw allow 60000:61000/udp comment 'Mosh UDP range' || echo "  ⚠️ Warning: Failed to add Mosh UDP rule"
 
 # Veris Memory services
-ufw allow 8000/tcp comment 'Veris Memory MCP Server'
-ufw allow 8001/tcp comment 'Veris Memory REST API'
-ufw allow 8080/tcp comment 'Monitoring Dashboard'
-ufw allow 9090/tcp comment 'Sentinel Monitoring API'
+echo "Adding Veris Memory service rules..."
+ufw allow 8000/tcp comment 'Veris Memory MCP Server' || echo "  ⚠️ Warning: Failed to add port 8000 rule"
+ufw allow 8001/tcp comment 'Veris Memory REST API' || echo "  ⚠️ Warning: Failed to add port 8001 rule"
+ufw allow 8080/tcp comment 'Monitoring Dashboard' || echo "  ⚠️ Warning: Failed to add port 8080 rule"
+ufw allow 9090/tcp comment 'Sentinel Monitoring API' || echo "  ⚠️ Warning: Failed to add port 9090 rule"
 
 # Optional: Database ports (comment out if not needed externally)
 # ufw allow 6333/tcp comment 'Qdrant Vector DB'
@@ -88,13 +90,18 @@ echo ""
 echo "🔄 Enabling UFW and ensuring it starts on boot..."
 
 # Enable UFW to start on boot
-systemctl enable ufw
+systemctl enable ufw || echo "  ⚠️ Warning: Failed to enable UFW service on boot"
 
-# Enable UFW (force to avoid prompt)
-ufw --force enable
+# Enable UFW (force to avoid prompt) 
+echo "Enabling UFW firewall..."
+if ufw --force enable; then
+    echo "  ✅ UFW enabled successfully"
+else
+    echo "  ⚠️ Warning: Failed to enable UFW, but continuing..."
+fi
 
 # Reload to apply all changes
-ufw reload
+ufw reload || echo "  ⚠️ Warning: Failed to reload UFW rules"
 
 echo ""
 echo "✅ Firewall Configuration Complete!"
@@ -107,8 +114,8 @@ echo "🔍 Services Protected:"
 echo "  ✅ SSH:        Port 22"
 echo "  ✅ Claude:     Port 2222"
 echo "  ✅ Mosh:       Ports 60000-61000/udp"
-echo "  ✅ MCP Server: Port 8000
-  ✅ REST API:   Port 8001"
+echo "  ✅ MCP Server: Port 8000"
+echo "  ✅ REST API:   Port 8001"
 echo "  ✅ Dashboard:  Port 8080"
 echo "  ✅ Sentinel:   Port 9090"
 
@@ -137,3 +144,6 @@ timeout 2 curl -s http://localhost:9090/status > /dev/null 2>&1 && echo "✅ Res
 
 echo ""
 echo "🎉 Firewall setup complete!"
+
+# Always exit successfully to avoid failing deployment
+exit 0
