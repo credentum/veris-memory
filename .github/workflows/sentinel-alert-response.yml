@@ -1,0 +1,354 @@
+name: 🚨 Sentinel Alert Response System
+
+on:
+  repository_dispatch:
+    types: [sentinel-alert]
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+  pull-requests: write
+
+env:
+  VERIS_MEMORY_HOST: "167.235.112.106"
+  MCP_PORT: "8000"
+  API_PORT: "8001"
+  DASHBOARD_PORT: "8080"
+  SENTINEL_PORT: "9090"
+
+jobs:
+  process-alert:
+    runs-on: ubuntu-latest
+    name: "Process Sentinel Alert: ${{ github.event.client_payload.check_id }}"
+    
+    steps:
+      - name: 📋 Parse Alert Details
+        id: parse-alert
+        run: |
+          echo "🚨 Sentinel Alert Received!"
+          echo "================================"
+          echo "Alert ID: ${{ github.event.client_payload.alert_id }}"
+          echo "Check: ${{ github.event.client_payload.check_id }}"
+          echo "Status: ${{ github.event.client_payload.status }}"
+          echo "Severity: ${{ github.event.client_payload.severity }}"
+          echo "Message: ${{ github.event.client_payload.message }}"
+          echo "Timestamp: ${{ github.event.client_payload.timestamp }}"
+          echo "Environment: ${{ github.event.client_payload.environment }}"
+          echo ""
+          
+          # Set outputs for later steps
+          echo "severity=${{ github.event.client_payload.severity }}" >> $GITHUB_OUTPUT
+          echo "check_id=${{ github.event.client_payload.check_id }}" >> $GITHUB_OUTPUT
+          echo "alert_id=${{ github.event.client_payload.alert_id }}" >> $GITHUB_OUTPUT
+          
+          # Parse check category for targeted response
+          CHECK_CATEGORY="${{ github.event.client_payload.check_id }}"
+          case "$CHECK_CATEGORY" in
+            S1-*) echo "category=health" >> $GITHUB_OUTPUT ;;
+            S2-*) echo "category=data" >> $GITHUB_OUTPUT ;;
+            S3-*) echo "category=semantic" >> $GITHUB_OUTPUT ;;
+            S4-*) echo "category=metrics" >> $GITHUB_OUTPUT ;;
+            S5-*) echo "category=security" >> $GITHUB_OUTPUT ;;
+            S6-*) echo "category=backup" >> $GITHUB_OUTPUT ;;
+            S7-*) echo "category=config" >> $GITHUB_OUTPUT ;;
+            S8-*) echo "category=capacity" >> $GITHUB_OUTPUT ;;
+            S9-*) echo "category=graph" >> $GITHUB_OUTPUT ;;
+            S10-*) echo "category=pipeline" >> $GITHUB_OUTPUT ;;
+            S11-*) echo "category=firewall" >> $GITHUB_OUTPUT ;;
+            *) echo "category=unknown" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - name: 🔍 Quick Health Check
+        id: health-check
+        run: |
+          echo "🔍 Performing quick health diagnostics..."
+          
+          # Test basic connectivity
+          echo "## Connectivity Tests" > health-report.md
+          
+          # Check if server is reachable
+          if ping -c 1 -W 3 $VERIS_MEMORY_HOST &>/dev/null; then
+            echo "✅ Server reachable" >> health-report.md
+            SERVER_UP=true
+          else
+            echo "❌ Server unreachable" >> health-report.md
+            SERVER_UP=false
+          fi
+          
+          echo "server_up=$SERVER_UP" >> $GITHUB_OUTPUT
+          
+          if [ "$SERVER_UP" = "true" ]; then
+            echo "" >> health-report.md
+            echo "## Service Health" >> health-report.md
+            
+            # Test MCP Server
+            if curl -f -m 5 "http://$VERIS_MEMORY_HOST:$MCP_PORT/" &>/dev/null; then
+              echo "✅ MCP Server (port $MCP_PORT)" >> health-report.md
+            else
+              echo "❌ MCP Server (port $MCP_PORT)" >> health-report.md
+            fi
+            
+            # Test REST API
+            if curl -f -m 5 "http://$VERIS_MEMORY_HOST:$API_PORT/api/v1/health" &>/dev/null; then
+              echo "✅ REST API (port $API_PORT)" >> health-report.md
+              API_UP=true
+            else
+              echo "❌ REST API (port $API_PORT)" >> health-report.md
+              API_UP=false
+            fi
+            
+            # Test Dashboard
+            if curl -f -m 5 "http://$VERIS_MEMORY_HOST:$DASHBOARD_PORT/" &>/dev/null; then
+              echo "✅ Dashboard (port $DASHBOARD_PORT)" >> health-report.md
+            else
+              echo "❌ Dashboard (port $DASHBOARD_PORT)" >> health-report.md
+            fi
+            
+            # Test Sentinel
+            if curl -f -m 5 "http://$VERIS_MEMORY_HOST:$SENTINEL_PORT/status" &>/dev/null; then
+              echo "✅ Sentinel (port $SENTINEL_PORT)" >> health-report.md
+              SENTINEL_UP=true
+            else
+              echo "❌ Sentinel (port $SENTINEL_PORT)" >> health-report.md
+              SENTINEL_UP=false
+            fi
+            
+            echo "api_up=$API_UP" >> $GITHUB_OUTPUT
+            echo "sentinel_up=$SENTINEL_UP" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "" >> health-report.md
+          echo "**Diagnostic completed at:** $(date)" >> health-report.md
+
+      - name: 🔧 Category-Specific Diagnostics
+        id: specific-diagnostics
+        run: |
+          echo "🔧 Running diagnostics for category: ${{ steps.parse-alert.outputs.category }}"
+          
+          case "${{ steps.parse-alert.outputs.category }}" in
+            "health")
+              echo "## Health Check Diagnostics" > category-report.md
+              if [ "${{ steps.health-check.outputs.server_up }}" = "true" ]; then
+                # Get detailed health info
+                curl -s "http://$VERIS_MEMORY_HOST:$API_PORT/api/v1/health" | jq '.' >> category-report.md 2>/dev/null || echo "Failed to get health details" >> category-report.md
+              fi
+              ;;
+            "firewall")
+              echo "## Firewall Diagnostics" > category-report.md
+              echo "Firewall alert detected - checking service accessibility" >> category-report.md
+              # All ports should be accessible if firewall is configured correctly
+              ;;
+            "security")
+              echo "## Security Diagnostics" > category-report.md
+              echo "Security alert - reviewing access patterns" >> category-report.md
+              ;;
+            "config")
+              echo "## Configuration Diagnostics" > category-report.md
+              echo "Configuration drift detected" >> category-report.md
+              ;;
+            *)
+              echo "## General Diagnostics" > category-report.md
+              echo "Category: ${{ steps.parse-alert.outputs.category }}" >> category-report.md
+              echo "No specific diagnostics available for this category" >> category-report.md
+              ;;
+          esac
+
+      - name: 📝 Create GitHub Issue for Critical Alerts
+        if: steps.parse-alert.outputs.severity == 'critical'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "📝 Creating GitHub issue for critical alert..."
+          
+          # Prepare issue body
+          cat > issue-body.md << 'EOF'
+          # 🚨 Critical Sentinel Alert
+          
+          **Alert Details:**
+          - **Check ID:** `${{ github.event.client_payload.check_id }}`
+          - **Status:** `${{ github.event.client_payload.status }}`
+          - **Severity:** `${{ github.event.client_payload.severity }}`
+          - **Timestamp:** ${{ github.event.client_payload.timestamp }}
+          - **Environment:** ${{ github.event.client_payload.environment }}
+          
+          **Message:**
+          ```
+          ${{ github.event.client_payload.message }}
+          ```
+          
+          **Alert Details:**
+          ```json
+          ${{ toJson(github.event.client_payload.details) }}
+          ```
+          
+          ## 🔍 Automated Diagnostics
+          
+          ### System Health
+          EOF
+          
+          # Append health report
+          cat health-report.md >> issue-body.md
+          
+          echo "" >> issue-body.md
+          echo "### Category-Specific Diagnostics" >> issue-body.md
+          cat category-report.md >> issue-body.md
+          
+          cat >> issue-body.md << 'EOF'
+          
+          ## 🔧 Suggested Actions
+          
+          - [ ] Review service logs
+          - [ ] Check system resources
+          - [ ] Verify network connectivity
+          - [ ] Review recent deployments
+          - [ ] Check monitoring dashboard
+          
+          ## 📊 Monitoring Links
+          
+          - [Dashboard](http://167.235.112.106:8080)
+          - [Sentinel Status](http://167.235.112.106:9090/status)
+          - [API Health](http://167.235.112.106:8001/api/v1/health)
+          
+          ---
+          🤖 *This issue was automatically created by Sentinel Alert Response System*
+          
+          **Workflow Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          EOF
+          
+          # Create the issue
+          gh issue create \
+            --title "🚨 Critical Alert: ${{ steps.parse-alert.outputs.check_id }}" \
+            --body-file issue-body.md \
+            --label "sentinel-alert,critical,${{ steps.parse-alert.outputs.category }}" \
+            --assignee "@me"
+
+      - name: 💬 Create Discussion for Warning Alerts
+        if: steps.parse-alert.outputs.severity == 'warning'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "💬 Creating discussion for warning alert..."
+          
+          # Create discussion for warnings (less urgent)
+          cat > discussion-body.md << 'EOF'
+          # ⚠️ Sentinel Warning Alert
+          
+          **Alert:** ${{ github.event.client_payload.check_id }}
+          **Message:** ${{ github.event.client_payload.message }}
+          **Time:** ${{ github.event.client_payload.timestamp }}
+          
+          ## Quick Diagnostics
+          EOF
+          
+          cat health-report.md >> discussion-body.md
+          
+          # Note: gh discussion create requires GraphQL API and different permissions
+          # For now, create a lower-priority issue instead
+          gh issue create \
+            --title "⚠️ Warning: ${{ steps.parse-alert.outputs.check_id }}" \
+            --body-file discussion-body.md \
+            --label "sentinel-alert,warning,${{ steps.parse-alert.outputs.category }}"
+
+      - name: 📊 Update Metrics
+        run: |
+          echo "📊 Recording alert metrics..."
+          
+          # Create metrics file
+          cat > alert-metrics.json << EOF
+          {
+            "timestamp": "${{ github.event.client_payload.timestamp }}",
+            "alert_id": "${{ steps.parse-alert.outputs.alert_id }}",
+            "check_id": "${{ steps.parse-alert.outputs.check_id }}",
+            "severity": "${{ steps.parse-alert.outputs.severity }}",
+            "category": "${{ steps.parse-alert.outputs.category }}",
+            "workflow_run_id": "${{ github.run_id }}",
+            "response_time_seconds": $(( $(date +%s) - $(date -d "${{ github.event.client_payload.timestamp }}" +%s) )),
+            "server_accessible": "${{ steps.health-check.outputs.server_up }}",
+            "api_accessible": "${{ steps.health-check.outputs.api_up }}",
+            "sentinel_accessible": "${{ steps.health-check.outputs.sentinel_up }}"
+          }
+          EOF
+          
+          echo "Alert response metrics recorded"
+
+      - name: 🔔 Notify Success
+        if: success()
+        run: |
+          echo "✅ Alert processing completed successfully"
+          echo "Alert ID: ${{ steps.parse-alert.outputs.alert_id }}"
+          echo "Severity: ${{ steps.parse-alert.outputs.severity }}"
+          echo "GitHub Issue: Created for severity level"
+          echo "Diagnostics: Completed"
+          echo ""
+          echo "Next steps:"
+          echo "1. Review created GitHub issue"
+          echo "2. Check diagnostic results"
+          echo "3. Take manual action if needed"
+
+      - name: 🔔 Notify Failure
+        if: failure()
+        run: |
+          echo "❌ Alert processing failed"
+          echo "This is a critical issue - the alert response system is not working"
+          echo "Manual intervention required immediately"
+          
+          # Create emergency issue
+          gh issue create \
+            --title "🚨 EMERGENCY: Alert Response System Failed" \
+            --body "The Sentinel alert response system failed to process alert ${{ steps.parse-alert.outputs.alert_id }}. Manual intervention required." \
+            --label "emergency,sentinel-alert,system-failure" \
+            --assignee "@me" || echo "Failed to create emergency issue"
+
+  # Additional job for future Claude Code integration
+  prepare-claude-integration:
+    runs-on: ubuntu-latest
+    needs: process-alert
+    if: github.event.client_payload.severity == 'critical'
+    name: "Prepare Claude Code Integration"
+    
+    steps:
+      - name: 📋 Prepare Context for Claude Code
+        run: |
+          echo "📋 Preparing context for future Claude Code integration..."
+          
+          # Create structured context file
+          cat > claude-context.json << EOF
+          {
+            "alert": {
+              "id": "${{ github.event.client_payload.alert_id }}",
+              "check_id": "${{ github.event.client_payload.check_id }}",
+              "severity": "${{ github.event.client_payload.severity }}",
+              "message": "${{ github.event.client_payload.message }}",
+              "details": ${{ toJson(github.event.client_payload.details) }}
+            },
+            "environment": {
+              "host": "${{ env.VERIS_MEMORY_HOST }}",
+              "services": {
+                "mcp": "${{ env.MCP_PORT }}",
+                "api": "${{ env.API_PORT }}",
+                "dashboard": "${{ env.DASHBOARD_PORT }}",
+                "sentinel": "${{ env.SENTINEL_PORT }}"
+              }
+            },
+            "workflow": {
+              "run_id": "${{ github.run_id }}",
+              "repository": "${{ github.repository }}",
+              "timestamp": "${{ github.event.client_payload.timestamp }}"
+            }
+          }
+          EOF
+          
+          echo "Context prepared for Claude Code integration (Phase 3)"
+          echo "File: claude-context.json"
+          
+      - name: 🚀 Future: Launch Claude Code Session
+        run: |
+          echo "🚀 Phase 3 Implementation: Claude Code Session"
+          echo "This step will be implemented in Phase 3 to:"
+          echo "1. Launch Claude Code session automatically"
+          echo "2. Pass alert context to Claude"
+          echo "3. Generate automated debugging session"
+          echo "4. Create PRs with potential fixes"
+          echo ""
+          echo "For now, this is a placeholder for future enhancement"

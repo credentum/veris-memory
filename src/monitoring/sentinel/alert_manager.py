@@ -21,6 +21,7 @@ from collections import defaultdict, deque
 import aiohttp
 
 from .telegram_alerter import TelegramAlerter, AlertSeverity
+from .webhook_alerter import GitHubWebhookAlerter
 from .models import CheckResult
 
 logger = logging.getLogger(__name__)
@@ -221,12 +222,20 @@ class AlertManager:
                 logger.warning(f"Telegram alerting disabled: {e}")
                 self.telegram = None
         
-        # Initialize GitHub if configured
+        # Initialize GitHub Issue Creator if configured
         self.github = None
         if github_token and github_repo:
             self.github = GitHubIssueCreator(github_token, github_repo)
             # Don't log sensitive tokens
             logger.info(f"GitHub issue creation enabled for repo: {github_repo}")
+        
+        # Initialize GitHub Webhook Alerter (uses environment variables)
+        self.webhook_alerter = GitHubWebhookAlerter()
+        webhook_status = self.webhook_alerter.get_status()
+        if webhook_status['enabled']:
+            logger.info(f"GitHub webhook alerting enabled for repo: {webhook_status['github_repo']}")
+        else:
+            logger.warning("GitHub webhook alerting disabled (no GITHUB_TOKEN found)")
         
         # Initialize deduplicator
         self.deduplicator = AlertDeduplicator(dedup_window_minutes)
@@ -336,7 +345,11 @@ class AlertManager:
         if self.telegram:
             tasks.append(self._send_telegram_alert(result, severity))
         
-        # Create GitHub issue for critical alerts
+        # Send to GitHub Actions via webhook (for all alert levels)
+        if self.webhook_alerter and self.webhook_alerter.get_status()['enabled']:
+            tasks.append(self._send_webhook_alert(result, severity))
+        
+        # Create GitHub issue for critical alerts (legacy method)
         if self.github and severity == AlertSeverity.CRITICAL:
             tasks.append(self._create_github_issue(result))
         
@@ -367,6 +380,19 @@ class AlertManager:
                 
         except Exception as e:
             logger.error(f"Error sending Telegram alert: {e}")
+    
+    async def _send_webhook_alert(self, result: CheckResult, severity: AlertSeverity) -> None:
+        """Send alert to GitHub Actions via webhook."""
+        try:
+            success = await self.webhook_alerter.send_alert(result)
+            
+            if success:
+                logger.info(f"GitHub webhook alert sent for {result.check_id}")
+            else:
+                logger.error(f"Failed to send GitHub webhook alert for {result.check_id}")
+                
+        except Exception as e:
+            logger.error(f"Error sending GitHub webhook alert: {e}")
     
     async def _create_github_issue(self, result: CheckResult) -> None:
         """Create GitHub issue for critical alert."""
