@@ -103,13 +103,27 @@ class StructuredLogger:
     
     def _emit_log(self, level: LogLevel, message: str, **kwargs):
         """Emit a structured log entry."""
+        # Extract trace_id from kwargs if present to avoid conflict
+        provided_trace_id = kwargs.pop('trace_id', None)
+        trace_id = provided_trace_id or trace_id_var.get() or str(uuid.uuid4())[:8]
+        
+        # Extract known LogEntry fields from kwargs
+        log_entry_fields = {}
+        for field in ['module', 'function', 'duration_ms', 'backend']:
+            if field in kwargs:
+                log_entry_fields[field] = kwargs.pop(field)
+        
+        # Put remaining kwargs in metadata
+        metadata = kwargs if kwargs else None
+        
         log_entry = LogEntry(
             timestamp=time.time(),
             level=level.value,
             message=message,
             logger_name=self.name,
-            trace_id=trace_id_var.get() or str(uuid.uuid4())[:8],
-            **kwargs
+            trace_id=trace_id,
+            metadata=metadata,
+            **log_entry_fields
         )
         
         # Convert to dictionary and redact PII
