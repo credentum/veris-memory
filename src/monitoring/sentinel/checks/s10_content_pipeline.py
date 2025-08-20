@@ -17,7 +17,6 @@ This check validates:
 """
 
 import asyncio
-import json
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -29,6 +28,15 @@ from ..base_check import BaseCheck
 from ..models import CheckResult, SentinelConfig
 
 logger = logging.getLogger(__name__)
+
+# Constants for pipeline monitoring
+INGESTION_SUCCESS_THRESHOLD = 0.8
+RETRIEVAL_SUCCESS_THRESHOLD = 0.8
+STAGE_HEALTH_THRESHOLD = 0.8
+ERROR_HANDLING_THRESHOLD = 0.75
+LIFECYCLE_SUCCESS_THRESHOLD = 0.75
+CONCURRENT_SUCCESS_THRESHOLD = 0.8
+MIN_CONCURRENT_SUCCESS = 4  # At least 80% of 5 operations
 
 
 class ContentPipelineMonitoring(BaseCheck):
@@ -268,7 +276,7 @@ class ContentPipelineMonitoring(BaseCheck):
             success_rate = successful_ingestions / len(self.test_content_samples) if self.test_content_samples else 0.0
             avg_ingestion_latency = total_ingestion_time / len(self.test_content_samples) if self.test_content_samples else 0.0
             
-            ingestion_threshold = 0.8
+            ingestion_threshold = INGESTION_SUCCESS_THRESHOLD
             latency_threshold = self.performance_thresholds["ingestion_latency_ms"]
             
             passed = (success_rate >= ingestion_threshold and 
@@ -364,7 +372,7 @@ class ContentPipelineMonitoring(BaseCheck):
             operational_stages = sum(1 for validation in stage_validations 
                                    if validation.get("stage_operational", False))
             stage_health_ratio = operational_stages / len(self.pipeline_stages) if self.pipeline_stages else 0.0
-            stage_threshold = 0.8
+            stage_threshold = STAGE_HEALTH_THRESHOLD
             
             return {
                 "passed": stage_health_ratio >= stage_threshold,
@@ -454,7 +462,7 @@ class ContentPipelineMonitoring(BaseCheck):
             success_rate = successful_retrievals / len(test_queries) if test_queries else 0.0
             avg_retrieval_latency = total_retrieval_time / len(test_queries) if test_queries else 0.0
             
-            retrieval_threshold = 0.8
+            retrieval_threshold = RETRIEVAL_SUCCESS_THRESHOLD
             latency_threshold = self.performance_thresholds["retrieval_latency_ms"]
             
             passed = (success_rate >= retrieval_threshold and 
@@ -709,7 +717,7 @@ class ContentPipelineMonitoring(BaseCheck):
                     "successful_operations": successful_concurrent,
                     "duration_seconds": concurrent_duration,
                     "success_rate": successful_concurrent / len(concurrent_tasks) if concurrent_tasks else 0,
-                    "meets_threshold": successful_concurrent >= 4  # At least 80% success
+                    "meets_threshold": successful_concurrent >= MIN_CONCURRENT_SUCCESS  # At least 80% success
                 }
             
             # Overall performance assessment
@@ -841,7 +849,7 @@ class ContentPipelineMonitoring(BaseCheck):
             properly_handled_errors = sum(1 for test in error_handling_tests 
                                         if test.get("properly_handled", False))
             error_handling_ratio = properly_handled_errors / len(error_handling_tests) if error_handling_tests else 0.0
-            error_handling_threshold = 0.75
+            error_handling_threshold = ERROR_HANDLING_THRESHOLD
             
             return {
                 "passed": error_handling_ratio >= error_handling_threshold,
@@ -1007,7 +1015,7 @@ class ContentPipelineMonitoring(BaseCheck):
             # Analyze lifecycle completion
             successful_stages = sum(1 for stage in lifecycle_stages if stage.get("successful", False))
             lifecycle_success_ratio = successful_stages / len(lifecycle_stages) if lifecycle_stages else 0.0
-            lifecycle_threshold = 0.75
+            lifecycle_threshold = LIFECYCLE_SUCCESS_THRESHOLD
             
             return {
                 "passed": lifecycle_success_ratio >= lifecycle_threshold,

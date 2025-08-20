@@ -16,7 +16,6 @@ This check validates:
 """
 
 import asyncio
-import json
 import math
 import random
 import statistics
@@ -30,6 +29,17 @@ from ..base_check import BaseCheck
 from ..models import CheckResult, SentinelConfig
 
 logger = logging.getLogger(__name__)
+
+# Constants for semantic analysis
+JACCARD_WEIGHT = 0.7
+PEARSON_WEIGHT = 0.3
+RANDOM_RANGE_MIN = 0.1
+RANDOM_RANGE_MAX = 0.9
+MIN_CORRELATION_THRESHOLD = 0.6
+DEFAULT_SIMILARITY_THRESHOLD = 0.7
+DEFAULT_VARIANCE_THRESHOLD = 0.3
+SIMULATION_SAMPLE_SIZE = 20
+EMBEDDING_SIMILARITY_THRESHOLD = 0.8
 
 
 class ParaphraseRobustness(BaseCheck):
@@ -55,7 +65,7 @@ class ParaphraseRobustness(BaseCheck):
                     "What is the process for configuring the system?",
                     "How can I configure this system?"
                 ],
-                "expected_similarity": 0.8
+                "expected_similarity": EMBEDDING_SIMILARITY_THRESHOLD
             },
             {
                 "topic": "database_connection",
@@ -99,7 +109,7 @@ class ParaphraseRobustness(BaseCheck):
                     "What are the login steps?",
                     "How does user authentication work?"
                 ],
-                "expected_similarity": 0.8
+                "expected_similarity": EMBEDDING_SIMILARITY_THRESHOLD
             }
         ]
         
@@ -629,7 +639,7 @@ class ParaphraseRobustness(BaseCheck):
                         
                         # Check if expanded query provides more relevant results
                         expansion_effective = expanded_count > simple_count or (
-                            expanded_count >= simple_count * 0.8 and
+                            expanded_count >= simple_count * EMBEDDING_SIMILARITY_THRESHOLD and
                             len(expanded_contexts) > 0 and
                             expanded_contexts[0].get("score", 0) >= simple_contexts[0].get("score", 0) if simple_contexts else True
                         )
@@ -943,6 +953,6 @@ class ParaphraseRobustness(BaseCheck):
         jaccard_sim = intersection / union if union > 0 else 0.0
         
         # Add some randomness to simulate real embedding similarity
-        base_similarity = jaccard_sim * 0.7 + random.uniform(0.1, 0.3)
+        base_similarity = jaccard_sim * JACCARD_WEIGHT + random.uniform(RANDOM_RANGE_MIN, PEARSON_WEIGHT)
         
         return min(1.0, max(0.0, base_similarity))

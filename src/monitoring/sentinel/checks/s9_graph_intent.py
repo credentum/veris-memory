@@ -16,7 +16,6 @@ This check validates:
 """
 
 import asyncio
-import json
 import random
 import time
 from datetime import datetime
@@ -28,6 +27,22 @@ from ..base_check import BaseCheck
 from ..models import CheckResult, SentinelConfig
 
 logger = logging.getLogger(__name__)
+
+# Constants for graph analysis
+ACCURACY_THRESHOLD = 0.7
+CONNECTIVITY_THRESHOLD = 0.6
+TRAVERSAL_THRESHOLD = 0.6
+CLUSTERING_THRESHOLD = 0.6
+INFERENCE_THRESHOLD = 0.5
+COHERENCE_THRESHOLD = 0.6
+PRESERVATION_THRESHOLD = 0.6
+EXPECTED_RELATIONSHIPS_THRESHOLD = 0.6
+SEMANTIC_COHERENCE_THRESHOLD = 0.5
+CLUSTER_COHERENCE_THRESHOLD = 0.4
+PATH_QUALITY_THRESHOLD = 0.3
+INFERENCE_QUALITY_THRESHOLD = 0.4
+CROSS_DOMAIN_COHERENCE_THRESHOLD = 0.3
+INTENT_PRESERVATION_THRESHOLD = 0.7
 
 
 class GraphIntentValidation(BaseCheck):
@@ -254,7 +269,7 @@ class GraphIntentValidation(BaseCheck):
                         total_accuracy_score += relationship_accuracy
             
             avg_accuracy = total_accuracy_score / len(self.intent_scenarios) if self.intent_scenarios else 0.0
-            accuracy_threshold = 0.7
+            accuracy_threshold = ACCURACY_THRESHOLD
             
             return {
                 "passed": avg_accuracy >= accuracy_threshold,
@@ -362,7 +377,7 @@ class GraphIntentValidation(BaseCheck):
                                     "query": query,
                                     "results_count": len(contexts),
                                     "semantic_coherence": semantic_coherence,
-                                    "well_connected": semantic_coherence > 0.5
+                                    "well_connected": semantic_coherence > SEMANTIC_COHERENCE_THRESHOLD
                                 })
                     except Exception as query_error:
                         connectivity_tests.append({
@@ -373,7 +388,7 @@ class GraphIntentValidation(BaseCheck):
             
             well_connected_queries = sum(1 for test in connectivity_tests if test.get("well_connected", False))
             connectivity_ratio = well_connected_queries / len(test_queries) if test_queries else 0.0
-            connectivity_threshold = 0.6
+            connectivity_threshold = CONNECTIVITY_THRESHOLD
             
             return {
                 "passed": connectivity_ratio >= connectivity_threshold,
@@ -436,12 +451,12 @@ class GraphIntentValidation(BaseCheck):
                     traversal_tests.append({
                         "concept": concept,
                         "traversal_quality": traversal_quality,
-                        "paths_found": traversal_quality > 0.3
+                        "paths_found": traversal_quality > PATH_QUALITY_THRESHOLD
                     })
             
             successful_traversals = sum(1 for test in traversal_tests if test.get("paths_found", False))
             traversal_ratio = successful_traversals / len(test_concepts) if test_concepts else 0.0
-            traversal_threshold = 0.6
+            traversal_threshold = TRAVERSAL_THRESHOLD
             
             return {
                 "passed": traversal_ratio >= traversal_threshold,
@@ -577,7 +592,7 @@ class GraphIntentValidation(BaseCheck):
                                     "query": query,
                                     "results_count": len(contexts),
                                     "cluster_coherence": cluster_coherence,
-                                    "well_clustered": cluster_coherence > 0.4
+                                    "well_clustered": cluster_coherence > CLUSTER_COHERENCE_THRESHOLD
                                 })
                     except Exception as cluster_error:
                         clustering_tests.append({
@@ -690,7 +705,7 @@ class GraphIntentValidation(BaseCheck):
                                     "related_concepts": related,
                                     "expected_inference": expected,
                                     "inference_quality": inference_quality,
-                                    "inference_successful": inference_quality > 0.4
+                                    "inference_successful": inference_quality > INFERENCE_QUALITY_THRESHOLD
                                 })
                     except Exception as inference_error:
                         inference_tests.append({
@@ -781,7 +796,7 @@ class GraphIntentValidation(BaseCheck):
                                     "query": query,
                                     "results_count": len(contexts),
                                     "coherence_score": coherence_score,
-                                    "coherent": coherence_score > 0.3
+                                    "coherent": coherence_score > CROSS_DOMAIN_COHERENCE_THRESHOLD
                                 })
                     except Exception as coherence_error:
                         coherence_tests.append({
@@ -838,17 +853,17 @@ class GraphIntentValidation(BaseCheck):
                 {
                     "original_intent": "How to troubleshoot database connection issues",
                     "key_concepts": ["database", "connection", "troubleshoot"],
-                    "expected_coverage": 0.7
+                    "expected_coverage": INTENT_PRESERVATION_THRESHOLD
                 },
                 {
                     "original_intent": "Best practices for secure user authentication",
                     "key_concepts": ["authentication", "security", "practices"],
-                    "expected_coverage": 0.7
+                    "expected_coverage": INTENT_PRESERVATION_THRESHOLD
                 },
                 {
                     "original_intent": "Performance optimization strategies for web applications",
                     "key_concepts": ["performance", "optimization", "web"],
-                    "expected_coverage": 0.7
+                    "expected_coverage": INTENT_PRESERVATION_THRESHOLD
                 }
             ]
             
