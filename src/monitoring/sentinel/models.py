@@ -37,7 +37,7 @@ class CheckResult:
 @dataclass
 class SentinelConfig:
     """Configuration for Sentinel monitoring."""
-    target_base_url: str = "http://localhost:8000"
+    target_base_url: str = "http://localhost:8001"
     check_interval_seconds: int = 60
     alert_threshold_failures: int = 3
     webhook_url: Optional[str] = None
