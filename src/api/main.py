@@ -100,61 +100,175 @@ async def lifespan(app: FastAPI):
             
             api_logger.info("Using mock backends for API")
         else:
-            # Real backend initialization using same pattern as MCP server
+            # Real backend initialization using EXACT pattern as MCP server
             api_logger.info("Initializing real backends for API service")
             
-            # Import backend clients (same as MCP server)
+            # Import backend clients and configuration (same as MCP server)
             from ..storage.qdrant_client import VectorDBInitializer
             from ..storage.neo4j_client import Neo4jInitializer as Neo4jClient
             from ..storage.kv_store import ContextKV as KVStore
+            from ..core.ssl_config import SSLConfigManager
+            from ..validators.config_validator import validate_all_configs
+            import urllib.parse
             
             vector_backend = None
             graph_backend = None
             kv_backend = None
             
-            # Initialize Qdrant (same pattern as MCP server)
+            # Initialize configuration validation (same as MCP server)
             try:
-                qdrant_initializer = VectorDBInitializer()
-                if qdrant_initializer.connect():
-                    vector_backend = qdrant_initializer
-                    api_logger.info("✅ API: Qdrant connected successfully")
-                else:
-                    api_logger.warning("⚠️ API: Qdrant connection failed")
-            except Exception as e:
-                api_logger.warning(f"⚠️ API: Qdrant unavailable: {e}")
+                config_result = validate_all_configs()
+                base_config = config_result.get("config", {})
+                if not config_result.get("valid", False):
+                    api_logger.warning(f"⚠️ Configuration validation failed: {config_result}")
+                
+                # Initialize SSL configuration manager
+                ssl_manager = SSLConfigManager(base_config)
+                
+                # Validate SSL certificates if configured
+                ssl_validation = ssl_manager.validate_ssl_certificates()
+                for backend, valid in ssl_validation.items():
+                    if not valid:
+                        api_logger.warning(f"⚠️ SSL certificate validation failed for {backend}")
+                        
+            except Exception as config_error:
+                api_logger.warning(f"⚠️ Configuration setup failed: {config_error}")
+                ssl_manager = None
             
-            # Initialize Neo4j (same pattern as MCP server)
-            try:
-                neo4j_client = Neo4jClient()
-                neo4j_client.connect(
-                    username=os.getenv("NEO4J_USER", "neo4j"),
-                    password=os.getenv("NEO4J_PASSWORD")
-                )
-                graph_backend = neo4j_client
-                api_logger.info("✅ API: Neo4j connected successfully")
-            except Exception as e:
-                api_logger.warning(f"⚠️ API: Neo4j unavailable: {e}")
+            # Initialize Neo4j with proper configuration (EXACT MCP pattern)
+            neo4j_password = os.getenv("NEO4J_PASSWORD")
+            if neo4j_password:
+                try:
+                    # Get Neo4j URI from environment
+                    neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+                    neo4j_username = os.getenv("NEO4J_USER", "neo4j")
+                    
+                    # Parse URI to extract host and port
+                    parsed = urllib.parse.urlparse(neo4j_uri)
+                    neo4j_host = parsed.hostname or "localhost"
+                    neo4j_port = parsed.port or 7687
+                    
+                    # Create config for Neo4jInitializer (EXACT MCP pattern)
+                    neo4j_config = {
+                        "neo4j": {
+                            "host": neo4j_host,
+                            "port": neo4j_port,
+                            "database": "neo4j",
+                            "ssl": neo4j_uri.startswith("bolt+s") or neo4j_uri.startswith("neo4j+s")
+                        }
+                    }
+                    
+                    neo4j_client = Neo4jClient(config=neo4j_config)
+                    if ssl_manager:
+                        neo4j_ssl_config = ssl_manager.get_neo4j_ssl_config()
+                    
+                    # Neo4j.connect only accepts username and password
+                    # SSL config is handled internally by Neo4j client
+                    if neo4j_client.connect(username=neo4j_username, password=neo4j_password):
+                        ssl_status = "with SSL" if ssl_manager and ssl_manager.get_neo4j_ssl_config().get("encrypted") else "without SSL"
+                        api_logger.info(f"✅ API: Neo4j connected at {neo4j_uri} {ssl_status}")
+                        graph_backend = neo4j_client
+                    else:
+                        api_logger.warning(f"⚠️ API: Neo4j connection failed at {neo4j_uri}")
+                except Exception as e:
+                    api_logger.warning(f"⚠️ API: Neo4j initialization error: {e}")
+            else:
+                api_logger.warning("⚠️ API: Neo4j disabled - NEO4J_PASSWORD not set")
             
-            # Initialize Redis KV Store (same pattern as MCP server)
-            try:
-                kv_store_client = KVStore()
-                kv_store_client.connect(redis_password=os.getenv("REDIS_PASSWORD"))
-                kv_backend = kv_store_client
-                api_logger.info("✅ API: Redis connected successfully")
-            except Exception as e:
-                api_logger.warning(f"⚠️ API: Redis unavailable: {e}")
+            # Initialize Qdrant with proper configuration (EXACT MCP pattern)
+            qdrant_url = os.getenv("QDRANT_URL")
+            if qdrant_url:
+                try:
+                    # Parse Qdrant URL to extract host and port
+                    parsed_qdrant = urllib.parse.urlparse(qdrant_url)
+                    qdrant_host = parsed_qdrant.hostname or "localhost"
+                    qdrant_port = parsed_qdrant.port or 6333
+                    
+                    # Create config for VectorDBInitializer (EXACT MCP pattern)
+                    qdrant_config = {
+                        "qdrant": {
+                            "host": qdrant_host,
+                            "port": qdrant_port,
+                            "ssl": qdrant_url.startswith("https"),
+                            "timeout": 5
+                        }
+                    }
+                    
+                    qdrant_client = VectorDBInitializer(config=qdrant_config)
+                    if ssl_manager:
+                        qdrant_ssl_config = ssl_manager.get_qdrant_ssl_config()
+                    
+                    if qdrant_client.connect():
+                        ssl_status = "with HTTPS" if ssl_manager and ssl_manager.get_qdrant_ssl_config().get("https") else "without SSL"
+                        api_logger.info(f"✅ API: Qdrant connected at {qdrant_url} {ssl_status}")
+                        vector_backend = qdrant_client
+                    else:
+                        api_logger.warning(f"⚠️ API: Qdrant connection failed at {qdrant_url}")
+                except Exception as e:
+                    api_logger.warning(f"⚠️ API: Qdrant initialization error: {e}")
+            else:
+                api_logger.warning("⚠️ API: Qdrant disabled - QDRANT_URL not set")
             
-            # Fallback to mock backends if real ones fail
-            if not vector_backend or not graph_backend or not kv_backend:
-                api_logger.warning("Some real backends failed, falling back to mock backends for missing services")
+            # Initialize KV Store with proper configuration (EXACT MCP pattern)
+            redis_url = os.getenv("REDIS_URL")
+            redis_password = os.getenv("REDIS_PASSWORD")
+            if redis_url:
+                try:
+                    # Parse Redis URL to extract host and port
+                    parsed_redis = urllib.parse.urlparse(redis_url)
+                    redis_host = parsed_redis.hostname or "localhost"
+                    redis_port = parsed_redis.port or 6379
+                    
+                    # Create config for ContextKV (EXACT MCP pattern)
+                    redis_config = {
+                        "redis": {
+                            "host": redis_host,
+                            "port": redis_port,
+                            "database": 0,
+                            "ssl": redis_url.startswith("rediss")
+                        }
+                    }
+                    
+                    kv_store_client = KVStore(config=redis_config)
+                    if ssl_manager:
+                        redis_ssl_config = ssl_manager.get_redis_ssl_config()
+                    
+                    # Pass password if available
+                    if kv_store_client.connect(redis_password=redis_password):
+                        ssl_status = "with SSL" if ssl_manager and ssl_manager.get_redis_ssl_config().get("ssl") else "without SSL"
+                        api_logger.info(f"✅ API: Redis connected at {redis_url} {ssl_status}")
+                        kv_backend = kv_store_client
+                    else:
+                        api_logger.warning(f"⚠️ API: Redis connection failed at {redis_url}")
+                except Exception as e:
+                    api_logger.warning(f"⚠️ API: Redis initialization error: {e}")
+            else:
+                api_logger.warning("⚠️ API: Redis disabled - REDIS_URL not set")
+            
+            # Fallback to mock backends if real ones fail (enhanced error reporting)
+            missing_backends = []
+            if not vector_backend:
+                missing_backends.append("Qdrant")
+            if not graph_backend:
+                missing_backends.append("Neo4j")
+            if not kv_backend:
+                missing_backends.append("Redis")
+            
+            if missing_backends:
+                api_logger.warning(f"Real backends failed: {missing_backends}. Falling back to mock backends for missing services")
                 from ..storage.mock_backends import MockVectorBackend, MockGraphBackend, MockKVBackend
                 
                 if not vector_backend:
                     vector_backend = MockVectorBackend()
+                    api_logger.info("📝 API: Using mock Qdrant backend")
                 if not graph_backend:
                     graph_backend = MockGraphBackend()
+                    api_logger.info("📝 API: Using mock Neo4j backend")
                 if not kv_backend:
                     kv_backend = MockKVBackend()
+                    api_logger.info("📝 API: Using mock Redis backend")
+            else:
+                api_logger.info("✅ API: All real backends connected successfully")
         
         # Register backends with dispatcher
         dispatcher.register_backend("vector", vector_backend)
