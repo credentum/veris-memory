@@ -471,6 +471,11 @@ EOF
         log_error "    • Neo4j:  $neo4j_status"
         log_error "    • Redis:  $redis_status"
         
+        log_error "  → Expected files not found:"
+        [ ! -f "$BACKUP_DIR/qdrant.snapshot" ] && [ ! -d "$BACKUP_DIR/qdrant-storage" ] && log_error "    • Qdrant backup missing"
+        [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ] && [ ! -f "$BACKUP_DIR/neo4j.dump" ] && [ ! -d "$BACKUP_DIR/neo4j-data" ] && log_error "    • Neo4j backup missing"
+        [ ! -f "$BACKUP_DIR/redis.rdb" ] && log_error "    • Redis backup missing"
+        
         log_error "  → Troubleshooting steps:"
         log_error "    1. Check backup directory permissions: $BACKUP_DIR"
         log_error "    2. Verify sufficient disk space: $(df -h "$BACKUP_DIR" 2>/dev/null | tail -1 || echo 'Unable to check')"
