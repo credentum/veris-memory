@@ -349,14 +349,7 @@ jobs:
                 docker logs "$API_CONTAINER" 2>&1 || echo "No logs"
                 echo ""
                 echo "🔍 Debugging info:"
-                docker inspect "$API_CONTAINER" --format '
-Status: {{.State.Status}}
-Exit Code: {{.State.ExitCode}}
-Error: {{.State.Error}}
-Started: {{.State.StartedAt}}
-Finished: {{.State.FinishedAt}}
-Command: {{join .Config.Cmd " "}}
-' 2>/dev/null || true
+                docker inspect "$API_CONTAINER" --format 'Status: {{.State.Status}}, Exit Code: {{.State.ExitCode}}, Error: {{.State.Error}}, Started: {{.State.StartedAt}}, Finished: {{.State.FinishedAt}}, Command: {{join .Config.Cmd " "}}' 2>/dev/null || true
                 echo ""
                 echo "📁 Files in container:"
                 docker run --rm --entrypoint ls veris-memory-dev-api:latest -la /app/ 2>&1 | head -20 || true
