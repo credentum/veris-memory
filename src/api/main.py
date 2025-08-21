@@ -105,8 +105,8 @@ async def lifespan(app: FastAPI):
             
             # Import backend clients (same as MCP server)
             from ..storage.qdrant_client import VectorDBInitializer
-            from ..storage.neo4j_client import Neo4jClient
-            from ..storage.kv_store import KVStore
+            from ..storage.neo4j_client import Neo4jInitializer as Neo4jClient
+            from ..storage.kv_store import ContextKV as KVStore
             
             vector_backend = None
             graph_backend = None
