@@ -185,12 +185,24 @@ EOF
         if [ "$neo4j_ready" = true ]; then
             log "Attempting Neo4j online backup via HTTP API..."
             
-            # Check if APOC is available
-            if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
-                -H "Content-Type: application/json" \
-                -d '{"statements":[{"statement":"RETURN apoc.version() as version"}]}' \
-                http://localhost:7474/db/neo4j/tx/commit | grep -q "result"; then
+            # Wait for APOC to be available (can take a moment after Neo4j starts)
+            apoc_ready=false
+            for j in {1..6}; do
+                log "Checking APOC availability... (attempt $j/6)"
+                if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+                    -H "Content-Type: application/json" \
+                    -d '{"statements":[{"statement":"RETURN apoc.version() as version"}]}' \
+                    http://localhost:7474/db/neo4j/tx/commit 2>/dev/null | grep -q "result"; then
+                    apoc_ready=true
+                    log "APOC plugin is available"
+                    break
+                else
+                    log "APOC not ready yet, waiting..."
+                    sleep 5
+                fi
+            done
             
+            if [ "$apoc_ready" = true ]; then
                 log "APOC is available, attempting HTTP API export..."
                 
                 # Export via HTTP API call to APOC
@@ -212,50 +224,24 @@ EOF
                     log_warning "Neo4j HTTP API export failed"
                 fi
             else
-                log_warning "APOC plugin not available, skipping HTTP API export method"
+                log_warning "APOC plugin not available after 30 seconds, skipping HTTP API export method"
             fi
         else
             log_warning "Neo4j not ready for online backup methods"
         fi
         
-        # Method 2: Try container-optimized backup approach (also requires Neo4j to be ready)
-        if [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ] && [ "$neo4j_ready" = true ]; then
-            log "Attempting Neo4j backup with optimized container method..."
-            
-            # Use Neo4j HTTP API to request database checkpoint for consistency
-            log "Requesting database checkpoint for consistency..."
-            if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
-                -H "Content-Type: application/json" \
-                -d '{"statements":[{"statement":"CALL db.checkpoint()"}]}' \
-                http://localhost:7474/db/neo4j/tx/commit > /dev/null 2>&1; then
-                log "Database checkpoint completed"
-                sleep 2
-            else
-                log_warning "Database checkpoint failed, continuing with backup"
-            fi
-            
-            # Try creating a consistent backup using neo4j-admin without stopping
-            log "Attempting online consistent backup..."
-            if docker exec "$neo4j_container" \
-                neo4j-admin database dump neo4j --to-path=/tmp --verbose 2>/dev/null; then
-                
-                if docker cp "$neo4j_container:/tmp/neo4j.dump" \
-                    "$BACKUP_DIR/neo4j.dump" 2>/dev/null; then
-                    log "✅ Neo4j backup successful (online dump method)"
-                else
-                    log_warning "Failed to copy Neo4j online dump"
-                fi
-            else
-                log_warning "Neo4j online dump failed"
-            fi
-        fi
+        # Method 2: Skip online dump as it requires stopping the database
+        # Neo4j admin dump requires database to be stopped, which interrupts service
+        # if [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ] && [ "$neo4j_ready" = true ]; then
+        #     log "Neo4j admin dump requires stopping database, skipping for online backup"
+        # fi
         
         # Log if Neo4j not ready for online methods
         if [ "$neo4j_ready" = false ] && [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ]; then
             log_warning "Neo4j not ready for online methods, will use enhanced fallback"
         fi
         
-        # Method 3: Enhanced fallback with better consistency
+        # Method 2: Enhanced fallback with better consistency (primary method for online backups)
         if [ ! -f "$BACKUP_DIR/neo4j.dump" ] && [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ]; then
             log "Using enhanced fallback: optimized data copy with consistency checks..."
             
