@@ -968,7 +968,69 @@ class UnifiedDashboard:
             'unique_endpoints': len(endpoint_stats)
         }
         
+        # Calculate overall performance score (0.0 - 1.0)
+        performance_score = self._calculate_performance_score(error_rate, avg_latency, p99_latency, thresholds)
+        insights['performance_score'] = performance_score
+        
         return insights
+
+    def _calculate_performance_score(self, error_rate: float, avg_latency: float, p99_latency: float, thresholds: Dict[str, Any]) -> float:
+        """Calculate overall performance score based on error rate, latency, and throughput.
+        
+        Args:
+            error_rate: Error rate percentage (0-100)
+            avg_latency: Average latency in milliseconds
+            p99_latency: P99 latency in milliseconds
+            thresholds: Performance thresholds configuration
+            
+        Returns:
+            Performance score between 0.0 (worst) and 1.0 (best)
+        """
+        # Get thresholds with defaults
+        error_warning = thresholds.get('error_rate_warning_percent', 1.0)
+        error_critical = thresholds.get('error_rate_critical_percent', 5.0)
+        latency_warning = thresholds.get('latency_warning_ms', 100)
+        latency_critical = thresholds.get('latency_critical_ms', 500)
+        
+        # Error rate score component (40% weight)
+        if error_rate <= error_warning / 2:
+            error_score = 1.0
+        elif error_rate <= error_warning:
+            error_score = 0.9 - (error_rate / error_warning * 0.1)
+        elif error_rate <= error_critical:
+            error_score = 0.7 - ((error_rate - error_warning) / (error_critical - error_warning) * 0.4)
+        else:
+            error_score = max(0.0, 0.3 - (error_rate - error_critical) / 10.0 * 0.3)
+        
+        # Average latency score component (35% weight)
+        if avg_latency <= latency_warning / 2:
+            avg_latency_score = 1.0
+        elif avg_latency <= latency_warning:
+            avg_latency_score = 0.9 - (avg_latency / latency_warning * 0.1)
+        elif avg_latency <= latency_critical:
+            avg_latency_score = 0.6 - ((avg_latency - latency_warning) / (latency_critical - latency_warning) * 0.3)
+        else:
+            avg_latency_score = max(0.0, 0.3 - (avg_latency - latency_critical) / latency_critical * 0.3)
+        
+        # P99 latency score component (25% weight)
+        if p99_latency <= latency_critical / 2:
+            p99_score = 1.0
+        elif p99_latency <= latency_critical:
+            p99_score = 0.8 - (p99_latency / latency_critical * 0.2)
+        elif p99_latency <= latency_critical * 2:
+            p99_score = 0.4 - ((p99_latency - latency_critical) / latency_critical * 0.2)
+        else:
+            p99_score = max(0.0, 0.2 - (p99_latency - latency_critical * 2) / (latency_critical * 2) * 0.2)
+        
+        # Calculate weighted performance score
+        performance_score = (
+            error_score * 0.40 +          # Error rate: 40% weight
+            avg_latency_score * 0.35 +    # Average latency: 35% weight
+            p99_score * 0.25              # P99 latency: 25% weight
+        )
+        
+        # Ensure score is between 0.0 and 1.0
+        return max(0.0, min(1.0, performance_score))
 
     def _get_fallback_system_metrics(self) -> SystemMetrics:
         """Get fallback system metrics when psutil is unavailable."""

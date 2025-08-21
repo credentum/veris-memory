@@ -58,6 +58,7 @@ try:
         apply_search_enhancements,
         is_technical_query
     )
+    from src.mcp_server.query_relevance_scorer import QueryRelevanceScorer
 except ImportError:
     # Fallback for different import contexts
     import sys
@@ -92,6 +93,7 @@ except ImportError:
         apply_search_enhancements,
         is_technical_query
     )
+    from mcp_server.query_relevance_scorer import QueryRelevanceScorer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -434,7 +436,7 @@ async def list_tools() -> List[Tool]:
                     },
                     "type": {
                         "type": "string",
-                        "enum": ["design", "decision", "trace", "sprint", "log"],
+                        "enum": ["design", "decision", "trace", "sprint", "log", "test"],
                         "description": "Type of context",
                     },
                     "metadata": {
@@ -514,6 +516,10 @@ async def list_tools() -> List[Tool]:
                         "type": "boolean",
                         "default": False,
                         "description": "Include community detection results",
+                    },
+                    "metadata_filters": {
+                        "type": "object",
+                        "description": "Filter results by metadata key-value pairs (e.g., {'project': 'api-v2', 'priority': 'high'})",
                     },
                 },
                 "required": ["query"],
@@ -830,6 +836,156 @@ async def list_tools() -> List[Tool]:
                 "required": ["query"],
             },
         ),
+        Tool(
+            name="delete_context",
+            description="Delete a stored context by ID",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "context_id": {
+                        "type": "string",
+                        "description": "ID of the context to delete",
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "description": "Confirmation that you want to delete this context",
+                    },
+                },
+                "required": ["context_id", "confirm"],
+            },
+        ),
+        Tool(
+            name="list_context_types",
+            description="Get available context types and their descriptions",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "include_descriptions": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Include detailed descriptions of each context type",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="redis_get",
+            description="Get a value from Redis by key",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "Redis key to retrieve",
+                    },
+                },
+                "required": ["key"],
+            },
+        ),
+        Tool(
+            name="redis_set",
+            description="Set a key-value pair in Redis",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "Redis key to set",
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "Value to store",
+                    },
+                    "ex": {
+                        "type": "integer",
+                        "description": "Expiration time in seconds (optional)",
+                    },
+                },
+                "required": ["key", "value"],
+            },
+        ),
+        Tool(
+            name="redis_hget",
+            description="Get a field value from a Redis hash",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "Redis hash key",
+                    },
+                    "field": {
+                        "type": "string",
+                        "description": "Hash field name",
+                    },
+                },
+                "required": ["key", "field"],
+            },
+        ),
+        Tool(
+            name="redis_hset",
+            description="Set a field value in a Redis hash",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "Redis hash key",
+                    },
+                    "field": {
+                        "type": "string",
+                        "description": "Hash field name",
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "Field value to set",
+                    },
+                },
+                "required": ["key", "field", "value"],
+            },
+        ),
+        Tool(
+            name="redis_lpush",
+            description="Push an element to the head of a Redis list",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "Redis list key",
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "Value to push to list",
+                    },
+                },
+                "required": ["key", "value"],
+            },
+        ),
+        Tool(
+            name="redis_lrange",
+            description="Get a range of elements from a Redis list",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "Redis list key",
+                    },
+                    "start": {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Start index (0-based)",
+                    },
+                    "stop": {
+                        "type": "integer",
+                        "default": -1,
+                        "description": "Stop index (-1 for end)",
+                    },
+                },
+                "required": ["key"],
+            },
+        ),
     ]
 
 
@@ -871,6 +1027,22 @@ async def call_tool(
             result = await delete_user_facts_tool(arguments)
         elif name == "classify_intent":
             result = await classify_intent_tool(arguments)
+        elif name == "delete_context":
+            result = await delete_context_tool(arguments)
+        elif name == "list_context_types":
+            result = await list_context_types_tool(arguments)
+        elif name == "redis_get":
+            result = await redis_get_tool(arguments)
+        elif name == "redis_set":
+            result = await redis_set_tool(arguments)
+        elif name == "redis_hget":
+            result = await redis_hget_tool(arguments)
+        elif name == "redis_hset":
+            result = await redis_hset_tool(arguments)
+        elif name == "redis_lpush":
+            result = await redis_lpush_tool(arguments)
+        elif name == "redis_lrange":
+            result = await redis_lrange_tool(arguments)
         else:
             status_code = 400  # Client error for unknown tool
             error_msg = f"Unknown tool: {name}"
@@ -1441,6 +1613,7 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         relationship_types = arguments.get("relationship_types", None)
         include_reasoning_path = arguments.get("include_reasoning_path", False)
         enable_community_detection = arguments.get("enable_community_detection", False)
+        metadata_filters = arguments.get("metadata_filters", {})
 
         # Use retrieval_mode if specified, otherwise fall back to search_mode
         effective_mode = retrieval_mode
@@ -1475,13 +1648,37 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                         "collection_name", "project_context"
                     )
 
+                    # Build Qdrant filter from metadata_filters and context_type
+                    filter_dict = None
+                    if metadata_filters or context_type != "all":
+                        filter_conditions = []
+                        
+                        # Add context type filter
+                        if context_type != "all":
+                            filter_conditions.append({
+                                "key": "type",
+                                "match": {"value": context_type}
+                            })
+                        
+                        # Add metadata filters - strict matching
+                        for key, value in metadata_filters.items():
+                            # Support for nested metadata fields
+                            metadata_key = f"metadata.{key}"
+                            filter_conditions.append({
+                                "key": metadata_key,
+                                "match": {"value": value}
+                            })
+                        
+                        if filter_conditions:
+                            filter_dict = {"must": filter_conditions}
+                    
                     # Run vector search asynchronously to avoid blocking
                     variant_results = await asyncio.get_event_loop().run_in_executor(
                         None,
                         lambda: qdrant_client.search(
                             query_vector=query_vector,
                             limit=limit * 2,  # Get more results for better ranking
-                            filter_dict=None,
+                            filter_dict=filter_dict,
                         )
                     )
                     
@@ -1625,20 +1822,40 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                         """
                     else:
                         # Standard graph search for single-hop modes
-                        cypher_query = """
+                        metadata_conditions = []
+                        if metadata_filters:
+                            for key, value in metadata_filters.items():
+                                metadata_conditions.append(f"n.metadata.{key} = ${key}")
+                        
+                        metadata_clause = ""
+                        if metadata_conditions:
+                            metadata_clause = "AND " + " AND ".join(metadata_conditions)
+                        
+                        cypher_query = f"""
                         MATCH (n:Context)
                         WHERE (n.type = $type OR $type = 'all')
                         AND (n.content CONTAINS $query OR n.metadata CONTAINS $query)
+                        {metadata_clause}
                         RETURN n.id as id, n.type as type, n.content as content,
                                n.metadata as metadata, n.created_at as created_at
                         LIMIT $limit
                         """
+                    # Prepare parameters including metadata filters
+                    parameters = {
+                        "type": context_type, 
+                        "query": query, 
+                        "limit": limit
+                    }
+                    # Add metadata filter values to parameters
+                    if metadata_filters:
+                        parameters.update(metadata_filters)
+                    
                     # Run graph query asynchronously to avoid blocking
                     query_result = await asyncio.get_event_loop().run_in_executor(
                         None,
                         lambda: neo4j_client.query(
                             cypher_query,
-                            parameters={"type": context_type, "query": query, "limit": limit},
+                            parameters=parameters,
                         )
                     )
 
@@ -1698,6 +1915,16 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 enable_technical_boost=technical_query  # Phase 2: Only boost technical terms for technical queries
             )
             logger.info(f"Search enhancements applied, top result score: {results[0].get('enhanced_score', 0):.3f}")
+            
+            # Phase 3: Apply query-specific relevance scoring to address LIM-004
+            # This ensures results vary meaningfully based on actual search terms
+            try:
+                query_scorer = QueryRelevanceScorer()
+                results = query_scorer.enhance_search_results(original_query, results)
+                logger.info(f"Query-specific relevance scoring applied, top result score: {results[0].get('query_relevance_score', 0):.3f}")
+            except Exception as e:
+                logger.warning(f"Query relevance scoring failed: {e}")
+                # Continue with basic enhanced results
         
         # Apply sorting based on sort_by parameter
         if sort_by == "timestamp":
@@ -1737,6 +1964,26 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
             graphrag_metadata[
                 "community_info"
             ] = "Community detection available via detect_communities tool"
+        
+        # Apply strict metadata filtering as post-processing
+        # This ensures exact matching regardless of which backend was used
+        if metadata_filters and enhanced_results:
+            filtered_results = []
+            for result in enhanced_results:
+                metadata = result.get('metadata', {})
+                
+                # Check if all metadata filters match exactly
+                match = True
+                for filter_key, filter_value in metadata_filters.items():
+                    if metadata.get(filter_key) != filter_value:
+                        match = False
+                        break
+                
+                if match:
+                    filtered_results.append(result)
+            
+            enhanced_results = filtered_results
+            logger.info(f"Strict metadata filtering applied: {len(enhanced_results)} results remaining")
 
         # Apply reranking to improve precision
         reranker_config = qdrant_client.config.get("reranker", {}) if qdrant_client else {}
@@ -2986,6 +3233,431 @@ async def classify_intent_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "success": False,
             "message": f"Intent classification failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def delete_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Delete a stored context by ID."""
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("delete_context")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        context_id = arguments.get("context_id", "")
+        confirm = arguments.get("confirm", False)
+
+        if not context_id:
+            return {
+                "success": False,
+                "message": "context_id is required",
+                "error_type": "validation_error",
+            }
+
+        if not confirm:
+            return {
+                "success": False,
+                "message": "confirm must be true to delete context",
+                "error_type": "validation_error",
+            }
+
+        # Use the existing delete_context method from ContextKV
+        deleted = kv_store.delete_context(context_id)
+
+        if deleted:
+            return {
+                "success": True,
+                "message": f"Context {context_id} deleted successfully",
+                "context_id": context_id
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Context {context_id} not found or could not be deleted",
+                "error_type": "not_found",
+            }
+
+    except Exception as e:
+        logger.error(f"Error in delete_context_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Context deletion failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def list_context_types_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Get available context types and their descriptions."""
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("list_context_types")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        include_descriptions = arguments.get("include_descriptions", True)
+
+        # Define available context types with descriptions
+        context_types = {
+            "design": "Design documents, specifications, and architectural decisions",
+            "decision": "Decision records, choices made, and their rationale",
+            "trace": "Execution traces, debugging information, and system behavior",
+            "sprint": "Sprint planning, retrospectives, and iteration artifacts",
+            "log": "System logs, events, and operational information",
+            "test": "Test cases, test results, and testing artifacts"  # Added 'test' type
+        }
+
+        if include_descriptions:
+            result = {
+                "context_types": [
+                    {"type": type_name, "description": description}
+                    for type_name, description in context_types.items()
+                ]
+            }
+        else:
+            result = {
+                "context_types": list(context_types.keys())
+            }
+
+        return {
+            "success": True,
+            "message": "Context types retrieved successfully",
+            **result
+        }
+
+    except Exception as e:
+        logger.error(f"Error in list_context_types_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Error listing context types: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def redis_get_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Get a value from Redis by key."""
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("redis_get")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        key = arguments.get("key", "")
+        
+        if not key:
+            return {
+                "success": False,
+                "message": "key is required",
+                "error_type": "validation_error",
+            }
+
+        # Validate key format
+        key_validation = input_validator.validate_input(key, "query")
+        if not key_validation.valid:
+            return {
+                "success": False,
+                "message": f"Key validation failed: {key_validation.error}",
+                "error_type": key_validation.error,
+            }
+
+        # Use kv_store to get value from Redis
+        value = kv_store.redis.get(key)
+        
+        return {
+            "success": True,
+            "key": key,
+            "value": value,
+            "exists": value is not None,
+            "message": f"Retrieved key '{key}'" if value is not None else f"Key '{key}' not found"
+        }
+
+    except Exception as e:
+        logger.error(f"Error in redis_get_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Redis GET failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def redis_set_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Set a key-value pair in Redis."""
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("redis_set")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        key = arguments.get("key", "")
+        value = arguments.get("value", "")
+        ex = arguments.get("ex")
+        
+        if not key or not value:
+            return {
+                "success": False,
+                "message": "key and value are required",
+                "error_type": "validation_error",
+            }
+
+        # Validate key and value
+        key_validation = input_validator.validate_input(key, "query")
+        if not key_validation.valid:
+            return {
+                "success": False,
+                "message": f"Key validation failed: {key_validation.error}",
+                "error_type": key_validation.error,
+            }
+
+        value_validation = input_validator.validate_input(value, "content")
+        if not value_validation.valid:
+            return {
+                "success": False,
+                "message": f"Value validation failed: {value_validation.error}",
+                "error_type": value_validation.error,
+            }
+
+        # Use kv_store to set value in Redis
+        success = kv_store.redis.set(key, value, ex=ex)
+        
+        return {
+            "success": success,
+            "key": key,
+            "value": value,
+            "expiration": ex,
+            "message": f"Set key '{key}' with value" + (f" (expires in {ex}s)" if ex else "")
+        }
+
+    except Exception as e:
+        logger.error(f"Error in redis_set_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Redis SET failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def redis_hget_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Get a field value from a Redis hash."""
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("redis_hget")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        key = arguments.get("key", "")
+        field = arguments.get("field", "")
+        
+        if not key or not field:
+            return {
+                "success": False,
+                "message": "key and field are required",
+                "error_type": "validation_error",
+            }
+
+        # Use kv_store Redis client for hash operations
+        redis_client = kv_store.redis.redis_client
+        if not redis_client:
+            return {
+                "success": False,
+                "message": "Redis client not available",
+                "error_type": "connection_error",
+            }
+
+        value = redis_client.hget(key, field)
+        if value:
+            value = value.decode('utf-8') if isinstance(value, bytes) else str(value)
+        
+        return {
+            "success": True,
+            "key": key,
+            "field": field,
+            "value": value,
+            "exists": value is not None,
+            "message": f"Retrieved field '{field}' from hash '{key}'" if value is not None else f"Field '{field}' not found in hash '{key}'"
+        }
+
+    except Exception as e:
+        logger.error(f"Error in redis_hget_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Redis HGET failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def redis_hset_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Set a field value in a Redis hash."""
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("redis_hset")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        key = arguments.get("key", "")
+        field = arguments.get("field", "")
+        value = arguments.get("value", "")
+        
+        if not key or not field or not value:
+            return {
+                "success": False,
+                "message": "key, field, and value are required",
+                "error_type": "validation_error",
+            }
+
+        # Use kv_store Redis client for hash operations
+        redis_client = kv_store.redis.redis_client
+        if not redis_client:
+            return {
+                "success": False,
+                "message": "Redis client not available",
+                "error_type": "connection_error",
+            }
+
+        result = redis_client.hset(key, field, value)
+        
+        return {
+            "success": True,
+            "key": key,
+            "field": field,
+            "value": value,
+            "new_field": result == 1,
+            "message": f"Set field '{field}' in hash '{key}' to '{value}'"
+        }
+
+    except Exception as e:
+        logger.error(f"Error in redis_hset_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Redis HSET failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def redis_lpush_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Push an element to the head of a Redis list."""
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("redis_lpush")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        key = arguments.get("key", "")
+        value = arguments.get("value", "")
+        
+        if not key or not value:
+            return {
+                "success": False,
+                "message": "key and value are required",
+                "error_type": "validation_error",
+            }
+
+        # Use kv_store Redis client for list operations
+        redis_client = kv_store.redis.redis_client
+        if not redis_client:
+            return {
+                "success": False,
+                "message": "Redis client not available",
+                "error_type": "connection_error",
+            }
+
+        list_length = redis_client.lpush(key, value)
+        
+        return {
+            "success": True,
+            "key": key,
+            "value": value,
+            "list_length": list_length,
+            "message": f"Pushed '{value}' to list '{key}', new length: {list_length}"
+        }
+
+    except Exception as e:
+        logger.error(f"Error in redis_lpush_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Redis LPUSH failed: {str(e)}",
+            "error_type": "execution_error",
+        }
+
+
+async def redis_lrange_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Get a range of elements from a Redis list."""
+    # Rate limiting check
+    allowed, rate_limit_msg = await rate_limit_check("redis_lrange")
+    if not allowed:
+        return {
+            "success": False,
+            "message": f"Rate limit exceeded: {rate_limit_msg}",
+            "error_type": "rate_limit",
+        }
+
+    try:
+        key = arguments.get("key", "")
+        start = arguments.get("start", 0)
+        stop = arguments.get("stop", -1)
+        
+        if not key:
+            return {
+                "success": False,
+                "message": "key is required",
+                "error_type": "validation_error",
+            }
+
+        # Use kv_store Redis client for list operations
+        redis_client = kv_store.redis.redis_client
+        if not redis_client:
+            return {
+                "success": False,
+                "message": "Redis client not available",
+                "error_type": "connection_error",
+            }
+
+        elements = redis_client.lrange(key, start, stop)
+        # Decode bytes to strings
+        elements = [elem.decode('utf-8') if isinstance(elem, bytes) else str(elem) for elem in elements]
+        
+        return {
+            "success": True,
+            "key": key,
+            "start": start,
+            "stop": stop,
+            "elements": elements,
+            "count": len(elements),
+            "message": f"Retrieved {len(elements)} elements from list '{key}'"
+        }
+
+    except Exception as e:
+        logger.error(f"Error in redis_lrange_tool: {e}")
+        return {
+            "success": False,
+            "message": f"Redis LRANGE failed: {str(e)}",
             "error_type": "execution_error",
         }
 
