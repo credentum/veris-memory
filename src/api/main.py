@@ -106,7 +106,7 @@ async def lifespan(app: FastAPI):
             config_result = validate_all_configs()
             base_config = config_result.get("config", {})
             if not config_result.get("valid", False):
-            api_logger.warning(f"⚠️ Configuration validation failed: {config_result}")
+                api_logger.warning(f"⚠️ Configuration validation failed: {config_result}")
         
             # Initialize SSL configuration manager
             ssl_manager = SSLConfigManager(base_config)
@@ -114,8 +114,8 @@ async def lifespan(app: FastAPI):
             # Validate SSL certificates if configured
             ssl_validation = ssl_manager.validate_ssl_certificates()
             for backend, valid in ssl_validation.items():
-            if not valid:
-                api_logger.warning(f"⚠️ SSL certificate validation failed for {backend}")
+                if not valid:
+                    api_logger.warning(f"⚠️ SSL certificate validation failed for {backend}")
                 
         except Exception as config_error:
             api_logger.warning(f"⚠️ Configuration setup failed: {config_error}")
