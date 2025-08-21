@@ -2,7 +2,8 @@
 # Backup and Restore Integration for Deploy Workflows
 # Prevents data loss during deployments by backing up before cleanup and restoring after deployment
 
-set -e
+# IMPORTANT: No 'set -e' here! We handle errors explicitly for robustness
+# Each backup component should be attempted regardless of others failing
 
 ACTION="${1:-backup}"
 ENVIRONMENT="${2:-dev}"
@@ -158,6 +159,10 @@ EOF
         log_warning "Qdrant container not found"
     fi
     
+    # Component status tracking
+    local neo4j_status="not_attempted"
+    local redis_status="not_attempted"
+    
     # Backup Neo4j
     log "Starting Neo4j backup..."
     if docker ps | grep -q "veris-memory-${ENVIRONMENT}-neo4j"; then
@@ -311,26 +316,40 @@ EOF
             sleep 3
             
             # Copy with enhanced options for better consistency
-            if docker exec "$neo4j_container" sh -c 'sync && sleep 1' 2>/dev/null && \
-               verified_docker_cp "$neo4j_container:/var/lib/neo4j/data" \
+            # Note: sync might fail in some container environments, so we make it optional
+            docker exec "$neo4j_container" sh -c 'sync && sleep 1' 2>/dev/null || {
+                log_warning "Container filesystem sync failed, proceeding without sync"
+            }
+            
+            # Attempt the actual data copy
+            if verified_docker_cp "$neo4j_container:/var/lib/neo4j/data" \
                 "$BACKUP_DIR/neo4j-data" "Neo4j data directory"; then
                 
                 # Verify backup contains expected files
                 if [ -f "$BACKUP_DIR/neo4j-data/databases/neo4j/neostore" ]; then
                     log "✅ Neo4j enhanced fallback backup completed with consistency optimizations"
+                    neo4j_status="success_fallback"
                     
                     # Create metadata about this backup method
                     echo '{"method":"enhanced_fallback","consistency":"optimized","checkpoint":"requested"}' > \
                         "$BACKUP_DIR/neo4j-backup-metadata.json"
                 else
                     log_warning "⚠️ Neo4j fallback backup completed but verification failed"
+                    neo4j_status="partial_failure"
                 fi
             else
                 log_error "❌ All Neo4j backup methods failed completely"
+                neo4j_status="failed"
             fi
+        fi
+        
+        # Set success status if APOC export succeeded
+        if [ -f "$BACKUP_DIR/neo4j-export.cypher" ]; then
+            neo4j_status="success_apoc"
         fi
     else
         log "ℹ️ No Neo4j containers found to backup"
+        neo4j_status="no_container"
     fi
     
     # Log backup summary for Neo4j
@@ -345,7 +364,7 @@ EOF
     
     log "📊 Neo4j backup status: $neo4j_backup_status"
     
-    # Backup Redis
+    # Backup Redis (ALWAYS attempt, regardless of Neo4j status)
     log "Starting Redis backup..."
     if docker ps | grep -q "veris-memory-${ENVIRONMENT}-redis"; then
         local redis_container="veris-memory-${ENVIRONMENT}-redis-1"
@@ -375,14 +394,18 @@ EOF
             if verified_docker_cp "$redis_container:/data/dump.rdb" \
                 "$BACKUP_DIR/redis.rdb" "Redis RDB file"; then
                 log "✅ Redis backup successful"
+                redis_status="success"
             else
                 log_error "❌ Failed to copy Redis dump file"
+                redis_status="copy_failed"
             fi
         else
             log_error "❌ Redis BGSAVE failed"
+            redis_status="bgsave_failed"
         fi
     else
         log_warning "Redis container not found"
+        redis_status="no_container"
     fi
     
     # Create backup summary
@@ -414,15 +437,40 @@ EOF
     # Create symlink to latest
     ln -sfn "$BACKUP_DIR" "${BACKUP_ROOT}/${ENVIRONMENT}/latest"
     
+    # Comprehensive backup status report
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "📊 BACKUP STATUS REPORT"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "  • Qdrant: $([ -f "$BACKUP_DIR/qdrant.snapshot" ] || [ -d "$BACKUP_DIR/qdrant-storage" ] && echo "✅ SUCCESS" || echo "❌ FAILED")"
+    log "  • Neo4j:  $neo4j_status"
+    log "  • Redis:  $redis_status"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
     if [ $backup_success -gt 0 ]; then
         log "✅ Backup completed: $BACKUP_DIR ($backup_success components:$backup_methods)"
-        echo -e "${GREEN}✅ Backup completed: $BACKUP_DIR${NC}"
+        echo -e "${GREEN}✅ Backup completed with $backup_success successful component(s)${NC}"
+        
+        # Show which components succeeded
+        log "📁 Backed up files:"
+        [ -f "$BACKUP_DIR/qdrant.snapshot" ] && log "  ✓ Qdrant snapshot: $(du -sh "$BACKUP_DIR/qdrant.snapshot" 2>/dev/null | cut -f1)"
+        [ -d "$BACKUP_DIR/qdrant-storage" ] && log "  ✓ Qdrant storage: $(du -sh "$BACKUP_DIR/qdrant-storage" 2>/dev/null | cut -f1)"
+        [ -f "$BACKUP_DIR/neo4j-export.cypher" ] && log "  ✓ Neo4j export: $(du -sh "$BACKUP_DIR/neo4j-export.cypher" 2>/dev/null | cut -f1)"
+        [ -d "$BACKUP_DIR/neo4j-data" ] && log "  ✓ Neo4j data: $(du -sh "$BACKUP_DIR/neo4j-data" 2>/dev/null | cut -f1)"
+        [ -f "$BACKUP_DIR/redis.rdb" ] && log "  ✓ Redis dump: $(du -sh "$BACKUP_DIR/redis.rdb" 2>/dev/null | cut -f1)"
+        
+        # Return success if at least one component backed up
+        return 0
     else
         log_error "❌ Backup failed: No components were backed up successfully"
         echo -e "${RED}❌ Backup failed: No components were backed up successfully${NC}"
         
         # Enhanced failure diagnostics
         log_error "📊 Backup failure analysis:"
+        log_error "  → Component statuses:"
+        log_error "    • Qdrant: Check logs above for snapshot/volume copy issues"
+        log_error "    • Neo4j:  $neo4j_status"
+        log_error "    • Redis:  $redis_status"
+        
         log_error "  → Expected files not found:"
         [ ! -f "$BACKUP_DIR/qdrant.snapshot" ] && [ ! -d "$BACKUP_DIR/qdrant-storage" ] && log_error "    • Qdrant backup missing"
         [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ] && [ ! -f "$BACKUP_DIR/neo4j.dump" ] && [ ! -d "$BACKUP_DIR/neo4j-data" ] && log_error "    • Neo4j backup missing"
@@ -433,6 +481,9 @@ EOF
         log_error "    2. Verify sufficient disk space: $(df -h "$BACKUP_DIR" 2>/dev/null | tail -1 || echo 'Unable to check')"
         log_error "    3. Check container accessibility with: docker ps"
         log_error "    4. Review logs above for specific docker cp failures"
+        
+        # Return failure only if ALL components failed
+        return 1
     fi
     
     # Cleanup old backups (keep last 7)
