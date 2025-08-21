@@ -100,15 +100,61 @@ async def lifespan(app: FastAPI):
             
             api_logger.info("Using mock backends for API")
         else:
-            # TODO: Implement proper backend initialization
-            # The real backends need proper client instances, not just URLs
-            # For now, fall back to mock backends
-            from ..storage.mock_backends import MockVectorBackend, MockGraphBackend, MockKVBackend
+            # Real backend initialization using same pattern as MCP server
+            api_logger.info("Initializing real backends for API service")
             
-            api_logger.warning("Real backend initialization not yet implemented, using mock backends")
-            vector_backend = MockVectorBackend()
-            graph_backend = MockGraphBackend()
-            kv_backend = MockKVBackend()
+            # Import backend clients (same as MCP server)
+            from ..storage.qdrant_client import VectorDBInitializer
+            from ..storage.neo4j_client import Neo4jInitializer
+            from ..storage.kv_store import ContextKV
+            
+            vector_backend = None
+            graph_backend = None
+            kv_backend = None
+            
+            # Initialize Qdrant (same pattern as MCP server)
+            try:
+                qdrant_initializer = VectorDBInitializer()
+                if qdrant_initializer.connect():
+                    vector_backend = qdrant_initializer
+                    api_logger.info("✅ API: Qdrant connected successfully")
+                else:
+                    api_logger.warning("⚠️ API: Qdrant connection failed")
+            except Exception as e:
+                api_logger.warning(f"⚠️ API: Qdrant unavailable: {e}")
+            
+            # Initialize Neo4j (same pattern as MCP server)
+            try:
+                neo4j_client = Neo4jInitializer()
+                neo4j_client.connect(
+                    username=os.getenv("NEO4J_USER", "neo4j"),
+                    password=os.getenv("NEO4J_PASSWORD")
+                )
+                graph_backend = neo4j_client
+                api_logger.info("✅ API: Neo4j connected successfully")
+            except Exception as e:
+                api_logger.warning(f"⚠️ API: Neo4j unavailable: {e}")
+            
+            # Initialize Redis KV Store (same pattern as MCP server)
+            try:
+                kv_store_client = ContextKV()
+                kv_store_client.connect(redis_password=os.getenv("REDIS_PASSWORD"))
+                kv_backend = kv_store_client
+                api_logger.info("✅ API: Redis connected successfully")
+            except Exception as e:
+                api_logger.warning(f"⚠️ API: Redis unavailable: {e}")
+            
+            # Fallback to mock backends if real ones fail
+            if not vector_backend or not graph_backend or not kv_backend:
+                api_logger.warning("Some real backends failed, falling back to mock backends for missing services")
+                from ..storage.mock_backends import MockVectorBackend, MockGraphBackend, MockKVBackend
+                
+                if not vector_backend:
+                    vector_backend = MockVectorBackend()
+                if not graph_backend:
+                    graph_backend = MockGraphBackend()
+                if not kv_backend:
+                    kv_backend = MockKVBackend()
         
         # Register backends with dispatcher
         dispatcher.register_backend("vector", vector_backend)

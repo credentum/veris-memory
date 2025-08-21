@@ -860,10 +860,29 @@ async def check_embeddings():
 @app.get("/health")
 async def health() -> Dict[str, Any]:
     """
-    Enhanced health check endpoint with grace periods and retry logic.
+    Lightweight health check endpoint for Docker health checks.
+    
+    Returns basic server status without expensive backend queries.
+    For detailed backend status, use /health/detailed endpoint.
+    """
+    startup_elapsed = time.time() - _server_startup_time
+    
+    return {
+        "status": "healthy",
+        "uptime_seconds": int(startup_elapsed),
+        "timestamp": time.time(),
+        "message": "Server is running - use /health/detailed for backend status"
+    }
 
-    Returns the health status of the server and its dependencies.
+
+@app.get("/health/detailed")
+async def health_detailed() -> Dict[str, Any]:
+    """
+    Detailed health check endpoint with backend connectivity tests.
+
+    Returns comprehensive health status of the server and its dependencies.
     Implements 60-second grace period and 3-retry mechanism as per issue #1759.
+    WARNING: This endpoint performs expensive backend queries - use sparingly.
     """
     startup_elapsed = time.time() - _server_startup_time
     in_grace_period = _is_in_startup_grace_period()
