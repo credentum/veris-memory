@@ -44,6 +44,9 @@ RUN apt-get update && \
 COPY --chown=appuser:appuser src/ ./src/
 COPY --chown=appuser:appuser schemas/ ./schemas/
 COPY --chown=appuser:appuser contracts/ ./contracts/
+# Copy startup script
+COPY --chown=appuser:appuser scripts/api-startup.sh ./api-startup.sh
+RUN chmod +x ./api-startup.sh
 # Use Docker-specific config file with service names instead of localhost
 COPY --chown=appuser:appuser config/.ctxrc.docker.yaml ./.ctxrc.yaml
 
@@ -70,5 +73,5 @@ USER appuser
 # Expose port
 EXPOSE 8001
 
-# Start the REST API application
-CMD ["python", "-m", "uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8001"]
+# Start the REST API application with comprehensive error handling
+CMD ["/bin/sh", "./api-startup.sh"]
