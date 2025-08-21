@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from core.query_dispatcher import QueryDispatcher, SearchMode, DispatchPolicy
 from interfaces.memory_result import MemoryResult, ContentType, ResultSource
-from storage.mock_backends import MockVectorBackend, MockGraphBackend, MockKVBackend
+# Mock backends removed - benchmarks now require real backend configuration
 
 
 @dataclass
@@ -102,29 +102,19 @@ class PerformanceBenchmark:
         
         self.dispatcher = QueryDispatcher()
         
-        if self.use_real_backends:
-            # Use real backends (would need proper configuration)
-            print("⚠️  Real backends not implemented yet, using mock backends")
-            await self._setup_mock_backends()
-        else:
-            await self._setup_mock_backends()
+        # Mock backends removed for production safety
+        print("⚠️ Mock backends removed - benchmarks require real backend configuration")
+        print("💡 Configure environment variables for real backends:")
+        print("   - NEO4J_PASSWORD for Neo4j")
+        print("   - QDRANT_URL for Qdrant")  
+        print("   - REDIS_URL for Redis")
+        print()
+        print("❌ Benchmarks require real backend configuration to prevent deployment issues")
+        return
         
         print("✅ Benchmark environment initialized!")
         print(f"📊 Backends: {', '.join(self.dispatcher.list_backends())}")
         print()
-    
-    async def _setup_mock_backends(self):
-        """Setup mock backends with sample data."""
-        vector_backend = MockVectorBackend()
-        graph_backend = MockGraphBackend()
-        kv_backend = MockKVBackend()
-        
-        # Populate with substantial sample data for realistic testing
-        await self._populate_backends_with_data(vector_backend, graph_backend, kv_backend)
-        
-        self.dispatcher.register_backend("vector", vector_backend)
-        self.dispatcher.register_backend("graph", graph_backend)
-        self.dispatcher.register_backend("kv", kv_backend)
     
     async def _populate_backends_with_data(self, vector_backend, graph_backend, kv_backend):
         """Populate backends with realistic test data."""

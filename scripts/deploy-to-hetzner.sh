@@ -276,6 +276,26 @@ EOF
     log "✅ Smoke tests completed"
 }
 
+# Validate deployment for mock backend issues
+validate_deployment() {
+    log "🔍 Validating deployment for production readiness..."
+    
+    # Copy validation script to server and run it
+    scp scripts/validate-deployment.sh "$SSH_TARGET:/tmp/validate-deployment.sh" > /dev/null 2>&1
+    
+    if ssh "$SSH_TARGET" "chmod +x /tmp/validate-deployment.sh && /tmp/validate-deployment.sh"; then
+        log "✅ Deployment validation passed"
+    else
+        log "❌ DEPLOYMENT VALIDATION FAILED"
+        log "🚨 Critical issues found that will cause production failures"
+        log "   The API may be using mock backends or have connectivity issues"
+        log "   This deployment should NOT be used in production"
+        log ""
+        log "🔧 Check the validation output above for specific issues"
+        exit 1
+    fi
+}
+
 # Monitor deployment
 monitor_deployment() {
     log "📊 Final deployment status..."
@@ -317,6 +337,7 @@ main() {
     start_services
     bootstrap_qdrant
     run_smoke_tests
+    validate_deployment
     monitor_deployment
     
     log ""

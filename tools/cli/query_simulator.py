@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from core.query_dispatcher import QueryDispatcher, SearchMode, DispatchPolicy
 from interfaces.memory_result import MemoryResult, ContentType, ResultSource
-from storage.mock_backends import MockVectorBackend, MockGraphBackend, MockKVBackend
+# Mock backends removed - using real backends or graceful degradation
 from filters.pre_filter import PreFilterEngine, FilterCriteria, FilterOperator
 from ranking.ranking_policy import RankingPolicyEngine
 
@@ -29,10 +29,9 @@ from ranking.ranking_policy import RankingPolicyEngine
 class QuerySimulator:
     """Interactive CLI query simulator for testing Veris Memory system."""
     
-    def __init__(self, use_mock_backends: bool = True):
+    def __init__(self):
         """Initialize the query simulator."""
         self.dispatcher = None
-        self.use_mock_backends = use_mock_backends
         self.session_results: List[Dict[str, Any]] = []
         self.performance_stats: Dict[str, Any] = {}
         
@@ -43,101 +42,76 @@ class QuerySimulator:
         # Initialize dispatcher
         self.dispatcher = QueryDispatcher()
         
-        if self.use_mock_backends:
-            # Use mock backends for testing
-            vector_backend = MockVectorBackend()
-            graph_backend = MockGraphBackend()
-            kv_backend = MockKVBackend()
-            
-            # Populate with sample data
-            await self._populate_sample_data(vector_backend, graph_backend, kv_backend)
-        else:
-            # Use real backends (would need configuration)
-            from storage.vector_backend import VectorBackend
-            from storage.graph_backend import GraphBackend
-            from storage.kv_backend import KVBackend
-            
-            vector_backend = VectorBackend()
-            graph_backend = GraphBackend()
-            kv_backend = KVBackend()
+        # Try to use real backends - same pattern as API
+        import os
+        print("🔗 Attempting to connect to real backends...")
         
-        # Register backends
-        self.dispatcher.register_backend("vector", vector_backend)
-        self.dispatcher.register_backend("graph", graph_backend) 
-        self.dispatcher.register_backend("kv", kv_backend)
+        # Initialize real backends using same pattern as API
+        from storage.qdrant_client import VectorDBInitializer
+        from storage.neo4j_client import Neo4jInitializer as Neo4jClient
+        from storage.kv_store import ContextKV as KVStore
+        
+        vector_backend = None
+        graph_backend = None
+        kv_backend = None
+        
+        # Try Neo4j
+        neo4j_password = os.getenv("NEO4J_PASSWORD")
+        if neo4j_password:
+            try:
+                neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+                neo4j_username = os.getenv("NEO4J_USER", "neo4j")
+                neo4j_client = Neo4jClient()
+                if neo4j_client.connect(username=neo4j_username, password=neo4j_password):
+                    graph_backend = neo4j_client
+                    print("✅ Connected to Neo4j")
+            except Exception as e:
+                print(f"⚠️ Neo4j connection failed: {e}")
+        
+        # Try Qdrant
+        qdrant_url = os.getenv("QDRANT_URL")
+        if qdrant_url:
+            try:
+                qdrant_client = VectorDBInitializer()
+                if qdrant_client.connect():
+                    vector_backend = qdrant_client
+                    print("✅ Connected to Qdrant")
+            except Exception as e:
+                print(f"⚠️ Qdrant connection failed: {e}")
+        
+        # Try Redis
+        redis_url = os.getenv("REDIS_URL")
+        if redis_url:
+            try:
+                kv_store = KVStore()
+                if kv_store.connect():
+                    kv_backend = kv_store
+                    print("✅ Connected to Redis")
+            except Exception as e:
+                print(f"⚠️ Redis connection failed: {e}")
+        
+        # Register available backends
+        backends_available = []
+        if vector_backend:
+            self.dispatcher.register_backend("vector", vector_backend)
+            backends_available.append("vector")
+        if graph_backend:
+            self.dispatcher.register_backend("graph", graph_backend)
+            backends_available.append("graph")
+        if kv_backend:
+            self.dispatcher.register_backend("kv", kv_backend)
+            backends_available.append("kv")
+        
+        if backends_available:
+            print(f"✅ Query simulator ready with backends: {backends_available}")
+        else:
+            print("⚠️ No backends available - simulator will have limited functionality")
+            print("💡 Set NEO4J_PASSWORD, QDRANT_URL, REDIS_URL environment variables to connect to real backends")
         
         print("✅ Query simulator initialized successfully!")
         print(f"📊 Backends: {', '.join(self.dispatcher.list_backends())}")
         print(f"🎯 Ranking policies: {', '.join(self.dispatcher.get_available_ranking_policies())}")
         print()
-    
-    async def _populate_sample_data(self, vector_backend, graph_backend, kv_backend):
-        """Populate mock backends with realistic sample data."""
-        sample_contexts = [
-            # Code examples
-            MemoryResult(
-                id="code_1",
-                text="def process_user_authentication(username: str, password: str) -> bool:\n    # Validate user credentials against database\n    return auth_service.validate(username, password)",
-                type=ContentType.CODE,
-                score=0.95,
-                source=ResultSource.VECTOR,
-                timestamp=datetime.now(timezone.utc),
-                tags=["python", "authentication", "security", "function"],
-                metadata={"language": "python", "complexity": "medium"}
-            ),
-            MemoryResult(
-                id="code_2", 
-                text="async function fetchUserData(userId) {\n  const response = await fetch(`/api/users/${userId}`);\n  return response.json();\n}",
-                type=ContentType.CODE,
-                score=0.88,
-                source=ResultSource.VECTOR,
-                timestamp=datetime.now(timezone.utc),
-                tags=["javascript", "async", "api", "fetch"],
-                metadata={"language": "javascript", "complexity": "simple"}
-            ),
-            # Documentation
-            MemoryResult(
-                id="docs_1",
-                text="API Authentication Guide: Use JWT tokens in the Authorization header. Format: 'Bearer <token>'. Tokens expire after 24 hours.",
-                type=ContentType.DOCUMENTATION,
-                score=0.92,
-                source=ResultSource.GRAPH,
-                timestamp=datetime.now(timezone.utc),
-                tags=["api", "jwt", "authentication", "documentation"],
-                metadata={"section": "security", "type": "guide"}
-            ),
-            # Configuration
-            MemoryResult(
-                id="config_1",
-                text="database:\n  host: localhost\n  port: 5432\n  name: veris_memory\n  pool_size: 20",
-                type=ContentType.CONFIGURATION,
-                score=0.85,
-                source=ResultSource.KV,
-                timestamp=datetime.now(timezone.utc),
-                tags=["database", "config", "postgresql"],
-                metadata={"format": "yaml", "component": "database"}
-            ),
-            # Design documents
-            MemoryResult(
-                id="design_1",
-                text="System Architecture: The Veris Memory system uses a hybrid storage approach combining vector embeddings for semantic search with graph databases for relationship modeling.",
-                type=ContentType.DESIGN,
-                score=0.90,
-                source=ResultSource.GRAPH,
-                timestamp=datetime.now(timezone.utc),
-                tags=["architecture", "design", "storage", "hybrid"],
-                metadata={"document_type": "architecture", "status": "approved"}
-            )
-        ]
-        
-        # Store in backends
-        for context in sample_contexts:
-            if context.source == ResultSource.VECTOR:
-                await vector_backend.store_context(context)
-            elif context.source == ResultSource.GRAPH:
-                await graph_backend.store_context(context)
-            elif context.source == ResultSource.KV:
-                await kv_backend.store_context(context)
     
     async def run_interactive_mode(self):
         """Run interactive query simulation mode."""
@@ -579,7 +553,7 @@ Examples:
             'session_info': {
                 'timestamp': datetime.now().isoformat(),
                 'query_count': len(self.session_results),
-                'use_mock_backends': self.use_mock_backends
+                'backend_type': 'real_backends'
             },
             'queries': self.session_results,
             'performance_summary': {
@@ -599,11 +573,7 @@ Examples:
 async def main():
     """Main entry point for the CLI query simulator."""
     parser = argparse.ArgumentParser(description="Veris Memory CLI Query Simulator")
-    parser.add_argument(
-        "--real-backends", 
-        action="store_true",
-        help="Use real backends instead of mock backends"
-    )
+    # Mock backends removed - simulator always attempts to use real backends
     parser.add_argument(
         "--query",
         help="Run a single query and exit"
@@ -616,8 +586,8 @@ async def main():
     
     args = parser.parse_args()
     
-    # Initialize simulator
-    simulator = QuerySimulator(use_mock_backends=not args.real_backends)
+    # Initialize simulator (always uses real backends now)
+    simulator = QuerySimulator()
     await simulator.initialize()
     
     if args.query:
