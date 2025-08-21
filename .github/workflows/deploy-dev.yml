@@ -290,6 +290,11 @@ jobs:
               # Start dev services (secrets already exported at beginning)
               echo "🚀 Starting DEV services..."
               
+              # ENHANCED: Force clean rebuild of API container
+              echo "🧹 Removing old API image to force rebuild..."
+              docker rmi veris-memory-dev-api 2>/dev/null || true
+              docker rmi $(docker images -q --filter "reference=*api*" --filter "reference=*veris-memory-dev*") 2>/dev/null || true
+              
               # Try multiple approaches to ensure success
               echo "  → Attempt 1: Standard docker compose up..."
               if ! docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build; then
@@ -298,12 +303,66 @@ jobs:
                   echo "  → Attempt 2 failed, trying with force recreate..."
                   if ! docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build --force-recreate; then
                     echo "❌ All docker compose attempts failed!"
+                    
+                    # ENHANCED: Capture API container debugging info
+                    echo ""
+                    echo "🔍 DEBUGGING API CONTAINER FAILURE:"
+                    echo "===================================="
+                    API_CONTAINER="veris-memory-dev-api-1"
+                    
+                    echo "📊 Container Status:"
+                    docker ps -a --filter "name=$API_CONTAINER" || true
+                    
+                    echo ""
+                    echo "📜 API Container Logs (last 100 lines):"
+                    docker logs "$API_CONTAINER" --tail 100 2>&1 || echo "No logs available"
+                    
+                    echo ""
+                    echo "🔍 Container Exit Details:"
+                    docker inspect "$API_CONTAINER" --format 'Exit Code: {{.State.ExitCode}}, Error: {{.State.Error}}' 2>/dev/null || true
+                    
+                    echo ""
+                    echo "📁 Check startup script in container:"
+                    docker run --rm --entrypoint sh veris-memory-dev-api:latest -c "ls -la /app/api-startup.sh 2>/dev/null || echo 'Script not found'" || true
+                    
                     exit 1
                   fi
                 fi
               fi
               
               echo "✅ Docker compose completed successfully"
+              
+              # ENHANCED: Immediately check API container status
+              echo ""
+              echo "🔍 Checking API container status immediately..."
+              sleep 5  # Give container 5 seconds to start
+              API_CONTAINER="veris-memory-dev-api-1"
+              API_STATUS=$(docker inspect "$API_CONTAINER" --format '{{.State.Status}}' 2>/dev/null || echo "not-found")
+              API_EXIT=$(docker inspect "$API_CONTAINER" --format '{{.State.ExitCode}}' 2>/dev/null || echo "N/A")
+              
+              if [ "$API_STATUS" != "running" ]; then
+                echo "⚠️  WARNING: API container is not running!"
+                echo "  Status: $API_STATUS"
+                echo "  Exit Code: $API_EXIT"
+                echo ""
+                echo "📜 API Container Logs:"
+                docker logs "$API_CONTAINER" 2>&1 || echo "No logs"
+                echo ""
+                echo "🔍 Debugging info:"
+                docker inspect "$API_CONTAINER" --format '
+Status: {{.State.Status}}
+Exit Code: {{.State.ExitCode}}
+Error: {{.State.Error}}
+Started: {{.State.StartedAt}}
+Finished: {{.State.FinishedAt}}
+Command: {{join .Config.Cmd " "}}
+' 2>/dev/null || true
+                echo ""
+                echo "📁 Files in container:"
+                docker run --rm --entrypoint ls veris-memory-dev-api:latest -la /app/ 2>&1 | head -20 || true
+              else
+                echo "✅ API container is running"
+              fi
               
               # Verify .env integrity after deployment
               if ! grep -q "^NEO4J_PASSWORD=" .env; then
@@ -374,6 +433,24 @@ jobs:
               
               # Check for unhealthy containers and show detailed health check errors
               unhealthy=$(docker ps --filter "health=unhealthy" --format "{{.Names}}" | grep veris-memory-dev || true)
+              exited=$(docker ps -a --filter "status=exited" --format "{{.Names}}" | grep veris-memory-dev || true)
+              
+              # ENHANCED: Check for exited containers (Error status)
+              if [ -n "$exited" ]; then
+                echo "❌ ============================================"
+                echo "❌ CRITICAL: CONTAINERS EXITED WITH ERROR!"
+                echo "❌ ============================================"
+                for container in $exited; do
+                  echo "❌ Container: $container"
+                  EXIT_CODE=$(docker inspect $container --format='{{.State.ExitCode}}')
+                  echo "   Exit Code: $EXIT_CODE"
+                  echo "   Last 50 log lines:"
+                  docker logs $container --tail 50 2>&1
+                  echo ""
+                done
+                echo "❌ ============================================"
+              fi
+              
               if [ -n "$unhealthy" ]; then
                 echo "⚠️  ============================================"
                 echo "⚠️  WARNING: UNHEALTHY CONTAINERS DETECTED!"
