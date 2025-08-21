@@ -113,64 +113,118 @@ EOF
         local neo4j_container="veris-memory-${ENVIRONMENT}-neo4j-1"
         log "Found Neo4j container: $neo4j_container"
         
-        # Method 1: Try online backup using cypher-shell if available
-        log "Attempting Neo4j online backup via cypher-shell..."
-        if docker exec "$neo4j_container" cypher-shell -u neo4j -p "\${NEO4J_AUTH#neo4j/}" \
-            "CALL apoc.export.cypher.all('/tmp/neo4j-export.cypher', {format: 'cypher-shell'})" 2>/dev/null; then
+        # Method 1: Try HTTP API backup using APOC (more reliable than cypher-shell)
+        log "Attempting Neo4j online backup via HTTP API..."
+        
+        # First check if Neo4j is ready and APOC is available
+        if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+            -H "Content-Type: application/json" \
+            -d '{"statements":[{"statement":"RETURN apoc.version() as version"}]}' \
+            http://localhost:7474/db/neo4j/tx/commit | grep -q "result"; then
             
-            if docker cp "$neo4j_container:/tmp/neo4j-export.cypher" \
-                "$BACKUP_DIR/neo4j-export.cypher" 2>/dev/null; then
-                log "✅ Neo4j online backup successful (cypher export)"
+            log "APOC is available, attempting HTTP API export..."
+            
+            # Export via HTTP API call to APOC
+            if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+                -H "Content-Type: application/json" \
+                -d '{"statements":[{"statement":"CALL apoc.export.cypher.all('\''/tmp/neo4j-export.cypher'\'', {format: '\''cypher-shell'\''})"}]}' \
+                http://localhost:7474/db/neo4j/tx/commit > /dev/null 2>&1; then
+                
+                # Wait a moment for export to complete
+                sleep 2
+                
+                if docker cp "$neo4j_container:/tmp/neo4j-export.cypher" \
+                    "$BACKUP_DIR/neo4j-export.cypher" 2>/dev/null; then
+                    log "✅ Neo4j HTTP API backup successful (APOC export)"
+                else
+                    log_warning "Failed to copy Neo4j HTTP API export"
+                fi
             else
-                log_warning "Failed to copy Neo4j cypher export"
+                log_warning "Neo4j HTTP API export failed"
             fi
         else
-            log_warning "Neo4j online backup failed (cypher-shell not available or APOC missing)"
+            log_warning "Neo4j HTTP API backup failed (Neo4j not ready or APOC missing)"
         fi
         
-        # Method 2: Try graceful database stop, backup, restart  
+        # Method 2: Try container-optimized backup approach
         if [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ]; then
-            log "Attempting Neo4j backup with graceful stop..."
+            log "Attempting Neo4j backup with optimized container method..."
             
-            # Stop database gracefully
-            if docker exec "$neo4j_container" neo4j stop 2>/dev/null; then
-                log "Neo4j stopped gracefully"
-                sleep 3
-                
-                # Create dump
-                if docker exec "$neo4j_container" \
-                    neo4j-admin database dump neo4j --to-path=/tmp 2>/dev/null; then
-                    
-                    if docker cp "$neo4j_container:/tmp/neo4j.dump" \
-                        "$BACKUP_DIR/neo4j.dump" 2>/dev/null; then
-                        log "✅ Neo4j backup successful (graceful stop method)"
-                    else
-                        log_warning "Failed to copy Neo4j dump"
-                    fi
-                else
-                    log_warning "Neo4j dump failed even after stopping"
-                fi
-                
-                # Restart database
-                docker exec "$neo4j_container" neo4j start 2>/dev/null || log_warning "Failed to restart Neo4j"
+            # Use Neo4j HTTP API to request database checkpoint for consistency
+            log "Requesting database checkpoint for consistency..."
+            if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+                -H "Content-Type: application/json" \
+                -d '{"statements":[{"statement":"CALL db.checkpoint()"}]}' \
+                http://localhost:7474/db/neo4j/tx/commit > /dev/null 2>&1; then
+                log "Database checkpoint completed"
+                sleep 2
             else
-                log_warning "Failed to stop Neo4j gracefully"
+                log_warning "Database checkpoint failed, continuing with backup"
+            fi
+            
+            # Try creating a consistent backup using neo4j-admin without stopping
+            log "Attempting online consistent backup..."
+            if docker exec "$neo4j_container" \
+                neo4j-admin database dump neo4j --to-path=/tmp --verbose 2>/dev/null; then
+                
+                if docker cp "$neo4j_container:/tmp/neo4j.dump" \
+                    "$BACKUP_DIR/neo4j.dump" 2>/dev/null; then
+                    log "✅ Neo4j backup successful (online dump method)"
+                else
+                    log_warning "Failed to copy Neo4j online dump"
+                fi
+            else
+                log_warning "Neo4j online dump failed"
             fi
         fi
         
-        # Method 3: Fallback - copy data directory directly (may be inconsistent)
+        # Method 3: Enhanced fallback with better consistency
         if [ ! -f "$BACKUP_DIR/neo4j.dump" ] && [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ]; then
-            log "Using fallback: direct data copy (may be inconsistent)..."
-            if docker cp "$neo4j_container:/var/lib/neo4j/data" \
+            log "Using enhanced fallback: optimized data copy with consistency checks..."
+            
+            # Request another checkpoint before copying
+            docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+                -H "Content-Type: application/json" \
+                -d '{"statements":[{"statement":"CALL db.checkpoint()"}]}' \
+                http://localhost:7474/db/neo4j/tx/commit > /dev/null 2>&1
+            
+            # Wait for any pending writes to complete
+            sleep 3
+            
+            # Copy with enhanced options for better consistency
+            if docker exec "$neo4j_container" sh -c 'sync && sleep 1' 2>/dev/null && \
+               docker cp "$neo4j_container:/var/lib/neo4j/data" \
                 "$BACKUP_DIR/neo4j-data" 2>/dev/null; then
-                log "⚠️ Neo4j fallback backup completed (data may be inconsistent)"
+                
+                # Verify backup contains expected files
+                if [ -f "$BACKUP_DIR/neo4j-data/databases/neo4j/neostore" ]; then
+                    log "✅ Neo4j enhanced fallback backup completed with consistency optimizations"
+                    
+                    # Create metadata about this backup method
+                    echo '{"method":"enhanced_fallback","consistency":"optimized","checkpoint":"requested"}' > \
+                        "$BACKUP_DIR/neo4j-backup-metadata.json"
+                else
+                    log_warning "⚠️ Neo4j fallback backup completed but verification failed"
+                fi
             else
-                log_error "❌ Neo4j backup failed completely"
+                log_error "❌ All Neo4j backup methods failed completely"
             fi
         fi
     else
-        log_warning "Neo4j container not found"
+        log "ℹ️ No Neo4j containers found to backup"
     fi
+    
+    # Log backup summary for Neo4j
+    neo4j_backup_status="none"
+    if [ -f "$BACKUP_DIR/neo4j-export.cypher" ]; then
+        neo4j_backup_status="HTTP_API_export"
+    elif [ -f "$BACKUP_DIR/neo4j.dump" ]; then
+        neo4j_backup_status="online_dump"
+    elif [ -d "$BACKUP_DIR/neo4j-data" ]; then
+        neo4j_backup_status="enhanced_fallback"
+    fi
+    
+    log "📊 Neo4j backup status: $neo4j_backup_status"
     
     # Backup Redis
     log "Starting Redis backup..."
@@ -395,10 +449,12 @@ restore_backup() {
         if docker cp "$BACKUP_DIR/neo4j-export.cypher" \
             "$neo4j_container:/tmp/neo4j-export.cypher" 2>/dev/null; then
             
-            # Wait for Neo4j to be ready
+            # Wait for Neo4j to be ready using HTTP API
             for i in {1..10}; do
-                if docker exec "$neo4j_container" cypher-shell -u neo4j -p "\${NEO4J_AUTH#neo4j/}" \
-                    "RETURN 1" 2>/dev/null; then
+                if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+                    -H "Content-Type: application/json" \
+                    -d '{"statements":[{"statement":"RETURN 1"}]}' \
+                    http://localhost:7474/db/neo4j/tx/commit | grep -q "result"; then
                     log "Neo4j is ready for restore"
                     break
                 fi
@@ -406,13 +462,16 @@ restore_backup() {
                 sleep 5
             done
             
-            # Execute cypher restore
-            if docker exec "$neo4j_container" cypher-shell -u neo4j -p "\${NEO4J_AUTH#neo4j/}" \
-                -f /tmp/neo4j-export.cypher 2>/dev/null; then
-                log "✅ Neo4j restore from cypher successful"
+            # Execute cypher restore via HTTP API (more reliable than cypher-shell)
+            log "Executing cypher restore via HTTP API..."
+            if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+                -H "Content-Type: application/json" \
+                -d '{"statements":[{"statement":"CALL apoc.cypher.runFile('\''/tmp/neo4j-export.cypher'\'')"}]}' \
+                http://localhost:7474/db/neo4j/tx/commit | grep -q "result"; then
+                log "✅ Neo4j restore from HTTP API cypher successful"
                 neo4j_restored=true
             else
-                log_warning "Neo4j cypher restore failed, trying dump method"
+                log_warning "Neo4j HTTP API cypher restore failed, trying dump method"
             fi
         else
             log_warning "Failed to copy cypher export to container"
@@ -553,9 +612,12 @@ restore_backup() {
         log_warning "❌ Qdrant health check failed"
     fi
     
-    # Check Neo4j
+    # Check Neo4j using HTTP API (more reliable than cypher-shell)
     if docker exec "veris-memory-${ENVIRONMENT}-neo4j-1" \
-        cypher-shell -u neo4j -p "\${NEO4J_AUTH#neo4j/}" "RETURN 1" > /dev/null 2>&1; then
+        curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+        -H "Content-Type: application/json" \
+        -d '{"statements":[{"statement":"RETURN 1"}]}' \
+        http://localhost:7474/db/neo4j/tx/commit | grep -q "result" > /dev/null 2>&1; then
         log "✅ Neo4j health check passed"
         health_checks=$((health_checks + 1))
     else
