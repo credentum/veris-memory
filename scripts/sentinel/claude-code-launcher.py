@@ -18,7 +18,7 @@ import subprocess
 import tempfile
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union, Tuple, Set
 import argparse
 
 # Import security components
@@ -44,39 +44,49 @@ class ClaudeCodeLauncher:
     intelligent incident response and automated fix generation.
     """
     
-    def __init__(self, config: Dict[str, Any]):
-        """Initialize the Claude Code launcher."""
-        self.config = config
-        self.server_host = config.get('server_host', os.getenv('VERIS_MEMORY_HOST', 'localhost'))
-        self.ssh_user = config.get('ssh_user', os.getenv('VERIS_MEMORY_USER', 'root'))
-        self.ssh_key_path = config.get('ssh_key_path')
-        self.claude_api_key = config.get('claude_api_key')
-        self.session_timeout_minutes = config.get('session_timeout_minutes', 30)
-        self.emergency_mode = config.get('emergency_mode', False)
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize the Claude Code launcher.
+        
+        Args:
+            config: Configuration dictionary containing connection and session parameters.
+        """
+        self.config: Dict[str, Any] = config
+        self.server_host: str = config.get('server_host', os.getenv('VERIS_MEMORY_HOST', 'localhost'))
+        self.ssh_user: str = config.get('ssh_user', os.getenv('VERIS_MEMORY_USER', 'root'))
+        self.ssh_key_path: Optional[str] = config.get('ssh_key_path')
+        self.claude_api_key: Optional[str] = config.get('claude_api_key')
+        self.session_timeout_minutes: int = config.get('session_timeout_minutes', 30)
+        self.emergency_mode: bool = config.get('emergency_mode', False)
+        
+        # Timeout configurations
+        self.ssh_connect_timeout: int = config.get('ssh_connect_timeout', 10)
+        self.ssh_command_timeout: int = config.get('ssh_command_timeout', 15)
+        self.workflow_timeout: int = config.get('workflow_timeout', 300)  # 5 minutes
+        self.fix_generation_timeout: int = config.get('fix_generation_timeout', 600)  # 10 minutes
         
         # Initialize security components
         if SECURITY_MODULES_AVAILABLE:
-            self.input_validator = InputValidator()
+            self.input_validator: Optional[InputValidator] = InputValidator()
             
             # Configure rate limiter
-            rate_limiter_config = {
+            rate_limiter_config: Dict[str, Union[int, bool]] = {
                 'max_sessions_per_hour': config.get('max_sessions_per_hour', 5),
                 'max_sessions_per_day': config.get('max_sessions_per_day', 20),
                 'max_concurrent_sessions': config.get('max_concurrent_sessions', 2),
                 'emergency_brake_enabled': True,
                 'failure_threshold': 3
             }
-            self.rate_limiter = SessionRateLimiter(rate_limiter_config)
+            self.rate_limiter: Optional[SessionRateLimiter] = SessionRateLimiter(rate_limiter_config)
         else:
-            self.input_validator = None
-            self.rate_limiter = None
+            self.input_validator: Optional[InputValidator] = None
+            self.rate_limiter: Optional[SessionRateLimiter] = None
         
         # SSH connection validation
-        self.ssh_connection_valid = False
+        self.ssh_connection_valid: bool = False
         
         # Session tracking
-        self.session_id = f"emergency-{int(time.time())}-{os.getpid()}"
-        self.session_start = datetime.now()
+        self.session_id: str = f"emergency-{int(time.time())}-{os.getpid()}"
+        self.session_start: datetime = datetime.now()
         
     async def launch_emergency_session(
         self,
@@ -272,7 +282,7 @@ class ClaudeCodeLauncher:
             ssh_test_cmd = [
                 "ssh",
                 "-i", self.ssh_key_path,
-                "-o", "ConnectTimeout=10",
+                "-o", f"ConnectTimeout={self.ssh_connect_timeout}",
                 "-o", "StrictHostKeyChecking=no",
                 f"{self.ssh_user}@{self.server_host}",
                 "echo 'SSH_CONNECTION_TEST_SUCCESS'"
@@ -282,7 +292,7 @@ class ClaudeCodeLauncher:
                 ssh_test_cmd,
                 capture_output=True,
                 text=True,
-                timeout=15
+                timeout=self.ssh_command_timeout
             )
             
             if result.returncode == 0 and "SSH_CONNECTION_TEST_SUCCESS" in result.stdout:
@@ -509,7 +519,7 @@ class ClaudeCodeLauncher:
                 workflow_cmd,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minute timeout
+                timeout=self.workflow_timeout
             )
             
             # Cleanup temporary files
@@ -556,7 +566,7 @@ class ClaudeCodeLauncher:
                 fix_cmd,
                 capture_output=True,
                 text=True,
-                timeout=600  # 10 minute timeout for fix application
+                timeout=self.fix_generation_timeout
             )
             
             if result.returncode == 0:
@@ -716,7 +726,11 @@ async def main():
         "ssh_key_path": args.ssh_key,
         "claude_api_key": os.getenv("CLAUDE_API_KEY"),
         "emergency_mode": args.emergency_mode,
-        "session_timeout_minutes": 30
+        "session_timeout_minutes": 30,
+        "ssh_connect_timeout": 10,
+        "ssh_command_timeout": 15,
+        "workflow_timeout": 300,
+        "fix_generation_timeout": 600
     }
     
     # Launch emergency session

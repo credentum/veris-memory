@@ -38,8 +38,19 @@ class SessionRateLimiter:
     def __init__(self, config: Dict[str, Any]):
         """Initialize session rate limiter."""
         self.config = config
-        self.state_file = config.get('state_file', '/tmp/claude_sessions_state.json')
-        self.lock_file = config.get('lock_file', '/tmp/claude_sessions.lock')
+        
+        # Use persistent storage directory with fallback to /tmp
+        persistent_dir = config.get('persistent_dir', '/var/lib/veris-memory')
+        if not os.path.exists(persistent_dir):
+            try:
+                os.makedirs(persistent_dir, mode=0o755, exist_ok=True)
+                logger.info(f"Created persistent directory: {persistent_dir}")
+            except (OSError, PermissionError):
+                logger.warning(f"Cannot create persistent directory {persistent_dir}, falling back to /tmp")
+                persistent_dir = '/tmp'
+        
+        self.state_file = config.get('state_file', os.path.join(persistent_dir, 'claude_sessions_state.json'))
+        self.lock_file = config.get('lock_file', os.path.join(persistent_dir, 'claude_sessions.lock'))
         
         # Rate limiting configuration
         self.max_sessions_per_hour = config.get('max_sessions_per_hour', 5)

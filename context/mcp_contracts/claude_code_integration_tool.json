@@ -1,0 +1,236 @@
+{
+  "name": "claude_code_integration_tool",
+  "description": "Tool for launching emergency Claude Code sessions with SSH access for automated incident response and debugging",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "alert_context": {
+        "type": "object",
+        "description": "Context from the triggering alert",
+        "properties": {
+          "alert_id": {
+            "type": "string",
+            "description": "Unique identifier for the alert"
+          },
+          "check_id": {
+            "type": "string", 
+            "description": "Monitoring check that triggered the alert"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "warning", "info"]
+          },
+          "message": {
+            "type": "string",
+            "description": "Alert message"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "details": {
+            "type": "object",
+            "description": "Additional alert details"
+          }
+        },
+        "required": ["alert_id", "check_id", "severity", "message"]
+      },
+      "diagnostic_results": {
+        "type": "object",
+        "description": "Phase 2 diagnostic analysis results",
+        "properties": {
+          "health_analysis": {
+            "type": "object",
+            "description": "System health assessment results"
+          },
+          "metrics_analysis": {
+            "type": "object", 
+            "description": "Performance metrics analysis"
+          },
+          "log_analysis": {
+            "type": "object",
+            "description": "Log analysis results"
+          },
+          "dependency_analysis": {
+            "type": "object",
+            "description": "Service dependency mapping"
+          },
+          "intelligence_synthesis": {
+            "type": "object",
+            "description": "AI-powered root cause analysis"
+          }
+        }
+      },
+      "emergency_mode": {
+        "type": "boolean",
+        "default": false,
+        "description": "Whether to enable emergency mode with automated fix application"
+      },
+      "session_timeout_minutes": {
+        "type": "integer",
+        "default": 30,
+        "minimum": 5,
+        "maximum": 60,
+        "description": "Maximum duration for the Claude Code session"
+      },
+      "ssh_config": {
+        "type": "object",
+        "description": "SSH connection configuration",
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "Target server hostname"
+          },
+          "user": {
+            "type": "string", 
+            "description": "SSH username"
+          },
+          "key_path": {
+            "type": "string",
+            "description": "Path to SSH private key"
+          },
+          "connect_timeout": {
+            "type": "integer",
+            "default": 10,
+            "description": "SSH connection timeout in seconds"
+          }
+        }
+      }
+    },
+    "required": ["alert_context", "diagnostic_results"]
+  },
+  "capabilities": {
+    "ssh_access": {
+      "secured_connection": true,
+      "command_validation": true,
+      "audit_logging": true,
+      "session_recording": true
+    },
+    "debugging_workflows": {
+      "service_health_investigation": true,
+      "database_connectivity_debugging": true,
+      "performance_analysis": true,
+      "security_investigation": true,
+      "firewall_diagnostics": true,
+      "general_system_investigation": true
+    },
+    "automated_fixes": {
+      "service_restart": true,
+      "configuration_repair": true,
+      "security_hardening": true,
+      "resource_optimization": true,
+      "database_management": true
+    },
+    "safety_measures": {
+      "pre_fix_backup": true,
+      "health_verification": true,
+      "automatic_rollback": true,
+      "rate_limiting": true,
+      "emergency_brake": true
+    }
+  },
+  "security": {
+    "ssh_command_validation": {
+      "dangerous_pattern_blocking": "70_plus_patterns",
+      "explicit_command_denial": "50_plus_commands",
+      "code_execution_prevention": "python_perl_ruby_node_blocked",
+      "privilege_escalation_blocking": "sudo_su_blocked"
+    },
+    "rate_limiting": {
+      "normal_mode": "5_sessions_per_hour_20_per_day",
+      "emergency_mode": "10_sessions_per_hour_40_per_day",
+      "concurrent_limit": "2_sessions_maximum",
+      "failure_emergency_brake": "activated_after_3_failures"
+    },
+    "audit_logging": {
+      "all_ssh_commands": "logged_with_timestamp",
+      "session_tracking": "full_session_lifecycle",
+      "security_events": "blocked_commands_logged",
+      "fix_application": "all_changes_audited"
+    },
+    "input_validation": {
+      "alert_context_sanitization": true,
+      "ssh_key_path_validation": true,
+      "directory_traversal_prevention": true,
+      "malicious_input_filtering": true
+    }
+  },
+  "workflow_types": {
+    "service_health_investigation": {
+      "triggers": ["S1-health-*", "service_failure"],
+      "ssh_commands": ["systemctl status", "docker ps", "journalctl", "netstat"],
+      "automated_actions": ["service_restart", "dependency_check"]
+    },
+    "database_connectivity_investigation": {
+      "triggers": ["S2-database-*", "connection_timeout"],
+      "ssh_commands": ["docker logs", "netstat", "systemctl status"],
+      "automated_actions": ["container_restart", "connection_pool_reset"]
+    },
+    "performance_investigation": {
+      "triggers": ["S4-performance-*", "latency_high"],
+      "ssh_commands": ["top", "htop", "iostat", "free", "df"],
+      "automated_actions": ["cache_clear", "resource_optimization"]
+    },
+    "security_investigation": {
+      "triggers": ["S5-security-*", "auth_failure"],
+      "ssh_commands": ["journalctl", "ufw status", "fail2ban-client"],
+      "automated_actions": ["firewall_config", "security_hardening"]
+    },
+    "firewall_investigation": {
+      "triggers": ["S11-firewall-*", "port_blocked"],
+      "ssh_commands": ["ufw status", "iptables -L", "netstat"],
+      "automated_actions": ["ufw_rule_config", "port_opening"]
+    }
+  },
+  "integration_points": {
+    "github_actions": {
+      "workflow_trigger": "critical_alerts_only",
+      "ssh_key_injection": "from_github_secrets",
+      "result_reporting": "investigation_report_issue_creation"
+    },
+    "sentinel_monitoring": {
+      "alert_context_passing": "full_alert_details",
+      "diagnostic_integration": "phase2_results_input",
+      "health_verification": "post_fix_monitoring"
+    },
+    "veris_memory_server": {
+      "direct_ssh_access": "production_server_debugging", 
+      "service_management": "systemctl_docker_operations",
+      "log_analysis": "real_time_log_examination",
+      "configuration_repair": "automated_config_fixes"
+    }
+  },
+  "examples": [
+    {
+      "name": "Critical MCP Server Failure with Emergency SSH Session",
+      "input": {
+        "alert_context": {
+          "alert_id": "alert-12345",
+          "check_id": "S1-mcp-health",
+          "severity": "critical",
+          "message": "MCP server unresponsive for 5 minutes",
+          "timestamp": "2025-08-21T02:00:00Z",
+          "details": {
+            "service": "mcp_server",
+            "last_response": "2025-08-21T01:55:00Z"
+          }
+        },
+        "diagnostic_results": {
+          "health_analysis": {
+            "services": {
+              "mcp_server": {"status": "unhealthy", "response_time": null}
+            }
+          },
+          "intelligence_synthesis": {
+            "root_cause": "service_failure",
+            "confidence": 0.85,
+            "recommended_actions": ["service_restart", "dependency_check"]
+          }
+        },
+        "emergency_mode": true,
+        "session_timeout_minutes": 30
+      },
+      "expected_outcome": "Launches secured SSH session, investigates MCP server health, attempts automated service restart with safety checks, creates comprehensive investigation report"
+    }
+  ]
+}

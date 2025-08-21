@@ -1,0 +1,164 @@
+{
+  "name": "webhook_alerting_tool",
+  "description": "Tool for sending alerts via GitHub webhook to trigger automated incident response workflows",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "alert_type": {
+        "type": "string",
+        "enum": ["critical", "warning", "info"],
+        "description": "Severity level of the alert"
+      },
+      "check_id": {
+        "type": "string",
+        "description": "Identifier of the monitoring check that triggered the alert (e.g., S1-health-check, S2-database-connectivity)"
+      },
+      "message": {
+        "type": "string",
+        "description": "Human-readable alert message describing the issue"
+      },
+      "details": {
+        "type": "object",
+        "description": "Additional context and diagnostic information",
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "Name of the affected service"
+          },
+          "metrics": {
+            "type": "object",
+            "description": "Relevant performance metrics at time of alert"
+          },
+          "error_details": {
+            "type": "object",
+            "description": "Specific error information if available"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the issue was detected"
+          }
+        }
+      },
+      "environment": {
+        "type": "string",
+        "default": "production",
+        "description": "Environment where the alert originated (production, staging, development)"
+      },
+      "auto_escalate": {
+        "type": "boolean",
+        "default": false,
+        "description": "Whether to trigger automated escalation workflows (Phase 3 Claude Code integration)"
+      }
+    },
+    "required": ["alert_type", "check_id", "message"]
+  },
+  "capabilities": {
+    "github_integration": {
+      "repository_dispatch": true,
+      "issue_creation": true,
+      "workflow_triggering": true
+    },
+    "alert_processing": {
+      "rate_limiting": true,
+      "duplicate_detection": true,
+      "severity_escalation": true
+    },
+    "automation_triggers": {
+      "phase1_basic_alerting": true,
+      "phase2_enhanced_diagnostics": true,
+      "phase3_claude_code_ssh": true
+    }
+  },
+  "security": {
+    "authentication": "github_token",
+    "authorization": "repository_write_access",
+    "rate_limiting": "10_alerts_per_minute",
+    "input_validation": "strict_schema_validation",
+    "audit_logging": "all_webhook_calls_logged"
+  },
+  "integration_points": {
+    "sentinel_monitoring": {
+      "check_results": "receives_monitoring_check_failures",
+      "health_analyzer": "integrates_with_health_analysis",
+      "metrics_collector": "receives_performance_metrics"
+    },
+    "github_actions": {
+      "workflow_dispatch": "triggers_sentinel_alert_response_workflow",
+      "issue_management": "creates_issues_for_critical_alerts",
+      "pr_automation": "can_trigger_automated_fix_prs"
+    },
+    "claude_code": {
+      "emergency_sessions": "triggers_ssh_debugging_for_critical_alerts",
+      "automated_fixes": "enables_intelligent_fix_generation",
+      "investigation_reports": "generates_comprehensive_analysis"
+    }
+  },
+  "alert_workflow": {
+    "phases": {
+      "phase1_immediate": {
+        "duration": "0-30_seconds",
+        "actions": ["webhook_dispatch", "basic_issue_creation"]
+      },
+      "phase2_diagnostics": {
+        "duration": "30_seconds_to_5_minutes", 
+        "actions": ["enhanced_health_analysis", "metrics_collection", "log_analysis", "dependency_mapping", "intelligence_synthesis"]
+      },
+      "phase3_automation": {
+        "duration": "5_to_15_minutes",
+        "actions": ["claude_code_ssh_session", "automated_debugging", "intelligent_fix_generation", "self_healing"]
+      }
+    },
+    "escalation_criteria": {
+      "critical_alerts": "immediate_phase3_activation",
+      "warning_alerts": "phase2_diagnostics_only",
+      "repeated_failures": "automatic_escalation_to_phase3"
+    }
+  },
+  "examples": [
+    {
+      "name": "Critical Service Failure",
+      "input": {
+        "alert_type": "critical",
+        "check_id": "S1-health-check",
+        "message": "MCP server health check failed - service unresponsive",
+        "details": {
+          "service": "mcp_server",
+          "metrics": {
+            "response_time_ms": 30000,
+            "error_rate": 1.0,
+            "last_successful_check": "2025-08-21T01:45:00Z"
+          },
+          "error_details": {
+            "error_type": "ConnectionTimeout",
+            "error_message": "Connection to MCP server timed out after 30 seconds"
+          },
+          "timestamp": "2025-08-21T02:00:00Z"
+        },
+        "environment": "production",
+        "auto_escalate": true
+      },
+      "expected_workflow": "Triggers immediate GitHub Actions workflow with Phase 2 diagnostics and Phase 3 Claude Code SSH session for automated debugging and fix generation"
+    },
+    {
+      "name": "Performance Warning",
+      "input": {
+        "alert_type": "warning", 
+        "check_id": "S4-performance-latency",
+        "message": "API response times elevated above threshold",
+        "details": {
+          "service": "rest_api",
+          "metrics": {
+            "avg_response_time_ms": 2500,
+            "95th_percentile_ms": 5000,
+            "requests_per_second": 45
+          },
+          "timestamp": "2025-08-21T02:00:00Z"
+        },
+        "environment": "production",
+        "auto_escalate": false
+      },
+      "expected_workflow": "Triggers GitHub Actions workflow with Phase 2 enhanced diagnostics only - no automated SSH intervention for warnings"
+    }
+  ]
+}

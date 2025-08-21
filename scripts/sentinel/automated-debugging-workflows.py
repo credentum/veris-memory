@@ -33,15 +33,47 @@ logger = logging.getLogger(__name__)
 
 
 class AutomatedDebuggingWorkflows:
-    """
-    Intelligent debugging workflows for automated SSH-based system investigation.
+    """Intelligent debugging workflows for automated SSH-based system investigation.
     
-    Provides Claude Code with structured workflows to diagnose and resolve
-    common infrastructure issues on the Veris Memory server.
+    This class provides Claude Code with structured workflows to diagnose and resolve
+    common infrastructure issues on the Veris Memory server through secure SSH access.
+    Each workflow is tailored to specific types of alerts and system failures.
+    
+    The class integrates with the SSH Security Manager to ensure all commands are
+    validated against security policies and properly audited.
+    
+    Attributes:
+        ssh_config: SSH connection configuration including host, user, and key path.
+        server_host: Target server hostname for SSH connections.
+        ssh_user: Username for SSH authentication.
+        ssh_key_path: Path to SSH private key file.
+        ssh_security: SSH Security Manager instance for command validation.
+        
+    Supported Workflows:
+        - Service Health Investigation: Diagnoses service failures and restart issues
+        - Database Connectivity: Investigates database connection problems
+        - Performance Analysis: Analyzes system resource usage and bottlenecks
+        - Security Investigation: Examines authentication and security issues
+        - Firewall Diagnostics: Troubleshoots network connectivity problems
+        - General System Investigation: Performs broad system health checks
     """
     
-    def __init__(self, ssh_config: Dict[str, str]):
-        """Initialize debugging workflows with SSH configuration."""
+    def __init__(self, ssh_config: Dict[str, str]) -> None:
+        """Initialize debugging workflows with SSH configuration.
+        
+        Sets up the debugging workflow system with secure SSH access configuration
+        and initializes the SSH Security Manager for command validation.
+        
+        Args:
+            ssh_config: Dictionary containing SSH connection parameters:
+                - host: Target server hostname
+                - user: SSH username 
+                - key_path: Path to SSH private key file
+                
+        Raises:
+            ValueError: If required SSH configuration parameters are missing.
+            FileNotFoundError: If SSH key file cannot be found.
+        """
         self.ssh_config = ssh_config
         self.server_host = ssh_config.get('host', os.getenv('VERIS_MEMORY_HOST', 'localhost'))
         self.ssh_user = ssh_config.get('user', os.getenv('VERIS_MEMORY_USER', 'root'))

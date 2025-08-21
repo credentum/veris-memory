@@ -16,7 +16,7 @@ import re
 import subprocess
 import time
 from datetime import datetime
-from typing import Dict, List, Any, Optional, Set
+from typing import Dict, List, Any, Optional, Set, Union, Tuple
 import hashlib
 
 # Configure logging
@@ -36,30 +36,45 @@ class SSHSecurityManager:
     - Rate limiting and session controls
     """
     
-    def __init__(self, config: Dict[str, Any]):
-        """Initialize SSH security manager."""
-        self.config = config
-        self.ssh_config = config.get('ssh_config', {})
-        self.audit_log_path = config.get('audit_log_path', '/tmp/ssh_audit.log')
-        self.session_log_path = config.get('session_log_path', '/tmp/ssh_sessions.log')
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize SSH security manager.
+        
+        Args:
+            config: Configuration dictionary containing SSH and security settings.
+        """
+        self.config: Dict[str, Any] = config
+        self.ssh_config: Dict[str, Any] = config.get('ssh_config', {})
+        
+        # Use persistent storage directory with fallback to /tmp
+        persistent_dir = config.get('persistent_dir', '/var/lib/veris-memory')
+        if not os.path.exists(persistent_dir):
+            try:
+                os.makedirs(persistent_dir, mode=0o755, exist_ok=True)
+                logger.info(f"Created persistent directory: {persistent_dir}")
+            except (OSError, PermissionError):
+                logger.warning(f"Cannot create persistent directory {persistent_dir}, falling back to /tmp")
+                persistent_dir = '/tmp'
+        
+        self.audit_log_path: str = config.get('audit_log_path', os.path.join(persistent_dir, 'ssh_audit.log'))
+        self.session_log_path: str = config.get('session_log_path', os.path.join(persistent_dir, 'ssh_sessions.log'))
         
         # Security settings
-        self.max_session_duration = config.get('max_session_duration', 1800)  # 30 minutes
-        self.max_commands_per_session = config.get('max_commands_per_session', 100)
-        self.rate_limit_commands_per_minute = config.get('rate_limit_per_minute', 10)
+        self.max_session_duration: int = config.get('max_session_duration', 1800)  # 30 minutes
+        self.max_commands_per_session: int = config.get('max_commands_per_session', 100)
+        self.rate_limit_commands_per_minute: int = config.get('rate_limit_per_minute', 10)
         
         # Session tracking
-        self.session_id = f"ssh-{int(time.time())}-{os.getpid()}"
-        self.session_start = datetime.now()
-        self.commands_executed = 0
-        self.last_command_time = 0
-        self.command_times = []
+        self.session_id: str = f"ssh-{int(time.time())}-{os.getpid()}"
+        self.session_start: datetime = datetime.now()
+        self.commands_executed: int = 0
+        self.last_command_time: float = 0
+        self.command_times: List[float] = []
         
         # Initialize audit logging
         self._init_audit_logging()
         
         # Load command allowlist
-        self.allowed_commands = self._load_command_allowlist()
+        self.allowed_commands: Set[str] = self._load_command_allowlist()
         
         logger.info(f"SSH Security Manager initialized - Session: {self.session_id}")
         self._log_audit_event('SESSION_START', {'session_id': self.session_id})
@@ -221,8 +236,14 @@ class SSHSecurityManager:
             r'\beval\s*\(',                   # Eval calls
             r'\bsystem\s*\(',                 # System calls
             r'/bin/(sh|bash|zsh)',            # Direct shell access
-            r'\bpython\s+-c',                 # Python code execution
-            r'\bperl\s+-e',                   # Perl code execution
+            r'\bpython\s+',                   # Any Python execution (blocked completely)
+            r'\bpython3\s+',                  # Any Python3 execution (blocked completely)
+            r'\bperl\s+',                     # Any Perl execution (blocked completely)
+            r'\bruby\s+',                     # Any Ruby execution (blocked completely)
+            r'\bnode\s+',                     # Any Node.js execution (blocked completely)
+            r'\bjava\s+.*\.class',           # Java class execution
+            r'\bgcc\s+.*-o',                 # Compilation with output
+            r'\bg\+\+\s+.*-o',               # C++ compilation with output
             
             # Process manipulation
             r'\bkill\s+-[0-9]+',              # Kill with specific signal
