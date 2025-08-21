@@ -118,6 +118,7 @@ EOF
         container_state=$(docker inspect "$neo4j_container" --format='{{.State.Status}}' 2>/dev/null || echo "unknown")
         log "Neo4j container state: $container_state, health: $container_health"
         
+        # Enhanced readiness detection - use docker health check when available
         if [ "$container_health" = "healthy" ]; then
             log "Neo4j container reports healthy status"
             neo4j_ready=true
@@ -143,14 +144,26 @@ EOF
                     continue
                 fi
                 
-                # Check basic HTTP API connectivity using wget (same as docker-compose healthcheck)
-                if docker exec "$neo4j_container" wget --no-verbose --tries=1 --spider http://localhost:7474 > /dev/null 2>&1; then
+                # Check basic HTTP API connectivity (try both curl and wget)
+                if docker exec "$neo4j_container" curl -s -f http://localhost:7474/ > /dev/null 2>&1; then
                     log "Neo4j HTTP interface is responding"
                     
-                    # For database connectivity, try a simpler approach with wget first
-                    # Check if the /db/neo4j/ endpoint is accessible (indicates DB is ready)
+                    # Check database connectivity  
+                    if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+                        -H "Content-Type: application/json" \
+                        -d '{"statements":[{"statement":"RETURN 1 as test"}]}' \
+                        http://localhost:7474/db/neo4j/tx/commit 2>/dev/null | grep -q "result"; then
+                        log "Neo4j database is accepting queries"
+                        neo4j_ready=true
+                        break
+                    else
+                        log "Neo4j database not ready yet..."
+                    fi
+                elif docker exec "$neo4j_container" wget --no-verbose --tries=1 --spider http://localhost:7474 > /dev/null 2>&1; then
+                    log "Neo4j HTTP interface responding (via wget)"
+                    # For wget, try simpler endpoint check
                     if docker exec "$neo4j_container" wget --no-verbose --tries=1 --spider http://localhost:7474/db/neo4j/ > /dev/null 2>&1; then
-                        log "Neo4j database endpoints are accessible"
+                        log "Neo4j database endpoints accessible"
                         neo4j_ready=true
                         break
                     else
@@ -168,14 +181,19 @@ EOF
             log_warning "Neo4j failed to become ready within 2 minutes, skipping online backup methods"
         fi
         
-        # Method 1: Try direct APOC export (APOC is configured in docker-compose)
+        # Method 1: Try HTTP API backup using APOC (more reliable than cypher-shell)
         if [ "$neo4j_ready" = true ]; then
-            log "Attempting Neo4j backup via APOC export (configured in docker-compose)..."
+            log "Attempting Neo4j online backup via HTTP API..."
             
-            # Try APOC export directly since it's configured in docker-compose
-            # Check if curl is available in the Neo4j container
-            if docker exec "$neo4j_container" command -v curl >/dev/null 2>&1; then
-                log "Using curl for APOC export..."
+            # Check if APOC is available
+            if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+                -H "Content-Type: application/json" \
+                -d '{"statements":[{"statement":"RETURN apoc.version() as version"}]}' \
+                http://localhost:7474/db/neo4j/tx/commit | grep -q "result"; then
+            
+                log "APOC is available, attempting HTTP API export..."
+                
+                # Export via HTTP API call to APOC
                 if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
                     -H "Content-Type: application/json" \
                     -d '{"statements":[{"statement":"CALL apoc.export.cypher.all('\''/tmp/neo4j-export.cypher'\'', {format: '\''cypher-shell'\''})"}]}' \
@@ -186,15 +204,15 @@ EOF
                     
                     if docker cp "$neo4j_container:/tmp/neo4j-export.cypher" \
                         "$BACKUP_DIR/neo4j-export.cypher" 2>/dev/null; then
-                        log "✅ Neo4j APOC backup successful"
+                        log "✅ Neo4j HTTP API backup successful (APOC export)"
                     else
-                        log_warning "Failed to copy Neo4j APOC export file"
+                        log_warning "Failed to copy Neo4j HTTP API export"
                     fi
                 else
-                    log_warning "Neo4j APOC export command failed"
+                    log_warning "Neo4j HTTP API export failed"
                 fi
             else
-                log_warning "curl not available in container, skipping APOC method"
+                log_warning "APOC plugin not available, skipping HTTP API export method"
             fi
         else
             log_warning "Neo4j not ready for online backup methods"
