@@ -245,7 +245,7 @@ async def lifespan(app: FastAPI):
             else:
                 api_logger.warning("⚠️ API: Redis disabled - REDIS_URL not set")
             
-            # Fallback to mock backends if real ones fail (enhanced error reporting)
+            # Log backend connection status without failing startup
             missing_backends = []
             if not vector_backend:
                 missing_backends.append("Qdrant")
@@ -255,25 +255,29 @@ async def lifespan(app: FastAPI):
                 missing_backends.append("Redis")
             
             if missing_backends:
-                api_logger.warning(f"Real backends failed: {missing_backends}. Falling back to mock backends for missing services")
-                from ..storage.mock_backends import MockVectorBackend, MockGraphBackend, MockKVBackend
-                
-                if not vector_backend:
-                    vector_backend = MockVectorBackend()
-                    api_logger.info("📝 API: Using mock Qdrant backend")
-                if not graph_backend:
-                    graph_backend = MockGraphBackend()
-                    api_logger.info("📝 API: Using mock Neo4j backend")
-                if not kv_backend:
-                    kv_backend = MockKVBackend()
-                    api_logger.info("📝 API: Using mock Redis backend")
+                api_logger.warning(f"⚠️ API: Real backends failed: {missing_backends}. API will start in degraded mode.")
+                api_logger.warning("⚠️ API: Some search functionality may be limited until backends are available.")
+                # Don't fall back to mock backends - they caused 98.8% failure rate
+                # Instead, allow API to start and handle missing backends gracefully via health checks
             else:
                 api_logger.info("✅ API: All real backends connected successfully")
         
-        # Register backends with dispatcher
-        dispatcher.register_backend("vector", vector_backend)
-        dispatcher.register_backend("graph", graph_backend) 
-        dispatcher.register_backend("kv", kv_backend)
+        # Register backends with dispatcher (only register available backends)
+        backends_registered = []
+        if vector_backend:
+            dispatcher.register_backend("vector", vector_backend)
+            backends_registered.append("vector")
+        if graph_backend:
+            dispatcher.register_backend("graph", graph_backend)
+            backends_registered.append("graph")
+        if kv_backend:
+            dispatcher.register_backend("kv", kv_backend)
+            backends_registered.append("kv")
+        
+        if not backends_registered:
+            api_logger.warning("⚠️ API: No backends available during startup - API will start in degraded mode")
+        else:
+            api_logger.info(f"✅ API: Registered backends: {backends_registered}")
         
         # Set global dispatcher
         set_query_dispatcher(dispatcher)
