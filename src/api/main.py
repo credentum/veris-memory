@@ -95,11 +95,17 @@ async def lifespan(app: FastAPI):
         from ..storage.kv_store import ContextKV as KVStore
         from ..core.ssl_config import SSLConfigManager
         from ..validators.config_validator import validate_all_configs
+        from ..core.embedding_config import create_embedding_generator
+        # Import Backend wrapper classes that implement BackendSearchInterface
+        from ..backends.vector_backend import VectorBackend
+        from ..backends.graph_backend import GraphBackend
+        from ..backends.kv_backend import KVBackend
         import urllib.parse
         
         vector_backend = None
         graph_backend = None
         kv_backend = None
+        embedding_generator = None
         
         # Initialize configuration validation (same as MCP server)
         try:
@@ -153,13 +159,22 @@ async def lifespan(app: FastAPI):
                 if neo4j_client.connect(username=neo4j_username, password=neo4j_password):
                     ssl_status = "with SSL" if ssl_manager and ssl_manager.get_neo4j_ssl_config().get("encrypted") else "without SSL"
                     api_logger.info(f"✅ API: Neo4j connected at {neo4j_uri} {ssl_status}")
-                    graph_backend = neo4j_client
+                    # Wrap the Neo4j client in GraphBackend that implements BackendSearchInterface
+                    graph_backend = GraphBackend(neo4j_client)
                 else:
                     api_logger.warning(f"⚠️ API: Neo4j connection failed at {neo4j_uri}")
             except Exception as e:
                 api_logger.warning(f"⚠️ API: Neo4j initialization error: {e}")
         else:
             api_logger.warning("⚠️ API: Neo4j disabled - NEO4J_PASSWORD not set")
+        
+        # Initialize embedding generator (needed for VectorBackend)
+        try:
+            embedding_generator = await create_embedding_generator(base_config)
+            api_logger.info("✅ API: Embedding generator initialized")
+        except Exception as e:
+            api_logger.error(f"❌ API: Failed to initialize embedding generator: {e}")
+            embedding_generator = None
         
         # Initialize Qdrant with proper configuration (EXACT MCP pattern)
         qdrant_url = os.getenv("QDRANT_URL")
@@ -187,7 +202,11 @@ async def lifespan(app: FastAPI):
                 if qdrant_client.connect():
                     ssl_status = "with HTTPS" if ssl_manager and ssl_manager.get_qdrant_ssl_config().get("https") else "without SSL"
                     api_logger.info(f"✅ API: Qdrant connected at {qdrant_url} {ssl_status}")
-                    vector_backend = qdrant_client
+                    # Wrap the Qdrant client in VectorBackend that implements BackendSearchInterface
+                    if embedding_generator:
+                        vector_backend = VectorBackend(qdrant_client, embedding_generator)
+                    else:
+                        api_logger.warning("⚠️ API: Vector backend disabled - no embedding generator")
                 else:
                     api_logger.warning(f"⚠️ API: Qdrant connection failed at {qdrant_url}")
             except Exception as e:
@@ -223,7 +242,8 @@ async def lifespan(app: FastAPI):
                 if kv_store_client.connect(redis_password=redis_password):
                     ssl_status = "with SSL" if ssl_manager and ssl_manager.get_redis_ssl_config().get("ssl") else "without SSL"
                     api_logger.info(f"✅ API: Redis connected at {redis_url} {ssl_status}")
-                    kv_backend = kv_store_client
+                    # Wrap the KV store client in KVBackend that implements BackendSearchInterface
+                    kv_backend = KVBackend(kv_store=kv_store_client)
                 else:
                     api_logger.warning(f"⚠️ API: Redis connection failed at {redis_url}")
             except Exception as e:
