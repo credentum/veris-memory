@@ -1,0 +1,678 @@
+openapi: 3.0.3
+info:
+  title: ◎ Veris Memory API
+  description: |
+    Veris Memory v1.0 - Truthful memory for agents
+    
+    Model Context Protocol (MCP) server providing semantic storage, retrieval, 
+    and graph-based context management for AI agents.
+    
+    **Production Features:**
+    - Vector similarity search (Qdrant)
+    - Graph relationship traversal (Neo4j) 
+    - Fast key-value storage (Redis)
+    - Comprehensive input validation
+    - Rate limiting and security controls
+    - Fail-closed resilience behavior
+    
+  version: "1.0.0"
+  contact:
+    name: Veris Memory Team
+    email: hello@credentum.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Development server
+  - url: https://veris-memory.credentum.com
+    description: Production server
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Health Check
+      description: Quick health status for load balancers
+      operationId: getHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /status:
+    get:
+      summary: System Status
+      description: Comprehensive system information for agent orchestration
+      operationId: getStatus
+      tags:
+        - Health
+      responses:
+        '200':
+          description: System status information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /tools/store_context:
+    post:
+      summary: Store Context
+      description: Store context data with embeddings and graph relationships
+      operationId: storeContext
+      tags:
+        - MCP Tools
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreContextRequest'
+            examples:
+              decision:
+                summary: Store a decision
+                value:
+                  content:
+                    id: "decision-001"
+                    title: "Use TypeScript for MCP Server"
+                    status: "approved"
+                    rationale: "Better type safety and tooling"
+                  type: "decision"
+                  metadata:
+                    source: "sprint-5"
+                    tags: ["architecture", "technology"]
+                    priority: "high"
+      responses:
+        '200':
+          description: Context stored successfully
+          headers:
+            X-Trace-ID:
+              description: Request trace identifier
+              schema:
+                type: string
+            X-RateLimit-Limit:
+              description: Request limit per time window
+              schema:
+                type: integer
+            X-RateLimit-Remaining:
+              description: Requests remaining in current window
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreContextResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validation_error:
+                  summary: Input validation failed
+                  value:
+                    success: false
+                    error_code: "ERR_VALIDATION"
+                    message: "Input validation failed"
+                    trace_id: "trace_abc123"
+                    details:
+                      field: "content.type"
+                      reason: "Must be one of: design, decision, trace, sprint, log"
+        '409':
+          description: Dimension mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                dimension_mismatch:
+                  summary: Vector dimension mismatch
+                  value:
+                    success: false
+                    error_code: "ERR_DIMENSION_MISMATCH"
+                    message: "Vector dimension mismatch: expected 384, got 1536"
+                    trace_id: "trace_def456"
+        '413':
+          description: Payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                rate_limit:
+                  summary: Rate limit exceeded
+                  value:
+                    success: false
+                    error_code: "ERR_RATE_LIMIT"
+                    message: "Rate limit exceeded: 50 requests per minute"
+                    trace_id: "trace_ghi789"
+                    details:
+                      limit: 50
+                      window: "1 minute"
+                      retry_after: 30
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                dependency_down:
+                  summary: Service dependency unavailable
+                  value:
+                    success: false
+                    error_code: "ERR_DEPENDENCY_DOWN"
+                    message: "Vector database unavailable"
+                    trace_id: "trace_jkl012"
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /tools/retrieve_context:
+    post:
+      summary: Retrieve Context
+      description: Hybrid search using vector similarity and graph traversal
+      operationId: retrieveContext
+      tags:
+        - MCP Tools
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetrieveContextRequest'
+            examples:
+              hybrid_search:
+                summary: Hybrid search with filters
+                value:
+                  query: "MCP server implementation"
+                  type: "design"
+                  search_mode: "hybrid"
+                  limit: 5
+                  include_relationships: true
+                  sort_by: "relevance"
+      responses:
+        '200':
+          description: Context retrieved successfully
+          headers:
+            X-Trace-ID:
+              description: Request trace identifier
+              schema:
+                type: string
+            X-RateLimit-Limit:
+              description: Request limit per time window
+              schema:
+                type: integer
+            X-RateLimit-Remaining:
+              description: Requests remaining in current window
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrieveContextResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /tools/query_graph:
+    post:
+      summary: Query Graph
+      description: Execute read-only Cypher queries on the context graph
+      operationId: queryGraph
+      tags:
+        - MCP Tools
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryGraphRequest'
+      responses:
+        '200':
+          description: Graph query executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryGraphResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden Cypher operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/index_config:
+    get:
+      summary: Index Configuration
+      description: Get current vector index configuration parameters
+      operationId: getIndexConfig
+      tags:
+        - Admin
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Index configuration retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexConfigResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        dependencies:
+          type: object
+          properties:
+            qdrant:
+              type: string
+              enum: [healthy, unhealthy, unavailable]
+            neo4j:
+              type: string
+              enum: [healthy, unhealthy, unavailable]
+            redis:
+              type: string
+              enum: [healthy, unhealthy, unavailable]
+
+    StatusResponse:
+      type: object
+      required:
+        - label
+        - version
+        - protocol
+        - agent_ready
+        - tools
+      properties:
+        label:
+          type: string
+          example: "◎ Veris Memory"
+        version:
+          type: string
+          example: "1.0.0"
+        protocol:
+          type: string
+          example: "MCP-1.0"
+        agent_ready:
+          type: boolean
+        tools:
+          type: array
+          items:
+            type: string
+          example: [
+            "store_context", "retrieve_context", "query_graph", 
+            "update_scratchpad", "get_agent_state", "delete_context",
+            "list_context_types", "store_fact_tool", "retrieve_fact_tool",
+            "redis_get", "redis_set", "redis_hget", "redis_hset"
+          ]
+        dependencies:
+          $ref: '#/components/schemas/HealthResponse/properties/dependencies'
+
+    StoreContextRequest:
+      type: object
+      required:
+        - content
+        - type
+      properties:
+        content:
+          type: object
+          description: The context content to store (YAML parsed to object)
+        type:
+          type: string
+          enum: [design, decision, trace, sprint, log]
+          description: Type of context being stored
+        metadata:
+          type: object
+          properties:
+            source:
+              type: string
+              description: Source identifier for the context
+            tags:
+              type: array
+              items:
+                type: string
+              description: Tags for categorization
+            priority:
+              type: string
+              enum: [low, medium, high, critical]
+              description: Priority level of the context
+        relationships:
+          type: array
+          items:
+            type: object
+            required:
+              - type
+              - target
+            properties:
+              type:
+                type: string
+                description: Relationship type (e.g., 'implements', 'references')
+              target:
+                type: string
+                description: Target node ID or identifier
+
+    StoreContextResponse:
+      type: object
+      required:
+        - success
+        - id
+      properties:
+        success:
+          type: boolean
+          description: Whether the storage was successful
+        id:
+          type: string
+          description: Unique identifier for the stored context
+        vector_id:
+          type: string
+          description: Vector database ID if embedding was created
+        graph_id:
+          type: string
+          description: Graph database node ID if created
+        message:
+          type: string
+          description: Success or error message
+        validation_errors:
+          type: array
+          items:
+            type: string
+          description: Any validation errors encountered
+
+    RetrieveContextRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: Search query for context retrieval
+          maxLength: 50000
+        type:
+          type: string
+          enum: [design, decision, trace, sprint, log, all]
+          default: "all"
+          description: Filter by context type
+        search_mode:
+          type: string
+          enum: [vector, graph, hybrid]
+          default: "hybrid"
+          description: Search mode to use
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
+          description: Maximum number of results to return
+        filters:
+          type: object
+          properties:
+            date_from:
+              type: string
+              format: date
+              description: Filter contexts created after this date
+            date_to:
+              type: string
+              format: date
+              description: Filter contexts created before this date
+            status:
+              type: string
+              description: Filter by status field
+            tags:
+              type: array
+              items:
+                type: string
+              description: Filter by tags
+        include_relationships:
+          type: boolean
+          default: false
+          description: Include graph relationships in results
+        sort_by:
+          type: string
+          enum: [timestamp, relevance]
+          default: "timestamp"
+          description: Sort order for results
+
+    RetrieveContextResponse:
+      type: object
+      required:
+        - success
+        - results
+      properties:
+        success:
+          type: boolean
+          description: Whether the retrieval was successful
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContextResult'
+        total_count:
+          type: integer
+          description: Total number of matching results
+        has_more:
+          type: boolean
+          description: Whether more results are available for pagination
+        search_mode_used:
+          type: string
+          description: The search mode that was used
+        message:
+          type: string
+          description: Additional information or error message
+
+    ContextResult:
+      type: object
+      required:
+        - id
+        - content
+        - score
+      properties:
+        id:
+          type: string
+          description: Context identifier
+        content:
+          type: object
+          description: The context content
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Relevance score
+        type:
+          type: string
+          description: Context type
+        metadata:
+          type: object
+          description: Associated metadata
+        relationships:
+          type: array
+          description: Graph relationships if requested
+
+    QueryGraphRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: Read-only Cypher query
+          maxLength: 10000
+        parameters:
+          type: object
+          description: Query parameters
+
+    QueryGraphResponse:
+      type: object
+      required:
+        - success
+        - results
+      properties:
+        success:
+          type: boolean
+        results:
+          type: array
+          items:
+            type: object
+        query_time_ms:
+          type: number
+          description: Query execution time in milliseconds
+
+    IndexConfigResponse:
+      type: object
+      required:
+        - dimensions
+        - hnsw_config
+      properties:
+        dimensions:
+          type: integer
+          description: Vector dimensions (must be 384)
+          example: 384
+        hnsw_config:
+          type: object
+          properties:
+            m:
+              type: integer
+              description: HNSW M parameter
+              example: 32
+            ef_search:
+              type: integer
+              description: HNSW ef_search parameter
+              example: 256
+            intent_overrides:
+              type: object
+              properties:
+                interactive:
+                  type: integer
+                  example: 128
+                high_stakes:
+                  type: integer
+                  example: 384
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error_code
+        - message
+        - trace_id
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error_code:
+          type: string
+          enum:
+            - ERR_VALIDATION
+            - ERR_TIMEOUT
+            - ERR_AUTH
+            - ERR_RATE_LIMIT
+            - ERR_DEPENDENCY_DOWN
+            - ERR_DIMENSION_MISMATCH
+          description: Machine-readable error code
+        message:
+          type: string
+          description: Human-readable error description
+        trace_id:
+          type: string
+          description: Request trace identifier for debugging
+        details:
+          type: object
+          description: Additional error context
+          additionalProperties: true
+
+tags:
+  - name: Health
+    description: Health check and system status endpoints
+  - name: MCP Tools
+    description: Model Context Protocol tool endpoints
+  - name: Admin
+    description: Administrative endpoints for configuration and monitoring

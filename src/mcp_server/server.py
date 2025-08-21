@@ -59,6 +59,9 @@ try:
         is_technical_query
     )
     from src.mcp_server.query_relevance_scorer import QueryRelevanceScorer
+    # Circuit breaker and error handling imports
+    from src.storage.circuit_breaker import with_mcp_circuit_breaker, get_mcp_service_health, CircuitBreakerError
+    from src.core.error_codes import ErrorCode, create_error_response
 except ImportError:
     # Fallback for different import contexts
     import sys
@@ -94,6 +97,9 @@ except ImportError:
         is_technical_query
     )
     from mcp_server.query_relevance_scorer import QueryRelevanceScorer
+    # Circuit breaker and error handling imports
+    from storage.circuit_breaker import with_mcp_circuit_breaker, get_mcp_service_health, CircuitBreakerError
+    from core.error_codes import ErrorCode, create_error_response
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -1243,17 +1249,27 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
                     "collection_name", "project_context"
                 )
 
-                # Store the vector using VectorDBInitializer.store_vector method
+                # Store the vector using VectorDBInitializer.store_vector method with circuit breaker
                 vector_metadata = {
                     "content": content,
                     "type": context_type,
                     "metadata": metadata,
                 }
-                qdrant_client.store_vector(
-                    vector_id=context_id,
-                    embedding=embedding,
-                    metadata=vector_metadata,
-                )
+                try:
+                    await with_mcp_circuit_breaker(
+                        lambda: qdrant_client.store_vector(
+                            vector_id=context_id,
+                            embedding=embedding,
+                            metadata=vector_metadata,
+                        )
+                    )
+                except (ConnectionError, CircuitBreakerError, asyncio.TimeoutError) as e:
+                    logger.error(f"MCP circuit breaker: Vector storage failed - {e}")
+                    return create_error_response(
+                        ErrorCode.DEPENDENCY_DOWN,
+                        f"Vector storage unavailable: {str(e)}",
+                        context={"operation": "vector_storage", "context_id": context_id}
+                    )
                 
                 # Verify the vector was actually stored
                 try:

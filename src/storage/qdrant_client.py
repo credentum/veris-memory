@@ -33,6 +33,12 @@ from qdrant_client.models import (
     VectorParams,
 )
 
+# SPRINT 11: Import HNSW parameter manager
+try:
+    from .qdrant_index_config import index_config_manager, SearchIntent
+except ImportError:
+    from qdrant_index_config import index_config_manager, SearchIntent
+
 # Import Config for standardized settings
 try:
     from ..core.config import Config
@@ -151,11 +157,16 @@ class VectorDBInitializer:
             # Create collection with optimal settings for embeddings
             click.echo(f"Creating collection '{collection_name}'...")
 
-            # Using standardized embedding dimensions
+            # SPRINT 11: Enforce v1.0 dimension requirement (384)
+            if Config.EMBEDDING_DIMENSIONS != 384:
+                from ..core.error_handler import handle_v1_dimension_mismatch
+                error_response = handle_v1_dimension_mismatch(384, Config.EMBEDDING_DIMENSIONS)
+                raise ValueError(f"Configuration error: {error_response['message']}")
+            
             self.client.create_collection(
                 collection_name=collection_name,
                 vectors_config=VectorParams(
-                    size=Config.EMBEDDING_DIMENSIONS,  # Standardized embedding size
+                    size=384,  # SPRINT 11: Hard-coded to 384 for v1.0 compliance
                     distance=Distance.COSINE,
                 ),
                 optimizers_config=OptimizersConfigDiff(
@@ -164,9 +175,10 @@ class VectorDBInitializer:
                     default_segment_number=2,
                     flush_interval_sec=5,
                 ),
+                # SPRINT 11: Use standardized HNSW parameters per v1.0 spec
                 hnsw_config=HnswConfigDiff(
-                    m=16,
-                    ef_construct=128,
+                    m=index_config_manager.REQUIRED_M,                    # 32 per Sprint 11
+                    ef_construct=index_config_manager.REQUIRED_EF_CONSTRUCT,  # 128 per Sprint 11
                     full_scan_threshold=10000,
                 ),
             )

@@ -46,7 +46,7 @@ class EmbeddingConfig:
         "development": {
             "models": ["hash-based"],
             "default_model": "hash-based",
-            "dimensions": {"hash-based": 1536},
+            "dimensions": {"hash-based": 384},  # SPRINT 11: Fixed to match v1.0 requirement
         },
     }
 
@@ -214,22 +214,33 @@ class EmbeddingGenerator:
             return False
 
     async def generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding for text.
+        """Generate embedding for text with Sprint 11 v1.0 dimension validation.
 
         Args:
             text: Text to embed
 
         Returns:
-            List of float values representing the embedding
+            List of float values representing the embedding (must be 384 dimensions)
+        
+        Raises:
+            ValueError: If embedding dimensions don't match v1.0 requirement (384)
         """
         if self.config.provider == "openai":
-            return await self._generate_openai_embedding(text)
+            embedding = await self._generate_openai_embedding(text)
         elif self.config.provider == "huggingface":
-            return await self._generate_huggingface_embedding(text)
+            embedding = await self._generate_huggingface_embedding(text)
         elif self.config.provider == "development":
-            return self._generate_hash_embedding(text)
+            embedding = self._generate_hash_embedding(text)
         else:
             raise ValueError(f"Unsupported provider: {self.config.provider}")
+        
+        # SPRINT 11: Critical dimension validation for v1.0 compliance
+        if len(embedding) != 384:
+            from .error_handler import handle_v1_dimension_mismatch
+            error_response = handle_v1_dimension_mismatch(384, len(embedding))
+            raise ValueError(f"Dimension mismatch: {error_response['message']}")
+        
+        return embedding
 
     async def _generate_openai_embedding(self, text: str) -> List[float]:
         """Generate OpenAI embedding."""
@@ -268,14 +279,16 @@ class EmbeddingGenerator:
 
         Note: This is NOT suitable for production use as it doesn't capture
         semantic meaning. Use proper NLP models in production.
+        
+        SPRINT 11: Always generates exactly 384 dimensions for v1.0 compliance.
         """
         # Create deterministic hash
         hash_obj = hashlib.sha256(text.encode())
         hash_bytes = hash_obj.digest()
 
-        # Convert to embedding vector of configured dimensions
+        # Convert to embedding vector of exactly 384 dimensions (v1.0 requirement)
         embedding = []
-        for i in range(self.config.dimensions):
+        for i in range(384):  # SPRINT 11: Hard-coded to 384 for v1.0 compliance
             byte_idx = i % len(hash_bytes)
             # Normalize to [-1, 1] range for better vector space properties
             normalized_value = (float(hash_bytes[byte_idx]) / 255.0) * 2.0 - 1.0

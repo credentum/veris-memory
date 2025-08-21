@@ -13,6 +13,14 @@ from enum import Enum
 import aiohttp
 import requests
 
+# SPRINT 11: Import dimension validation
+try:
+    from ..core.config import Config
+    from ..core.error_handler import handle_v1_dimension_mismatch
+except ImportError:
+    from src.core.config import Config
+    from src.core.error_handler import handle_v1_dimension_mismatch
+
 
 class HealthStatus(Enum):
     """Health check status enum."""
@@ -216,6 +224,47 @@ class HealthChecker:
                 latency_ms=(time.time() - start) * 1000,
                 message=str(e)
             )
+
+    async def check_dimension_integrity(self) -> ComponentHealth:
+        """SPRINT 11: Check vector dimension integrity for v1.0 compliance."""
+        start_time = time.time()
+        try:
+            # Validate configuration dimensions
+            if Config.EMBEDDING_DIMENSIONS != 384:
+                latency_ms = (time.time() - start_time) * 1000
+                return ComponentHealth(
+                    name="dimensions",
+                    status=HealthStatus.UNHEALTHY,
+                    latency_ms=latency_ms,
+                    message=f"Dimension drift: configured {Config.EMBEDDING_DIMENSIONS}, required 384",
+                    metadata={
+                        "configured_dimensions": Config.EMBEDDING_DIMENSIONS,
+                        "required_dimensions": 384,
+                        "compliance_status": "FAILED"
+                    }
+                )
+            
+            latency_ms = (time.time() - start_time) * 1000
+            return ComponentHealth(
+                name="dimensions",
+                status=HealthStatus.HEALTHY,
+                latency_ms=latency_ms,
+                message="Dimension integrity verified: 384 dimensions",
+                metadata={
+                    "configured_dimensions": 384,
+                    "required_dimensions": 384,
+                    "compliance_status": "PASSED"
+                }
+            )
+            
+        except Exception as e:
+            latency_ms = (time.time() - start_time) * 1000
+            return ComponentHealth(
+                name="dimensions",
+                status=HealthStatus.UNHEALTHY,
+                latency_ms=latency_ms,
+                message=f"Dimension check failed: {e}"
+            )
     
     async def liveness_check(self) -> Tuple[HealthStatus, Dict]:
         """
@@ -242,11 +291,12 @@ class HealthChecker:
         """
         start = time.time()
         
-        # Check all components in parallel
+        # Check all components in parallel (including SPRINT 11 dimension check)
         tasks = [
             self.check_qdrant_async(),
             self.check_neo4j_async(),
-            self.check_api_async()
+            self.check_api_async(),
+            self.check_dimension_integrity()  # SPRINT 11: Critical v1.0 compliance check
         ]
         
         components = await asyncio.gather(*tasks)
