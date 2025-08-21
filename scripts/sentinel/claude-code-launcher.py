@@ -21,6 +21,16 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 import argparse
 
+# Import security components
+try:
+    from input_validator import InputValidator
+    from ssh_security_manager import SSHSecurityManager
+    from session_rate_limiter import SessionRateLimiter
+    SECURITY_MODULES_AVAILABLE = True
+except ImportError:
+    SECURITY_MODULES_AVAILABLE = False
+    logging.warning("Security modules not available - using legacy validation")
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -37,18 +47,35 @@ class ClaudeCodeLauncher:
     def __init__(self, config: Dict[str, Any]):
         """Initialize the Claude Code launcher."""
         self.config = config
-        self.server_host = config.get('server_host', '167.235.112.106')
-        self.ssh_user = config.get('ssh_user', 'root')
+        self.server_host = config.get('server_host', os.getenv('VERIS_MEMORY_HOST', 'localhost'))
+        self.ssh_user = config.get('ssh_user', os.getenv('VERIS_MEMORY_USER', 'root'))
         self.ssh_key_path = config.get('ssh_key_path')
         self.claude_api_key = config.get('claude_api_key')
         self.session_timeout_minutes = config.get('session_timeout_minutes', 30)
         self.emergency_mode = config.get('emergency_mode', False)
         
+        # Initialize security components
+        if SECURITY_MODULES_AVAILABLE:
+            self.input_validator = InputValidator()
+            
+            # Configure rate limiter
+            rate_limiter_config = {
+                'max_sessions_per_hour': config.get('max_sessions_per_hour', 5),
+                'max_sessions_per_day': config.get('max_sessions_per_day', 20),
+                'max_concurrent_sessions': config.get('max_concurrent_sessions', 2),
+                'emergency_brake_enabled': True,
+                'failure_threshold': 3
+            }
+            self.rate_limiter = SessionRateLimiter(rate_limiter_config)
+        else:
+            self.input_validator = None
+            self.rate_limiter = None
+        
         # SSH connection validation
         self.ssh_connection_valid = False
         
         # Session tracking
-        self.session_id = f"emergency-{int(time.time())}"
+        self.session_id = f"emergency-{int(time.time())}-{os.getpid()}"
         self.session_start = datetime.now()
         
     async def launch_emergency_session(
@@ -68,6 +95,43 @@ class ClaudeCodeLauncher:
         """
         logger.info(f"🚨 Launching emergency Claude Code session: {self.session_id}")
         logger.info("=" * 70)
+        
+        # Validate inputs and check rate limits
+        if self.input_validator:
+            try:
+                alert_context = self.input_validator.validate_alert_context(alert_context)
+                diagnostic_results = self.input_validator.validate_diagnostic_results(diagnostic_results)
+                logger.info("✅ Input validation passed")
+            except ValueError as e:
+                logger.error(f"❌ Input validation failed: {e}")
+                return {
+                    "session_id": self.session_id,
+                    "status": "failed",
+                    "error": f"Input validation failed: {e}",
+                    "timestamp": datetime.now().isoformat()
+                }
+        
+        # Check rate limits
+        if self.rate_limiter:
+            can_start = self.rate_limiter.can_start_session(alert_context)
+            if not can_start['can_start']:
+                logger.error("❌ Session blocked by rate limiter")
+                return {
+                    "session_id": self.session_id,
+                    "status": "rate_limited",
+                    "rate_limit_checks": can_start,
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            # Start session tracking
+            if not self.rate_limiter.start_session(self.session_id, alert_context):
+                logger.error("❌ Failed to start session tracking")
+                return {
+                    "session_id": self.session_id,
+                    "status": "failed",
+                    "error": "Session tracking failed",
+                    "timestamp": datetime.now().isoformat()
+                }
         
         session_result = {
             "session_id": self.session_id,
@@ -120,6 +184,12 @@ class ClaudeCodeLauncher:
             session_result["error"] = str(e)
         
         finally:
+            # End session tracking with rate limiter
+            if self.rate_limiter:
+                success = session_result.get("status") == "completed"
+                error = session_result.get("error")
+                self.rate_limiter.end_session(self.session_id, success, error)
+            
             # Cleanup and security
             await self._cleanup_session()
         
@@ -562,7 +632,7 @@ async def main():
     parser.add_argument("--alert-context", required=True, help="JSON string with alert context")
     parser.add_argument("--diagnostic-results", required=True, help="JSON string with Phase 2 diagnostic results") 
     parser.add_argument("--ssh-key", required=True, help="Path to SSH private key")
-    parser.add_argument("--server-host", default="167.235.112.106", help="Server hostname")
+    parser.add_argument("--server-host", default=os.getenv('VERIS_MEMORY_HOST', 'localhost'), help="Server hostname")
     parser.add_argument("--emergency-mode", action="store_true", help="Enable emergency mode with automated fixes")
     parser.add_argument("--output", help="Output file for session results")
     

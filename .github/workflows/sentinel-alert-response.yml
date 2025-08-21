@@ -11,7 +11,8 @@ permissions:
   pull-requests: write
 
 env:
-  VERIS_MEMORY_HOST: "167.235.112.106"
+  VERIS_MEMORY_HOST: ${{ secrets.HETZNER_HOST }}
+  VERIS_MEMORY_USER: ${{ secrets.HETZNER_USER }}
   MCP_PORT: "8000"
   API_PORT: "8001"
   DASHBOARD_PORT: "8080"
@@ -588,16 +589,26 @@ EOF
         run: |
           echo "🔐 Setting up secure SSH access to production server..."
           
-          # Create SSH key file from secret
-          echo "${{ secrets.VERIS_MEMORY_SSH_KEY }}" > ssh_key
+          # Create SSH key file from secret (no echo to prevent key exposure)
+          printf '%s\n' "${{ secrets.HETZNER_SSH_KEY }}" > ssh_key
           chmod 600 ssh_key
           
-          # Validate SSH connectivity
-          ssh -i ssh_key -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
-            root@${{ env.VERIS_MEMORY_HOST }} \
-            "echo 'SSH connection validated successfully'"
+          # Validate SSH key format
+          if ! ssh-keygen -l -f ssh_key >/dev/null 2>&1; then
+            echo "❌ Invalid SSH key format"
+            exit 1
+          fi
           
-          echo "✅ SSH access to ${{ env.VERIS_MEMORY_HOST }} validated"
+          # Validate SSH connectivity with restricted command
+          if ssh -i ssh_key -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+            ${{ env.VERIS_MEMORY_USER }}@${{ env.VERIS_MEMORY_HOST }} \
+            "echo 'SSH_VALIDATION_SUCCESS'" | grep -q "SSH_VALIDATION_SUCCESS"; then
+            echo "✅ SSH access to ${{ env.VERIS_MEMORY_HOST }} validated"
+          else
+            echo "❌ SSH validation failed"
+            exit 1
+          fi
 
       - name: 📋 Checkout Repository for Claude Code Tools
         uses: actions/checkout@v3

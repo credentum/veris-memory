@@ -715,7 +715,7 @@ async def main():
     parser.add_argument("--investigation-results", required=True, help="JSON string with investigation results")
     parser.add_argument("--alert-context", required=True, help="JSON string with alert context")
     parser.add_argument("--ssh-key", required=True, help="Path to SSH private key")
-    parser.add_argument("--server-host", default="167.235.112.106", help="Server hostname")
+    parser.add_argument("--server-host", default=os.getenv('VERIS_MEMORY_HOST', 'localhost'), help="Server hostname")
     parser.add_argument("--emergency-mode", action="store_true", help="Enable emergency mode")
     parser.add_argument("--output", help="Output file for fix results")
     
@@ -733,7 +733,7 @@ async def main():
     config = {
         "ssh_config": {
             "host": args.server_host,
-            "user": "root", 
+            "user": os.getenv('VERIS_MEMORY_USER', 'root'), 
             "key_path": args.ssh_key
         },
         "github_token": os.getenv("GITHUB_TOKEN"),

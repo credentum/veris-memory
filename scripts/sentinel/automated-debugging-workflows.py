@@ -12,11 +12,20 @@ Date: 2025-08-20
 import asyncio
 import json
 import logging
+import os
 import subprocess
 import time
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 import argparse
+
+# Import SSH Security Manager
+try:
+    from ssh_security_manager import SSHSecurityManager
+    SSH_SECURITY_AVAILABLE = True
+except ImportError:
+    SSH_SECURITY_AVAILABLE = False
+    logging.warning("SSH Security Manager not available - using legacy SSH execution")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -34,9 +43,22 @@ class AutomatedDebuggingWorkflows:
     def __init__(self, ssh_config: Dict[str, str]):
         """Initialize debugging workflows with SSH configuration."""
         self.ssh_config = ssh_config
-        self.server_host = ssh_config.get('host', '167.235.112.106')
-        self.ssh_user = ssh_config.get('user', 'root')
+        self.server_host = ssh_config.get('host', os.getenv('VERIS_MEMORY_HOST', 'localhost'))
+        self.ssh_user = ssh_config.get('user', os.getenv('VERIS_MEMORY_USER', 'root'))
         self.ssh_key_path = ssh_config.get('key_path')
+        
+        # Initialize SSH Security Manager if available
+        if SSH_SECURITY_AVAILABLE:
+            security_config = {
+                'ssh_config': ssh_config,
+                'audit_log_path': f'/tmp/ssh_audit_workflows_{int(time.time())}.log',
+                'session_log_path': f'/tmp/ssh_session_workflows_{int(time.time())}.log'
+            }
+            self.ssh_security = SSHSecurityManager(security_config)
+            logger.info("SSH Security Manager initialized for debugging workflows")
+        else:
+            self.ssh_security = None
+            logger.warning("SSH Security Manager not available - using legacy execution")
         
         # Workflow execution tracking
         self.execution_log = []
@@ -391,50 +413,79 @@ class AutomatedDebuggingWorkflows:
         timeout: int = 30,
         ignore_errors: bool = False
     ) -> Dict[str, Any]:
-        """Execute a command via SSH and log the results."""
+        """Execute a command via SSH with security controls."""
         logger.info(f"  🔧 {description}")
         
-        ssh_command = [
-            "ssh",
-            "-i", self.ssh_key_path,
-            "-o", "ConnectTimeout=10",
-            "-o", "StrictHostKeyChecking=no",
-            f"{self.ssh_user}@{self.server_host}",
-            command
-        ]
-        
-        execution_record = {
-            "command": command,
-            "description": description,
-            "timestamp": datetime.now().isoformat(),
-            "success": False,
-            "output": "",
-            "error": ""
-        }
-        
-        try:
-            result = subprocess.run(
-                ssh_command,
-                capture_output=True,
-                text=True,
+        # Use SSH Security Manager if available
+        if self.ssh_security:
+            result = self.ssh_security.execute_secure_command(
+                command=command,
+                description=description,
                 timeout=timeout
             )
             
-            execution_record["output"] = result.stdout
-            execution_record["error"] = result.stderr
-            execution_record["success"] = result.returncode == 0 or ignore_errors
+            # Adapt result format for compatibility
+            execution_record = {
+                "command": command,
+                "description": description,
+                "timestamp": result["timestamp"],
+                "success": result["success"] or ignore_errors,
+                "output": result["output"],
+                "error": result["error"],
+                "security_checks": result["security_checks"]
+            }
             
             if not execution_record["success"] and not ignore_errors:
-                logger.warning(f"    ⚠️ Command failed: {result.stderr}")
+                logger.warning(f"    ⚠️ Command failed: {result['error']}")
             else:
                 logger.info(f"    ✅ Command completed")
+        
+        else:
+            # Legacy SSH execution (fallback)
+            ssh_command = [
+                "ssh",
+                "-i", self.ssh_key_path,
+                "-o", "ConnectTimeout=10",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "LogLevel=ERROR",
+                f"{self.ssh_user}@{self.server_host}",
+                command
+            ]
             
-        except subprocess.TimeoutExpired:
-            execution_record["error"] = f"Command timed out after {timeout} seconds"
-            logger.warning(f"    ⏱️ Command timed out")
-        except Exception as e:
-            execution_record["error"] = str(e)
-            logger.error(f"    ❌ Command execution error: {str(e)}")
+            execution_record = {
+                "command": command,
+                "description": description,
+                "timestamp": datetime.now().isoformat(),
+                "success": False,
+                "output": "",
+                "error": "",
+                "security_checks": {"legacy_mode": True}
+            }
+            
+            try:
+                result = subprocess.run(
+                    ssh_command,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout
+                )
+                
+                execution_record["output"] = result.stdout
+                execution_record["error"] = result.stderr
+                execution_record["success"] = result.returncode == 0 or ignore_errors
+                
+                if not execution_record["success"] and not ignore_errors:
+                    logger.warning(f"    ⚠️ Command failed: {result.stderr}")
+                else:
+                    logger.info(f"    ✅ Command completed")
+                
+            except subprocess.TimeoutExpired:
+                execution_record["error"] = f"Command timed out after {timeout} seconds"
+                logger.warning(f"    ⏱️ Command timed out")
+            except Exception as e:
+                execution_record["error"] = str(e)
+                logger.error(f"    ❌ Command execution error: {str(e)}")
         
         self.execution_log.append(execution_record)
         return execution_record
@@ -620,7 +671,7 @@ async def main():
     parser.add_argument("--alert-context", required=True, help="JSON string with alert context")
     parser.add_argument("--diagnostic-context", help="JSON string with diagnostic context")
     parser.add_argument("--ssh-key", required=True, help="Path to SSH private key")
-    parser.add_argument("--server-host", default="167.235.112.106", help="Server hostname")
+    parser.add_argument("--server-host", default=os.getenv('VERIS_MEMORY_HOST', 'localhost'), help="Server hostname")
     parser.add_argument("--output", help="Output file for workflow results")
     
     args = parser.parse_args()
@@ -636,7 +687,7 @@ async def main():
     # Configure SSH
     ssh_config = {
         "host": args.server_host,
-        "user": "root",
+        "user": os.getenv('VERIS_MEMORY_USER', 'root'),
         "key_path": args.ssh_key
     }
     
