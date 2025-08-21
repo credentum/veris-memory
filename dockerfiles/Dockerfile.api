@@ -44,9 +44,13 @@ RUN apt-get update && \
 COPY --chown=appuser:appuser src/ ./src/
 COPY --chown=appuser:appuser schemas/ ./schemas/
 COPY --chown=appuser:appuser contracts/ ./contracts/
-# Copy startup script
+# Copy startup script (with verification)
 COPY --chown=appuser:appuser scripts/api-startup.sh ./api-startup.sh
-RUN chmod +x ./api-startup.sh
+# Ensure script is executable and has Unix line endings
+RUN chmod +x ./api-startup.sh && \
+    dos2unix ./api-startup.sh 2>/dev/null || \
+    sed -i 's/\r$//' ./api-startup.sh || \
+    echo "Warning: Could not ensure Unix line endings"
 # Use Docker-specific config file with service names instead of localhost
 COPY --chown=appuser:appuser config/.ctxrc.docker.yaml ./.ctxrc.yaml
 
@@ -73,5 +77,24 @@ USER appuser
 # Expose port
 EXPOSE 8001
 
-# Start the REST API application with comprehensive error handling
-CMD ["/bin/sh", "./api-startup.sh"]
+# Start the REST API application with comprehensive error handling and fallback
+# Using sh -c to ensure compatibility and provide inline fallback if script fails
+CMD ["/bin/sh", "-c", "echo '🚀 Starting API container...' && \
+     echo 'Testing if startup script exists and is executable...' && \
+     if [ -f './api-startup.sh' ] && [ -x './api-startup.sh' ]; then \
+         echo '✅ Found startup script, executing...' && \
+         exec /bin/sh ./api-startup.sh; \
+     else \
+         echo '⚠️ Startup script not found or not executable, using direct Python startup...' && \
+         echo 'Environment check:' && \
+         env | grep -E '(NEO4J|QDRANT|REDIS|API|LOG)' | sort || true && \
+         echo '' && \
+         echo 'Starting uvicorn directly...' && \
+         exec python3 -m uvicorn src.api.main:app --host 0.0.0.0 --port 8001 --log-level info 2>&1 || \
+         (echo '❌ CRITICAL ERROR: Failed to start API!' && \
+          echo 'Error details:' && \
+          python3 -c 'import sys; print(sys.version)' && \
+          python3 -c 'from src.api import main' 2>&1 || true && \
+          ls -la && \
+          exit 1); \
+     fi"]
