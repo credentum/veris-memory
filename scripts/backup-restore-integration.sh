@@ -155,31 +155,31 @@ EOF
                 -d '{"statements":[{"statement":"RETURN apoc.version() as version"}]}' \
                 http://localhost:7474/db/neo4j/tx/commit | grep -q "result"; then
             
-            log "APOC is available, attempting HTTP API export..."
-            
-            # Export via HTTP API call to APOC
-            if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
-                -H "Content-Type: application/json" \
-                -d '{"statements":[{"statement":"CALL apoc.export.cypher.all('\''/tmp/neo4j-export.cypher'\'', {format: '\''cypher-shell'\''})"}]}' \
-                http://localhost:7474/db/neo4j/tx/commit > /dev/null 2>&1; then
+                log "APOC is available, attempting HTTP API export..."
                 
-                # Wait a moment for export to complete
-                sleep 2
-                
-                if docker cp "$neo4j_container:/tmp/neo4j-export.cypher" \
-                    "$BACKUP_DIR/neo4j-export.cypher" 2>/dev/null; then
-                    log "✅ Neo4j HTTP API backup successful (APOC export)"
+                # Export via HTTP API call to APOC
+                if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+                    -H "Content-Type: application/json" \
+                    -d '{"statements":[{"statement":"CALL apoc.export.cypher.all('\''/tmp/neo4j-export.cypher'\'', {format: '\''cypher-shell'\''})"}]}' \
+                    http://localhost:7474/db/neo4j/tx/commit > /dev/null 2>&1; then
+                    
+                    # Wait a moment for export to complete
+                    sleep 2
+                    
+                    if docker cp "$neo4j_container:/tmp/neo4j-export.cypher" \
+                        "$BACKUP_DIR/neo4j-export.cypher" 2>/dev/null; then
+                        log "✅ Neo4j HTTP API backup successful (APOC export)"
+                    else
+                        log_warning "Failed to copy Neo4j HTTP API export"
+                    fi
                 else
-                    log_warning "Failed to copy Neo4j HTTP API export"
-                fi
-            else
                 log_warning "Neo4j HTTP API export failed"
             fi
+            else
+                log_warning "APOC plugin not available, skipping HTTP API export method"
+            fi
         else
-            log_warning "Neo4j HTTP API backup failed (Neo4j not ready or APOC missing)"
-        fi
-        else
-            log_warning "APOC plugin not available, skipping HTTP API export method"
+            log_warning "Neo4j not ready for online backup methods"
         fi
         
         # Method 2: Try container-optimized backup approach (also requires Neo4j to be ready)
