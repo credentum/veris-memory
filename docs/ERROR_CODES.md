@@ -2,19 +2,41 @@
 
 This document provides comprehensive error codes, handling strategies, and troubleshooting guidance for the Context Store MCP server.
 
-## Error Response Format
+## ✨ **v1.0 Error Response Format** ✨
 
-All tools return errors in a consistent format:
+All tools return errors in the standardized v1.0 format with trace IDs for debugging:
 
 ```json
 {
   "success": false,
+  "error_code": "ERR_VALIDATION",
   "message": "Human-readable error description",
-  "error_type": "machine_readable_error_code",
+  "trace_id": "trace_abc123def456",
   "details": {
     "additional": "context-specific information"
   }
 }
+```
+
+### **Standard v1.0 Error Codes**
+
+| Code | Description | HTTP Status |
+|------|-------------|-------------|
+| `ERR_VALIDATION` | Input validation failed | 400, 422 |
+| `ERR_TIMEOUT` | Request timeout | 408 |
+| `ERR_AUTH` | Authentication failed | 401 |
+| `ERR_RATE_LIMIT` | Rate limit exceeded | 429 |
+| `ERR_DEPENDENCY_DOWN` | Service dependency unavailable | 500, 503 |
+| `ERR_DIMENSION_MISMATCH` | Vector dimension mismatch | 409 |
+
+### **Headers in v1.0 Responses**
+
+All responses include these standard headers:
+
+```http
+X-Trace-ID: trace_abc123def456
+X-RateLimit-Limit: 50
+X-RateLimit-Remaining: 42
 ```
 
 ## Rate Limiting Errors

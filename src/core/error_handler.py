@@ -4,6 +4,8 @@ Secure error handling for production environments.
 
 Provides error sanitization to prevent sensitive information leakage
 while maintaining detailed logging for debugging purposes.
+
+UPDATED FOR SPRINT 11: Now uses standardized v1.0 error codes with trace_id support.
 """
 
 import os
@@ -12,6 +14,11 @@ import traceback
 import re
 from typing import Dict, Any, Optional
 
+# Import Sprint 11 standardized error system
+try:
+    from .error_codes import ErrorCode, common_errors, get_http_status_for_error
+except ImportError:
+    from error_codes import ErrorCode, common_errors, get_http_status_for_error
 
 logger = logging.getLogger(__name__)
 
@@ -204,3 +211,94 @@ def handle_generic_error(e: Exception, operation: str = "operation") -> Dict[str
         error_type="unexpected_error",
         error_details=error_details
     )
+
+
+# SPRINT 11: v1.0 Compliant Error Handlers with trace_id
+def handle_v1_validation_error(
+    field: str, 
+    reason: str, 
+    trace_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Handle validation errors with v1.0 compliance.
+    
+    Args:
+        field: Field that failed validation
+        reason: Reason for validation failure
+        trace_id: Optional trace ID for request tracking
+        
+    Returns:
+        v1.0 compliant error response with trace_id
+    """
+    return common_errors.validation_error(field, reason, trace_id)
+
+
+def handle_v1_dependency_error(
+    service: str,
+    trace_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Handle dependency unavailable errors with v1.0 compliance.
+    
+    Args:
+        service: Name of the unavailable service
+        trace_id: Optional trace ID for request tracking
+        
+    Returns:
+        v1.0 compliant error response with trace_id
+    """
+    return common_errors.dependency_down_error(service, trace_id)
+
+
+def handle_v1_dimension_mismatch(
+    expected: int,
+    actual: int,
+    trace_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Handle vector dimension mismatch errors (Critical for Sprint 11 Phase 2).
+    
+    Args:
+        expected: Expected vector dimensions
+        actual: Actual vector dimensions found
+        trace_id: Optional trace ID for request tracking
+        
+    Returns:
+        v1.0 compliant error response with trace_id
+    """
+    return common_errors.dimension_mismatch_error(expected, actual, trace_id)
+
+
+def handle_v1_rate_limit_error(
+    limit: int,
+    window: str,
+    retry_after: int,
+    trace_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Handle rate limiting errors with v1.0 compliance.
+    
+    Args:
+        limit: Request limit per window
+        window: Time window (e.g., "1 minute")
+        retry_after: Seconds to wait before retrying
+        trace_id: Optional trace ID for request tracking
+        
+    Returns:
+        v1.0 compliant error response with trace_id
+    """
+    return common_errors.rate_limit_error(limit, window, retry_after, trace_id)
+
+
+def handle_v1_timeout_error(
+    operation: str,
+    timeout_seconds: int,
+    trace_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Handle timeout errors with v1.0 compliance.
+    
+    Args:
+        operation: Operation that timed out
+        timeout_seconds: Timeout duration in seconds
+        trace_id: Optional trace ID for request tracking
+        
+    Returns:
+        v1.0 compliant error response with trace_id
+    """
+    return common_errors.timeout_error(operation, timeout_seconds, trace_id)

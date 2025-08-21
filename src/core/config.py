@@ -14,8 +14,8 @@ import yaml
 class Config:
     """Central configuration management for context-store."""
 
-    # Embedding configuration
-    EMBEDDING_DIMENSIONS = 1536  # Standardized across all components
+    # Embedding configuration - SPRINT 11: Fixed dimension drift (was 1536)
+    EMBEDDING_DIMENSIONS = 384  # REQUIRED: Must be 384 for v1.0 compliance
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-ada-002")
     EMBEDDING_BATCH_SIZE = 100
     EMBEDDING_MAX_RETRIES = 3
