@@ -60,8 +60,8 @@ ENV LOG_LEVEL=info
 ENV ENVIRONMENT=production
 
 # Health check for API on port 8001
-# Using curl to check the actual API health endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=10 \
+# Extended startup period and reduced frequency to handle backend initialization delays
+HEALTHCHECK --interval=45s --timeout=15s --start-period=180s --retries=8 \
     CMD curl -f http://localhost:8001/api/v1/health/live || exit 1
 
 # Switch to non-root user
