@@ -114,23 +114,132 @@ class SSHSecurityManager:
         # Remove leading/trailing whitespace
         command = command.strip()
         
-        # Check for dangerous patterns
+        # Check explicit deny list first (complete command names)
+        command_parts = command.split()
+        if command_parts:
+            base_command = command_parts[0].split('/')[-1]  # Get command name without path
+            
+            denied_commands = {
+                # Destructive operations
+                'rm', 'rmdir', 'shred', 'wipe', 'dd', 'mkfs', 'format',
+                
+                # Privilege escalation
+                'sudo', 'su', 'passwd', 'chsh', 'chfn', 'newgrp',
+                
+                # Network operations  
+                'nc', 'netcat', 'telnet', 'ssh', 'scp', 'sftp', 'rsync', 'ftp',
+                
+                # Process control
+                'kill', 'killall', 'pkill', 'nohup', 'disown', 'bg', 'fg',
+                
+                # System modification
+                'mount', 'umount', 'swapon', 'swapoff', 'fdisk', 'parted', 'lvm',
+                
+                # Package management
+                'apt', 'apt-get', 'yum', 'dnf', 'zypper', 'pacman', 'pip', 'npm', 'gem',
+                
+                # Compilers and interpreters
+                'gcc', 'g++', 'make', 'cmake', 'python', 'python3', 'perl', 'ruby', 'node', 'java',
+                
+                # Archive operations that could overwrite
+                'tar', 'unzip', 'gunzip', 'bunzip2', 'unrar', '7z',
+                
+                # Text editors (could modify files)
+                'vi', 'vim', 'nano', 'emacs', 'ed', 'joe', 'pico',
+                
+                # Database operations
+                'mysql', 'psql', 'sqlite3', 'mongo', 'redis-cli',
+                
+                # System information that could leak sensitive data
+                'lsof', 'strace', 'ltrace', 'gdb', 'objdump',
+            }
+            
+            if base_command in denied_commands:
+                logger.warning(f"Command blocked by explicit deny list: {base_command}")
+                self._log_audit_event('COMMAND_BLOCKED_DENIED', {
+                    'command': command,
+                    'denied_command': base_command
+                })
+                return False
+        
+        # Check for dangerous patterns (comprehensive list)
         dangerous_patterns = [
-            r';\s*rm\s+-rf',           # Destructive deletion
-            r'>\s*/dev/',              # Device file manipulation
-            r'\$\(',                   # Command substitution
-            r'`[^`]*`',               # Backtick command substitution
-            r'\|\s*sh\s',             # Pipe to shell
-            r'\|\s*bash\s',           # Pipe to bash
-            r'sudo\s+',               # Sudo privilege escalation
-            r'su\s+',                 # User switching
-            r'chmod\s+777',           # Dangerous permissions
-            r'wget.*\|.*sh',          # Download and execute
-            r'curl.*\|.*sh',          # Download and execute
-            r'/etc/passwd',           # Sensitive file access
-            r'/etc/shadow',           # Sensitive file access
-            r'echo.*>',               # File writing via echo
-            r'cat.*>',                # File writing via cat
+            # Command substitution and execution
+            r'\$\{[^}]*\}',                    # Variable expansion
+            r'\$\([^)]*\)',                    # Command substitution  
+            r'`[^`]*`',                        # Backtick substitution
+            
+            # Command chaining and control
+            r'[;&]',                           # Command separators
+            r'&&',                             # AND operator
+            r'\|\|',                           # OR operator
+            r'\|\s*(sh|bash|zsh|fish|csh|tcsh)', # Pipe to shell
+            
+            # Output redirection (file writing)
+            r'>\s*/[^t]',                      # Write to root (except /tmp)
+            r'>>\s*/[^t]',                     # Append to root (except /tmp)  
+            r'>\s*/tmp/\.\.',                  # Write to /tmp with traversal
+            r'>\s*/dev/',                      # Device file manipulation
+            r'>\s*/proc/',                     # Proc filesystem
+            r'>\s*/sys/',                      # Sys filesystem
+            
+            # Directory traversal
+            r'\.\./',                          # Relative traversal
+            r'/\.\.',                          # Absolute traversal
+            r'~[^/\s]*/',                      # Home directory access
+            
+            # Destructive operations (multiple variations)
+            r'\brm\s+.*-[rf]',                # rm with recursive/force
+            r'\brm\s+-[rf]',                  # rm with flags
+            r'\bmv\s+.*\s+/',                 # Moving to root
+            r'\bcp\s+.*\s+/',                 # Copying to root
+            r'\bdd\s+',                       # dd command
+            r'\bshred\s+',                    # File shredding
+            
+            # Permission changes
+            r'\bchmod\s+[0-9]*7[0-9]*',       # World writable
+            r'\bchmod\s+\+[rwx]*w',           # Adding write permissions
+            r'\bchown\s+root',                # Changing to root ownership
+            r'\bchgrp\s+root',                # Changing to root group
+            
+            # Network operations
+            r'\bwget\s+.*\|',                 # Wget with pipe
+            r'\bcurl\s+.*\|',                 # Curl with pipe
+            r'\bnc\s+.*-e',                   # Netcat with exec
+            r'\bnc\s+.*-c',                   # Netcat with command
+            
+            # Sensitive file patterns
+            r'/etc/(passwd|shadow|sudoers|hosts|fstab|crontab)',
+            r'/root/\.',                       # Root dotfiles
+            r'/home/[^/]+/\.(ssh|gnupg)',     # User sensitive dirs
+            r'\.ssh/(id_|known_hosts|config)',# SSH files
+            r'/var/log/',                      # Log files
+            r'/proc/[0-9]+/',                  # Process information
+            
+            # Code execution patterns
+            r'\bexec\s*\(',                   # Exec calls
+            r'\beval\s*\(',                   # Eval calls
+            r'\bsystem\s*\(',                 # System calls
+            r'/bin/(sh|bash|zsh)',            # Direct shell access
+            r'\bpython\s+-c',                 # Python code execution
+            r'\bperl\s+-e',                   # Perl code execution
+            
+            # Process manipulation
+            r'\bkill\s+-[0-9]+',              # Kill with specific signal
+            r'\bkillall\s+',                  # Kill all matching
+            r'\bnohup\s+.*&',                 # Background processes
+            
+            # Archive operations with overwrite potential
+            r'\btar\s+.*-[xzjc].*/',          # Tar extract to root
+            r'\bunzip.*\s+/',                 # Unzip to root
+            r'\bgunzip.*>\s*/',               # Gunzip to root
+            
+            # Injection and malicious patterns
+            r"';.*--",                        # SQL injection
+            r'\bor\s+1=1',                   # Boolean injection
+            r'<script[^>]*>',                 # XSS
+            r'javascript:',                   # JS URLs
+            r'data:.*base64',                 # Data URLs
         ]
         
         for pattern in dangerous_patterns:

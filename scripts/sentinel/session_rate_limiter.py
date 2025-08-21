@@ -129,7 +129,7 @@ class SessionRateLimiter:
         
         return state
 
-    def _check_hourly_limit(self, state: Dict[str, Any]) -> bool:
+    def _check_hourly_limit(self, state: Dict[str, Any], custom_limit: Optional[int] = None) -> bool:
         """Check if hourly session limit is exceeded."""
         current_time = datetime.now()
         hour_ago = current_time - timedelta(hours=1)
@@ -139,9 +139,10 @@ class SessionRateLimiter:
             if datetime.fromisoformat(s['start_time']) > hour_ago
         ]
         
-        return len(recent_sessions) < self.max_sessions_per_hour
+        limit = custom_limit if custom_limit is not None else self.max_sessions_per_hour
+        return len(recent_sessions) < limit
 
-    def _check_daily_limit(self, state: Dict[str, Any]) -> bool:
+    def _check_daily_limit(self, state: Dict[str, Any], custom_limit: Optional[int] = None) -> bool:
         """Check if daily session limit is exceeded."""
         current_time = datetime.now()
         day_ago = current_time - timedelta(days=1)
@@ -151,7 +152,8 @@ class SessionRateLimiter:
             if datetime.fromisoformat(s['start_time']) > day_ago
         ]
         
-        return len(recent_sessions) < self.max_sessions_per_day
+        limit = custom_limit if custom_limit is not None else self.max_sessions_per_day
+        return len(recent_sessions) < limit
 
     def _check_concurrent_limit(self, state: Dict[str, Any]) -> bool:
         """Check if concurrent session limit is exceeded."""
@@ -176,12 +178,13 @@ class SessionRateLimiter:
         
         return state.get('emergency_brake_active', False)
 
-    def can_start_session(self, alert_context: Dict[str, Any]) -> Dict[str, bool]:
+    def can_start_session(self, alert_context: Dict[str, Any], emergency_mode: bool = False) -> Dict[str, bool]:
         """
         Check if a new session can be started based on rate limits.
         
         Args:
             alert_context: Alert context for the session
+            emergency_mode: Whether this is an emergency session (relaxes some limits)
             
         Returns:
             Dict with validation results and reasons
@@ -189,35 +192,59 @@ class SessionRateLimiter:
         with self._lock:
             state = self._load_session_state()
             
+            # Basic checks that apply even in emergency mode
             checks = {
-                'hourly_limit_ok': self._check_hourly_limit(state),
-                'daily_limit_ok': self._check_daily_limit(state),
                 'concurrent_limit_ok': self._check_concurrent_limit(state),
                 'emergency_brake_ok': not self._check_emergency_brake(state),
                 'can_start': False
             }
             
-            # Overall decision
-            checks['can_start'] = all([
-                checks['hourly_limit_ok'],
-                checks['daily_limit_ok'],
-                checks['concurrent_limit_ok'],
-                checks['emergency_brake_ok']
-            ])
+            # In emergency mode, we relax but don't eliminate rate limits
+            if emergency_mode:
+                # Emergency mode gets higher limits but still has limits
+                emergency_hourly_limit = min(self.max_sessions_per_hour * 2, 10)  # Max 10/hour even in emergency
+                emergency_daily_limit = min(self.max_sessions_per_day * 2, 40)    # Max 40/day even in emergency
+                
+                checks['hourly_limit_ok'] = self._check_hourly_limit(state, emergency_hourly_limit)
+                checks['daily_limit_ok'] = self._check_daily_limit(state, emergency_daily_limit)
+                checks['emergency_mode'] = True
+                
+                # Emergency mode still requires basic safety checks
+                checks['can_start'] = all([
+                    checks['concurrent_limit_ok'],      # Always respect concurrent limits
+                    checks['emergency_brake_ok'],       # Always respect emergency brake
+                    checks['hourly_limit_ok'],          # Relaxed but still limited
+                    checks['daily_limit_ok']            # Relaxed but still limited
+                ])
+            else:
+                # Normal mode uses standard limits
+                checks['hourly_limit_ok'] = self._check_hourly_limit(state)
+                checks['daily_limit_ok'] = self._check_daily_limit(state)
+                checks['emergency_mode'] = False
+                
+                checks['can_start'] = all([
+                    checks['hourly_limit_ok'],
+                    checks['daily_limit_ok'],
+                    checks['concurrent_limit_ok'],
+                    checks['emergency_brake_ok']
+                ])
             
             # Log rate limit status
             if not checks['can_start']:
                 reasons = []
                 if not checks['hourly_limit_ok']:
-                    reasons.append(f"hourly limit ({self.max_sessions_per_hour}/hour)")
+                    limit = emergency_hourly_limit if emergency_mode else self.max_sessions_per_hour
+                    reasons.append(f"hourly limit ({limit}/hour)")
                 if not checks['daily_limit_ok']:
-                    reasons.append(f"daily limit ({self.max_sessions_per_day}/day)")
+                    limit = emergency_daily_limit if emergency_mode else self.max_sessions_per_day
+                    reasons.append(f"daily limit ({limit}/day)")
                 if not checks['concurrent_limit_ok']:
                     reasons.append(f"concurrent limit ({self.max_concurrent_sessions})")
                 if not checks['emergency_brake_ok']:
                     reasons.append("emergency brake active")
                 
-                logger.warning(f"Session start blocked: {', '.join(reasons)}")
+                mode_str = "emergency mode" if emergency_mode else "normal mode"
+                logger.warning(f"Session start blocked ({mode_str}): {', '.join(reasons)}")
             
             return checks
 

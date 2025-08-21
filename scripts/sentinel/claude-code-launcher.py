@@ -111,15 +111,17 @@ class ClaudeCodeLauncher:
                     "timestamp": datetime.now().isoformat()
                 }
         
-        # Check rate limits
+        # Check rate limits (emergency mode gets higher limits but still has limits)
         if self.rate_limiter:
-            can_start = self.rate_limiter.can_start_session(alert_context)
+            can_start = self.rate_limiter.can_start_session(alert_context, self.emergency_mode)
             if not can_start['can_start']:
-                logger.error("❌ Session blocked by rate limiter")
+                mode_str = "emergency mode" if self.emergency_mode else "normal mode"
+                logger.error(f"❌ Session blocked by rate limiter ({mode_str})")
                 return {
                     "session_id": self.session_id,
                     "status": "rate_limited",
                     "rate_limit_checks": can_start,
+                    "emergency_mode": self.emergency_mode,
                     "timestamp": datetime.now().isoformat()
                 }
             
@@ -195,12 +197,74 @@ class ClaudeCodeLauncher:
         
         return session_result
     
+    def _validate_ssh_key_path(self, key_path: str) -> bool:
+        """Validate SSH key path for security."""
+        if not key_path:
+            logger.error("SSH key path not specified")
+            return False
+        
+        # Resolve to absolute path to prevent traversal attacks
+        try:
+            abs_path = os.path.abspath(key_path)
+        except Exception as e:
+            logger.error(f"Invalid SSH key path: {e}")
+            return False
+        
+        # Check for directory traversal attempts
+        if '..' in key_path or key_path != abs_path:
+            logger.error("Directory traversal detected in SSH key path")
+            return False
+        
+        # Validate that path is within allowed directories
+        allowed_key_dirs = [
+            '/tmp',              # Temporary keys (GitHub Actions)
+            '/home',             # User directories
+            '/opt/keys',         # Dedicated key directory
+            '/var/keys',         # System key directory
+        ]
+        
+        # Check if key is in an allowed directory
+        path_allowed = any(abs_path.startswith(allowed_dir) for allowed_dir in allowed_key_dirs)
+        if not path_allowed:
+            logger.error(f"SSH key path not in allowed directories: {abs_path}")
+            return False
+        
+        # Check if file exists
+        if not os.path.exists(abs_path):
+            logger.error(f"SSH key file not found: {abs_path}")
+            return False
+        
+        # Check file permissions (should not be world-readable)
+        try:
+            stat_info = os.stat(abs_path)
+            if stat_info.st_mode & 0o044:  # World or group readable
+                logger.error(f"SSH key file has insecure permissions: {oct(stat_info.st_mode)}")
+                return False
+        except Exception as e:
+            logger.error(f"Error checking SSH key permissions: {e}")
+            return False
+        
+        # Validate file size (SSH keys shouldn't be too large)
+        try:
+            file_size = os.path.getsize(abs_path)
+            if file_size > 10240:  # 10KB limit
+                logger.error(f"SSH key file too large: {file_size} bytes")
+                return False
+            if file_size < 100:  # Too small to be a valid key
+                logger.error(f"SSH key file too small: {file_size} bytes")
+                return False
+        except Exception as e:
+            logger.error(f"Error checking SSH key size: {e}")
+            return False
+        
+        return True
+
     async def _validate_ssh_access(self) -> bool:
         """Validate SSH access to the production server."""
         logger.info("🔒 Validating SSH access to production server...")
         
-        if not self.ssh_key_path or not os.path.exists(self.ssh_key_path):
-            logger.error("SSH key file not found or not specified")
+        # Validate SSH key path first
+        if not self._validate_ssh_key_path(self.ssh_key_path):
             return False
         
         try:
