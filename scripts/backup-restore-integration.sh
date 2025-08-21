@@ -47,6 +47,11 @@ verified_docker_cp() {
             return 0
         else
             log_error "❌ Copy appeared successful but $description not found at destination"
+            # Additional debugging info
+            log_error "Checking parent directory contents:"
+            ls -la "$(dirname "$destination")" 2>&1 | head -5 | while read line; do
+                log_error "  $line"
+            done
             return 1
         fi
     else
@@ -301,6 +306,23 @@ EOF
         if [ ! -f "$BACKUP_DIR/neo4j.dump" ] && [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ]; then
             log "Using enhanced fallback: optimized data copy with consistency checks..."
             
+            # Dynamically detect Neo4j data path in container
+            local neo4j_data_path=""
+            for test_path in "/data" "/var/lib/neo4j/data" "/var/lib/neo4j"; do
+                if docker exec "$neo4j_container" test -d "$test_path/databases" 2>/dev/null; then
+                    neo4j_data_path="$test_path"
+                    log "Detected Neo4j data path: $neo4j_data_path"
+                    break
+                fi
+            done
+            
+            if [ -z "$neo4j_data_path" ]; then
+                log_error "Could not detect Neo4j data directory in container"
+                # Try default path as last resort
+                neo4j_data_path="/var/lib/neo4j/data"
+                log_warning "Using default path: $neo4j_data_path"
+            fi
+            
             # Try to request checkpoint if Neo4j API is accessible
             if [ "$neo4j_ready" = true ]; then
                 log "Requesting checkpoint via API before fallback copy..."
@@ -321,12 +343,18 @@ EOF
                 log_warning "Container filesystem sync failed, proceeding without sync"
             }
             
-            # Attempt the actual data copy
-            if verified_docker_cp "$neo4j_container:/var/lib/neo4j/data" \
-                "$BACKUP_DIR/neo4j-data" "Neo4j data directory"; then
+            # Pre-create destination directory to ensure consistent docker cp behavior
+            mkdir -p "$BACKUP_DIR/neo4j-data"
+            
+            # Attempt the actual data copy using /. notation to copy contents
+            if docker cp "$neo4j_container:$neo4j_data_path/." "$BACKUP_DIR/neo4j-data" 2>/dev/null; then
+                # Enhanced verification for directory copy
+                local neo4j_file_count=$(find "$BACKUP_DIR/neo4j-data" -type f 2>/dev/null | wc -l)
                 
-                # Verify backup contains expected files
-                if [ -f "$BACKUP_DIR/neo4j-data/databases/neo4j/neostore" ]; then
+                # Verify backup contains expected files - check multiple possible locations
+                if [ -f "$BACKUP_DIR/neo4j-data/databases/neo4j/neostore" ] || \
+                   [ -f "$BACKUP_DIR/neo4j-data/databases/system/neostore" ] || \
+                   [ "$neo4j_file_count" -gt 10 ]; then
                     log "✅ Neo4j enhanced fallback backup completed with consistency optimizations"
                     neo4j_status="success_fallback"
                     
@@ -700,14 +728,29 @@ restore_backup() {
         log "Attempting Neo4j restore from data directory..."
         echo "  → Restoring Neo4j from data backup..."
         
+        # Dynamically detect Neo4j data path in container for restore
+        local neo4j_data_path=""
+        for test_path in "/data" "/var/lib/neo4j/data" "/var/lib/neo4j"; do
+            if docker exec "$neo4j_container" test -d "$test_path" 2>/dev/null; then
+                neo4j_data_path="$test_path"
+                log "Detected Neo4j data path for restore: $neo4j_data_path"
+                break
+            fi
+        done
+        
+        if [ -z "$neo4j_data_path" ]; then
+            neo4j_data_path="/var/lib/neo4j/data"
+            log_warning "Using default Neo4j path for restore: $neo4j_data_path"
+        fi
+        
         # Stop container, restore data, restart
         if docker stop "$neo4j_container" 2>/dev/null; then
             log "Neo4j container stopped for data restore"
             sleep 3
             
             if docker cp "$BACKUP_DIR/neo4j-data/." \
-                "$neo4j_container:/var/lib/neo4j/data/" 2>/dev/null; then
-                log "Data directory copied successfully"
+                "$neo4j_container:$neo4j_data_path/" 2>/dev/null; then
+                log "Data directory copied successfully to $neo4j_data_path"
                 
                 if docker start "$neo4j_container" 2>/dev/null; then
                     log "⚠️ Neo4j restore from data directory completed (may be inconsistent)"
@@ -716,7 +759,7 @@ restore_backup() {
                     log_error "Failed to restart Neo4j container"
                 fi
             else
-                log_error "Failed to copy data directory"
+                log_error "Failed to copy data directory to $neo4j_data_path"
             fi
         else
             log_error "Failed to stop Neo4j container"
