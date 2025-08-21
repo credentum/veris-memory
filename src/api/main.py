@@ -105,8 +105,8 @@ async def lifespan(app: FastAPI):
             
             # Import backend clients (same as MCP server)
             from ..storage.qdrant_client import VectorDBInitializer
-            from ..storage.neo4j_client import Neo4jInitializer
-            from ..storage.kv_store import ContextKV
+            from ..storage.neo4j_client import Neo4jClient
+            from ..storage.kv_store import KVStore
             
             vector_backend = None
             graph_backend = None
@@ -125,7 +125,7 @@ async def lifespan(app: FastAPI):
             
             # Initialize Neo4j (same pattern as MCP server)
             try:
-                neo4j_client = Neo4jInitializer()
+                neo4j_client = Neo4jClient()
                 neo4j_client.connect(
                     username=os.getenv("NEO4J_USER", "neo4j"),
                     password=os.getenv("NEO4J_PASSWORD")
@@ -137,7 +137,7 @@ async def lifespan(app: FastAPI):
             
             # Initialize Redis KV Store (same pattern as MCP server)
             try:
-                kv_store_client = ContextKV()
+                kv_store_client = KVStore()
                 kv_store_client.connect(redis_password=os.getenv("REDIS_PASSWORD"))
                 kv_backend = kv_store_client
                 api_logger.info("✅ API: Redis connected successfully")
