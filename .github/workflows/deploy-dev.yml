@@ -290,14 +290,38 @@ jobs:
               # Start dev services (secrets already exported at beginning)
               echo "🚀 Starting DEV services..."
               
-              # ENHANCED: Force clean rebuild of API container
-              echo "🧹 Removing old API image to force rebuild..."
+              # CRITICAL FIX: Force COMPLETE rebuild of API container
+              echo "🚨 FORCING COMPLETE API REBUILD (NO CACHE)"
+              echo "==========================================="
+              
+              # Step 1: Stop and remove API container
+              docker stop veris-memory-dev-api-1 2>/dev/null || true
+              docker rm -f veris-memory-dev-api-1 2>/dev/null || true
+              
+              # Step 2: Remove ALL API-related images
+              echo "Removing ALL cached API images..."
               docker rmi veris-memory-dev-api 2>/dev/null || true
-              docker rmi $(docker images -q --filter "reference=*api*" --filter "reference=*veris-memory-dev*") 2>/dev/null || true
+              docker rmi veris-memory-dev_api 2>/dev/null || true
+              docker images | grep -E "api|API" | awk '{print $3}' | xargs -r docker rmi -f 2>/dev/null || true
+              
+              # Step 3: Prune build cache to ensure fresh build
+              echo "Pruning Docker build cache..."
+              docker builder prune -f 2>/dev/null || true
+              docker system prune -f 2>/dev/null || true
+              
+              echo "✅ All API caches cleared"
+              
+              # Build API separately with --no-cache FIRST
+              echo "Building API from scratch (no cache)..."
+              # Add timestamp as build arg to force cache invalidation
+              docker compose -p veris-memory-dev -f "$COMPOSE_FILE" build --no-cache --build-arg CACHE_BUST=$(date +%s) api || {
+                echo "❌ API build failed!"
+                exit 1
+              }
               
               # Try multiple approaches to ensure success
-              echo "  → Attempt 1: Standard docker compose up..."
-              if ! docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build; then
+              echo "  → Starting all services..."
+              if ! docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d; then
                 echo "  → Attempt 1 failed, trying without cache..."
                 if ! docker compose -p veris-memory-dev -f "$COMPOSE_FILE" up -d --build --no-cache; then
                   echo "  → Attempt 2 failed, trying with force recreate..."
