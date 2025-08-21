@@ -35,7 +35,7 @@ class InputValidator:
     - String sanitization
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize input validator with schemas."""
         self.alert_context_schema = self._get_alert_context_schema()
         self.diagnostic_results_schema = self._get_diagnostic_results_schema()

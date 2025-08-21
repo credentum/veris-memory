@@ -252,7 +252,8 @@ class MetricsCollector:
             try:
                 sample_start = time.time()
                 
-                url = f"http://localhost:{config['port']}{config['health_endpoint']}"
+                target_host = os.getenv('TARGET_HOST', 'localhost')
+                url = f"http://{target_host}:{config['port']}{config['health_endpoint']}"
                 async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                     sample_end = time.time()
                     response_time = (sample_end - sample_start) * 1000  # Convert to ms

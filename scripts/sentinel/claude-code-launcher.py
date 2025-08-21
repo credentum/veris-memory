@@ -51,7 +51,7 @@ class ClaudeCodeLauncher:
             config: Configuration dictionary containing connection and session parameters.
         """
         self.config: Dict[str, Any] = config
-        self.server_host: str = config.get('server_host', os.getenv('VERIS_MEMORY_HOST', 'localhost'))
+        self.server_host: str = config.get('server_host', os.getenv('VERIS_MEMORY_HOST', os.getenv('TARGET_HOST', 'localhost')))
         self.ssh_user: str = config.get('ssh_user', os.getenv('VERIS_MEMORY_USER', 'root'))
         self.ssh_key_path: Optional[str] = config.get('ssh_key_path')
         self.claude_api_key: Optional[str] = config.get('claude_api_key')
@@ -689,7 +689,7 @@ class ClaudeCodeLauncher:
         
         return recommendations
     
-    async def _cleanup_session(self):
+    async def _cleanup_session(self) -> None:
         """Cleanup session resources and ensure security."""
         logger.info("🧹 Cleaning up emergency session...")
         
@@ -700,7 +700,7 @@ class ClaudeCodeLauncher:
         logger.info("✅ Session cleanup completed")
 
 
-async def main():
+async def main() -> int:
     """Main function for emergency session launcher."""
     parser = argparse.ArgumentParser(description="Claude Code Emergency Session Launcher")
     parser.add_argument("--alert-context", required=True, help="JSON string with alert context")

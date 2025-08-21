@@ -598,7 +598,8 @@ class IntelligentFixGenerator:
     
     async def _check_connectivity(self) -> Dict[str, Any]:
         """Check connectivity after fixes."""
-        result = await self._execute_ssh_command("curl -f http://localhost:8001/api/v1/health || echo 'CONNECTIVITY_FAILED'")
+        api_host = os.getenv('VERIS_MEMORY_HOST', os.getenv('TARGET_HOST', 'localhost'))
+        result = await self._execute_ssh_command(f"curl -f http://{api_host}:8001/api/v1/health || echo 'CONNECTIVITY_FAILED'")
         
         return {
             "status": "ok" if "CONNECTIVITY_FAILED" not in result["output"] else "critical",

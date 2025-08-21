@@ -227,7 +227,8 @@ class DependencyMapper:
                     node.health_status = "unknown"
                     continue
                 
-                url = f"http://localhost:{port}{health_endpoint}"
+                target_host = os.getenv('TARGET_HOST', 'localhost')
+                url = f"http://{target_host}:{port}{health_endpoint}"
                 async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as response:
                     if 200 <= response.status < 300:
                         node.health_status = "healthy"

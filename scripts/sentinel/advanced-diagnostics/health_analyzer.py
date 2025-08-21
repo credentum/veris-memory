@@ -31,7 +31,7 @@ class ServiceConfig:
     
     def __init__(self, name: str, config: Dict[str, Any]):
         self.name = name
-        self.host = config.get('host', 'localhost')
+        self.host = config.get('host', os.getenv('TARGET_HOST', 'localhost'))
         self.port = config['port']
         self.health_endpoint = config.get('health_endpoint', '/health')
         self.metrics_endpoint = config.get('metrics_endpoint', '/metrics')
@@ -383,7 +383,8 @@ class AdvancedHealthAnalyzer:
         if dep_config["endpoint"]:
             # HTTP-based check
             try:
-                url = f"http://localhost:{dep_config['port']}{dep_config['endpoint']}"
+                target_host = os.getenv('TARGET_HOST', 'localhost')
+                url = f"http://{target_host}:{dep_config['port']}{dep_config['endpoint']}"
                 async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as response:
                     return {
                         "is_healthy": 200 <= response.status < 400,

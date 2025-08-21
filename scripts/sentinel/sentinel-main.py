@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from monitoring.veris_sentinel import SentinelRunner, SentinelConfig, SentinelAPI
 
 
-def setup_logging():
+def setup_logging() -> None:
     """Configure logging for Sentinel."""
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     
@@ -61,7 +61,7 @@ def load_config() -> SentinelConfig:
     )
 
 
-async def main():
+async def main() -> None:
     """Main entry point for Veris Sentinel."""
     setup_logging()
     logger = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ async def main():
     logger.info(f"📊 API server started on port {api_port}")
     
     # Setup signal handlers for graceful shutdown
-    def signal_handler(signum, frame):
+    def signal_handler(signum: int, frame: Any) -> None:
         logger.info(f"Received signal {signum}, initiating shutdown...")
         sentinel.stop()
     

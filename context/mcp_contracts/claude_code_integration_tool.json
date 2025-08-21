@@ -193,11 +193,18 @@
       "diagnostic_integration": "phase2_results_input",
       "health_verification": "post_fix_monitoring"
     },
-    "veris_memory_server": {
-      "direct_ssh_access": "production_server_debugging", 
-      "service_management": "systemctl_docker_operations",
-      "log_analysis": "real_time_log_examination",
-      "configuration_repair": "automated_config_fixes"
+    "mcp_server_integration": {
+      "api_endpoint_access": "FastAPI_based_MCP_server",
+      "context_storage_operations": "store_retrieve_context_tools",
+      "graph_database_queries": "neo4j_cypher_execution",
+      "vector_search_operations": "qdrant_semantic_search",
+      "redis_state_management": "agent_scratchpad_operations"
+    },
+    "storage_implementations": {
+      "neo4j_client": "Neo4jInitializer_connection_management",
+      "qdrant_client": "VectorDBInitializer_vector_operations", 
+      "redis_client": "SimpleRedisClient_kv_operations",
+      "context_kv": "ContextKV_structured_storage"
     }
   },
   "examples": [

@@ -185,7 +185,35 @@ class AutomatedDebuggingWorkflows:
         alert_context: Dict[str, Any],
         diagnostic_context: Dict[str, Any]
     ):
-        """Workflow for investigating service health issues."""
+        """Comprehensive service health investigation workflow.
+        
+        This workflow performs a systematic investigation of service health issues
+        by checking multiple layers of the system infrastructure. It follows a 
+        structured approach to identify the root cause of service failures.
+        
+        Investigation Steps:
+        1. System-wide service status check using systemctl
+        2. Veris Memory specific service validation (API, MCP, Sentinel, Dashboard)
+        3. Docker container health and status verification
+        4. Network port availability and binding analysis
+        5. Recent system error log examination
+        
+        Args:
+            alert_context: Alert information from Sentinel including check_id, 
+                         severity, message, and failure details
+            diagnostic_context: Phase 2 diagnostic results containing health 
+                              analysis and metrics data
+        
+        Side Effects:
+            - Updates self.findings['service_health'] with discovered issues
+            - Updates self.recommended_fixes with actionable repair suggestions
+            - Logs execution progress and results to self.execution_log
+            
+        Error Handling:
+            - All SSH commands use ignore_errors=True for optional checks
+            - Failed commands are logged but don't stop the investigation
+            - Network timeouts are handled gracefully
+        """
         logger.info("🏥 Executing service health investigation workflow...")
         
         # Step 1: Check overall system status
@@ -232,14 +260,55 @@ class AutomatedDebuggingWorkflows:
         alert_context: Dict[str, Any],
         diagnostic_context: Dict[str, Any]
     ):
-        """Workflow for investigating database connectivity issues."""
+        """Advanced database connectivity investigation workflow.
+        
+        This workflow performs comprehensive database connectivity diagnostics
+        for the three core databases used by Veris Memory: Qdrant (vector search),
+        Neo4j (graph database), and Redis (key-value cache).
+        
+        Investigation Strategy:
+        1. Direct TCP connectivity testing to database ports using /dev/tcp
+        2. Container runtime status verification for database services
+        3. Database-specific log analysis for error patterns
+        4. Firewall rule validation for database port access
+        5. Disk space analysis (databases are sensitive to storage issues)
+        
+        Database Coverage:
+        - Qdrant (port 6333): Vector embedding storage and search
+        - Neo4j (port 7474/7687): Graph relationships and knowledge storage  
+        - Redis (port 6379): Session state and caching layer
+        
+        Args:
+            alert_context: Alert details from monitoring system with database
+                         connection failure information
+            diagnostic_context: Prior diagnostic results that may indicate
+                               database-related performance issues
+        
+        Environment Variables Used:
+            QDRANT_HOST, NEO4J_HOST, REDIS_HOST: Override default localhost targets
+        
+        Findings Generated:
+            - connection_failures: List of databases with failed connections
+            - container_issues: Docker container problems affecting databases
+            - firewall_blocks: Network rules preventing database access
+            - disk_space_issues: Storage problems that could affect databases
+            
+        Automated Fixes Suggested:
+            - Database container restart commands
+            - Service dependency resolution
+            - Resource allocation adjustments
+        """
         logger.info("🗄️ Executing database connectivity investigation workflow...")
         
         # Step 1: Test database connections
+        qdrant_host = os.getenv('QDRANT_HOST', 'localhost')
+        neo4j_host = os.getenv('NEO4J_HOST', 'localhost')
+        redis_host = os.getenv('REDIS_HOST', 'localhost')
+        
         databases = [
-            {"name": "Qdrant", "host": "localhost", "port": "6333"},
-            {"name": "Neo4j", "host": "localhost", "port": "7474"}, 
-            {"name": "Redis", "host": "localhost", "port": "6379"}
+            {"name": "Qdrant", "host": qdrant_host, "port": "6333"},
+            {"name": "Neo4j", "host": neo4j_host, "port": "7474"}, 
+            {"name": "Redis", "host": redis_host, "port": "6379"}
         ]
         
         for db in databases:
@@ -280,7 +349,44 @@ class AutomatedDebuggingWorkflows:
         alert_context: Dict[str, Any],
         diagnostic_context: Dict[str, Any]
     ):
-        """Workflow for investigating performance issues."""
+        """Comprehensive system performance investigation workflow.
+        
+        This workflow performs deep system performance analysis to identify
+        resource bottlenecks, inefficient processes, and capacity constraints
+        that may be affecting Veris Memory system performance.
+        
+        Performance Analysis Areas:
+        1. CPU utilization and process analysis (top, ps)
+        2. Memory usage patterns and availability (free, meminfo)
+        3. Disk I/O performance and bottlenecks (iostat, iotop)
+        4. Network connection load and interface statistics
+        5. Process-specific resource consumption analysis
+        
+        Diagnostic Approach:
+        - Real-time system snapshots for current state analysis
+        - Process ranking by CPU and memory consumption
+        - I/O subsystem performance validation
+        - Network connection count and interface health
+        
+        Args:
+            alert_context: Performance alert details including latency metrics,
+                         resource threshold violations, and timing data
+            diagnostic_context: Previous system metrics and trend analysis
+                              that may indicate performance degradation patterns
+        
+        Performance Metrics Collected:
+        - CPU load averages and per-process utilization
+        - Memory consumption (total, free, cached, buffers)
+        - Disk I/O rates and queue depths
+        - Network connection counts and interface statistics
+        - Top resource-consuming processes
+        
+        Automated Analysis:
+        - Identifies processes exceeding 50% CPU usage
+        - Detects memory pressure and swap usage
+        - Analyzes I/O wait times and bottlenecks
+        - Evaluates network connection saturation
+        """
         logger.info("⚡ Executing performance investigation workflow...")
         
         # Step 1: Check system resource usage
@@ -326,7 +432,45 @@ class AutomatedDebuggingWorkflows:
         alert_context: Dict[str, Any],
         diagnostic_context: Dict[str, Any]
     ):
-        """Workflow for investigating security issues."""
+        """Comprehensive security investigation and threat analysis workflow.
+        
+        This workflow performs thorough security analysis to identify potential
+        threats, authentication issues, unauthorized access attempts, and
+        security policy violations that may compromise system integrity.
+        
+        Security Investigation Areas:
+        1. Authentication activity monitoring (SSH, sudo, login events)
+        2. Firewall configuration and rule effectiveness (UFW, iptables)
+        3. Process analysis for suspicious or unauthorized activities  
+        4. Network connection security (listening services, open ports)
+        5. File system permission validation for critical directories
+        
+        Threat Detection Capabilities:
+        - Failed authentication attempt patterns
+        - Privilege escalation attempts  
+        - Unusual process execution outside expected users
+        - Unauthorized network service bindings
+        - Directory permission vulnerabilities
+        
+        Args:
+            alert_context: Security alert information including authentication
+                         failures, access violations, or suspicious activity
+            diagnostic_context: System context that may indicate security
+                              compromise or policy violations
+        
+        Security Checks Performed:
+        - Recent authentication logs analysis (30-minute window)
+        - UFW firewall status and rule configuration
+        - Process ownership verification (non-system users)
+        - Critical service port monitoring
+        - Key directory permission validation
+        
+        Automated Remediation:
+        - Firewall enablement recommendations
+        - Access control tightening suggestions
+        - Process isolation recommendations
+        - Network security hardening steps
+        """
         logger.info("🔒 Executing security investigation workflow...")
         
         # Step 1: Check authentication logs
@@ -366,7 +510,46 @@ class AutomatedDebuggingWorkflows:
         alert_context: Dict[str, Any],
         diagnostic_context: Dict[str, Any]
     ):
-        """Workflow for investigating firewall issues."""
+        """Advanced network firewall and connectivity investigation workflow.
+        
+        This workflow performs comprehensive firewall and network connectivity
+        analysis to diagnose port blocking, service accessibility issues, and
+        network security policy problems that prevent proper system operation.
+        
+        Firewall Investigation Components:
+        1. UFW (Uncomplicated Firewall) status and rule analysis
+        2. Low-level iptables rule examination and validation
+        3. Service port accessibility testing from local interface
+        4. Network service binding verification
+        5. Recent firewall activity and blocking event analysis
+        
+        Network Diagnostics:
+        - Port connectivity testing using netcat (nc)
+        - Service listener validation with netstat
+        - Firewall rule effectiveness verification
+        - Recent block/allow activity monitoring
+        
+        Args:
+            alert_context: Network connectivity alert details including
+                         failed connections, timeout errors, or port blocking
+            diagnostic_context: Network-related diagnostic information
+                              that may indicate firewall misconfigurations
+        
+        Environment Variables:
+            TARGET_HOST: Override localhost for connectivity testing
+        
+        Critical Ports Tested:
+            - 8000, 8001: Veris Memory API services
+            - 9090: Monitoring/metrics endpoint
+            - 8080: Dashboard interface
+            - 6333, 7474, 6379: Database services
+        
+        Analysis Results:
+            - UFW rule configuration status
+            - Port accessibility matrix
+            - Service binding validation
+            - Recent firewall block events
+        """
         logger.info("🛡️ Executing firewall investigation workflow...")
         
         # Step 1: Check UFW status and rules
@@ -381,12 +564,13 @@ class AutomatedDebuggingWorkflows:
             "Check iptables rules"
         )
         
-        # Step 3: Test port accessibility from localhost
+        # Step 3: Test port accessibility from local interface
+        target_host = os.getenv('TARGET_HOST', 'localhost')
         important_ports = ["8000", "8001", "9090", "8080"]
         for port in important_ports:
             await self._execute_ssh_command(
-                f"timeout 3 nc -zv localhost {port} 2>&1",
-                f"Test localhost access to port {port}",
+                f"timeout 3 nc -zv {target_host} {port} 2>&1",
+                f"Test {target_host} access to port {port}",
                 ignore_errors=True
             )
         
@@ -409,7 +593,48 @@ class AutomatedDebuggingWorkflows:
         alert_context: Dict[str, Any],
         diagnostic_context: Dict[str, Any]
     ):
-        """General investigation workflow for unknown issues."""
+        """Comprehensive general investigation workflow for unknown or complex issues.
+        
+        This is the fallback investigation workflow that performs broad-spectrum
+        system analysis when the alert context doesn't match specific known
+        patterns. It provides a systematic approach to diagnosing unusual or
+        multi-faceted system problems.
+        
+        General Investigation Approach:
+        1. High-level system health overview (uptime, disk, memory)
+        2. Recent error log analysis across all system components
+        3. Systemd service status verification and health checks
+        4. External connectivity validation (internet access)
+        5. Basic system stability and resource availability
+        
+        Use Cases:
+        - Alerts with unclear or complex root causes
+        - Multi-system failures requiring broad investigation
+        - Novel failure patterns not covered by specific workflows
+        - Preliminary investigation before specialized workflows
+        
+        Args:
+            alert_context: General alert information that doesn't match
+                         specific patterns for specialized workflows
+            diagnostic_context: Broad diagnostic context that may help
+                              identify the nature of unknown issues
+        
+        Investigation Coverage:
+        - System resource availability (CPU, memory, disk)
+        - Critical error patterns in system logs
+        - Service management system health (systemd)
+        - Network connectivity to external services
+        - Overall system stability indicators
+        
+        Output Analysis:
+        - System load and resource pressure assessment
+        - Critical error identification and categorization
+        - Service dependency health validation
+        - Connectivity status verification
+        
+        This workflow serves as both a diagnostic tool for unknown issues
+        and a foundation for determining which specialized workflows to run.
+        """
         logger.info("🔍 Executing general investigation workflow...")
         
         # Step 1: System overview
@@ -522,7 +747,7 @@ class AutomatedDebuggingWorkflows:
         self.execution_log.append(execution_record)
         return execution_record
     
-    def _analyze_service_health_findings(self):
+    def _analyze_service_health_findings(self) -> None:
         """Analyze findings from service health investigation."""
         self.findings["service_health"] = {
             "failed_services": [],
@@ -556,7 +781,7 @@ class AutomatedDebuggingWorkflows:
                     port = record["description"].split()[-1] if "port" in record["description"] else "unknown"
                     self.findings["service_health"]["port_issues"].append(f"Port {port} not listening")
     
-    def _analyze_database_connectivity_findings(self):
+    def _analyze_database_connectivity_findings(self) -> None:
         """Analyze findings from database connectivity investigation."""
         self.findings["database_connectivity"] = {
             "connection_failures": [],
@@ -579,7 +804,7 @@ class AutomatedDebuggingWorkflows:
                     "description": f"Restart {db_name} database container"
                 })
     
-    def _analyze_performance_findings(self):
+    def _analyze_performance_findings(self) -> None:
         """Analyze findings from performance investigation."""
         self.findings["performance"] = {
             "high_cpu_processes": [],
@@ -605,7 +830,7 @@ class AutomatedDebuggingWorkflows:
                         except (ValueError, IndexError):
                             continue
     
-    def _analyze_security_findings(self):
+    def _analyze_security_findings(self) -> None:
         """Analyze findings from security investigation."""
         self.findings["security"] = {
             "suspicious_logins": [],
@@ -630,7 +855,7 @@ class AutomatedDebuggingWorkflows:
                 else:
                     self.findings["security"]["firewall_status"] = "enabled"
     
-    def _analyze_firewall_findings(self):
+    def _analyze_firewall_findings(self) -> None:
         """Analyze findings from firewall investigation."""
         self.findings["firewall"] = {
             "ufw_status": "unknown",
@@ -646,14 +871,14 @@ class AutomatedDebuggingWorkflows:
                 else:
                     self.findings["firewall"]["ufw_status"] = "enabled"
             
-            elif "nc -zv localhost" in record["command"]:
+            elif "nc -zv" in record["command"] and any(host in record["command"] for host in ["localhost", os.getenv('TARGET_HOST', 'localhost')]):
                 port = record["command"].split()[-1]
                 if "succeeded" in record["output"] or "open" in record["output"]:
                     self.findings["firewall"]["service_accessibility"][port] = "accessible"
                 else:
                     self.findings["firewall"]["service_accessibility"][port] = "blocked"
     
-    def _analyze_general_findings(self):
+    def _analyze_general_findings(self) -> None:
         """Analyze findings from general investigation."""
         self.findings["general"] = {
             "system_load": "normal",
@@ -697,7 +922,7 @@ class AutomatedDebuggingWorkflows:
         return min(1.0, base_confidence)
 
 
-async def main():
+async def main() -> int:
     """Main function for testing debugging workflows."""
     parser = argparse.ArgumentParser(description="Automated Debugging Workflows")
     parser.add_argument("--alert-context", required=True, help="JSON string with alert context")

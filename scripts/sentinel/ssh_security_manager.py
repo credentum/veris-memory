@@ -509,7 +509,7 @@ if __name__ == '__main__':
     # Example configuration
     config = {
         'ssh_config': {
-            'host': 'localhost',
+            'host': os.getenv('TARGET_HOST', 'localhost'),
             'user': 'test',
             'key_path': '/tmp/test_key'
         },
