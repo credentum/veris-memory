@@ -696,12 +696,21 @@ async def main():
     # Initialize system with mock backends
     print("🚀 Initializing Veris Memory Testing Environment...")
     
-    from storage.mock_backends import MockVectorBackend, MockGraphBackend, MockKVBackend
-    
+    # Mock backends removed - testing tools now use real backends or skip tests
     dispatcher = QueryDispatcher()
-    dispatcher.register_backend("vector", MockVectorBackend())
-    dispatcher.register_backend("graph", MockGraphBackend())
-    dispatcher.register_backend("kv", MockKVBackend())
+    
+    print("⚠️ Mock backends removed for production safety")
+    print("💡 To run tests, ensure real backends are available via environment variables:")
+    print("   - NEO4J_PASSWORD for Neo4j")
+    print("   - QDRANT_URL for Qdrant")  
+    print("   - REDIS_URL for Redis")
+    print()
+    
+    # Testing tools now require real backend configuration
+    # This prevents accidental deployment of mock backend logic
+    print("❌ Testing tools require real backend configuration")
+    print("🔧 Configure environment variables and run production tests instead")
+    return
     
     print("✅ Testing environment ready!")
     print()

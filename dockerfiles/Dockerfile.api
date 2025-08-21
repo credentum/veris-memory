@@ -58,7 +58,6 @@ ENV PYTHONHASHSEED=random
 ENV API_SERVER_PORT=8001
 ENV LOG_LEVEL=info
 ENV ENVIRONMENT=production
-ENV USE_MOCK_BACKENDS=true
 
 # Health check for API on port 8001
 # Using curl to check the actual API health endpoint
