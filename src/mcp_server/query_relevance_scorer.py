@@ -148,7 +148,9 @@ class QueryRelevanceScorer:
         
         if technical_count >= 3:  # Multiple technical terms
             return QueryType.TECHNICAL_SPECIFIC
-        elif technical_count >= 1 or len(words) <= 3:
+        elif technical_count >= 1:
+            return QueryType.CONCEPT_LOOKUP
+        elif len(words) <= 3 and not any(word in ["help", "how", "what", "why"] for word in words):
             return QueryType.CONCEPT_LOOKUP
         else:
             return QueryType.GENERIC
@@ -158,21 +160,25 @@ class QueryRelevanceScorer:
         
         # Base strength from query length and complexity
         word_count = len(query.split())
-        base_strength = min(word_count / 10.0, 1.0)  # Longer queries are more specific
+        base_strength = min(word_count / 8.0, 0.8)  # Longer queries are more specific
         
         # Boost for technical terms
-        tech_boost = min(len(technical_terms) * 0.2, 0.6)
+        tech_boost = min(len(technical_terms) * 0.25, 0.6)
         
-        # Boost for specific patterns
+        # Boost for specific patterns (especially code patterns)
         pattern_boost = 0.0
         if any(re.search(pattern, query) for pattern in self.code_patterns):
-            pattern_boost = 0.3
+            pattern_boost = 0.4  # Higher boost for code patterns
+        
+        # Special boost for function-like patterns
+        if re.search(r'\w+\(\)', query):
+            pattern_boost = max(pattern_boost, 0.5)
         
         # Penalty for very generic terms
         generic_penalty = 0.0
         generic_words = {"help", "how", "what", "why", "best", "good", "bad"}
         if key_terms.intersection(generic_words):
-            generic_penalty = 0.2
+            generic_penalty = 0.3
         
         strength = base_strength + tech_boost + pattern_boost - generic_penalty
         return max(0.0, min(1.0, strength))
