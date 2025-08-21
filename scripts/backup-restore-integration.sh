@@ -113,33 +113,69 @@ EOF
         local neo4j_container="veris-memory-${ENVIRONMENT}-neo4j-1"
         log "Found Neo4j container: $neo4j_container"
         
-        # First, wait for Neo4j to be fully ready
-        log "Waiting for Neo4j to be fully ready..."
-        neo4j_ready=false
-        for i in {1..12}; do
-            log "Checking Neo4j readiness... (attempt $i/12)"
+        # Check container health status
+        container_health=$(docker inspect "$neo4j_container" --format='{{.State.Health.Status}}' 2>/dev/null || echo "no_health_check")
+        container_state=$(docker inspect "$neo4j_container" --format='{{.State.Status}}' 2>/dev/null || echo "unknown")
+        log "Neo4j container state: $container_state, health: $container_health"
+        
+        # Enhanced readiness detection - use docker health check when available
+        if [ "$container_health" = "healthy" ]; then
+            log "Neo4j container reports healthy status"
+            neo4j_ready=true
+        else
+            log "Neo4j container health: $container_health, performing manual readiness checks..."
+            neo4j_ready=false
             
-            # Check basic HTTP API connectivity
-            if docker exec "$neo4j_container" curl -s -f http://localhost:7474/ > /dev/null 2>&1; then
-                log "Neo4j HTTP interface is responding"
+            for i in {1..12}; do
+                log "Checking Neo4j readiness... (attempt $i/12)"
                 
-                # Check database connectivity  
-                if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
-                    -H "Content-Type: application/json" \
-                    -d '{"statements":[{"statement":"RETURN 1 as test"}]}' \
-                    http://localhost:7474/db/neo4j/tx/commit | grep -q "result"; then
-                    log "Neo4j database is accepting queries"
+                # Check container health first (if available)
+                current_health=$(docker inspect "$neo4j_container" --format='{{.State.Health.Status}}' 2>/dev/null || echo "no_health_check")
+                if [ "$current_health" = "healthy" ]; then
+                    log "Neo4j container became healthy"
                     neo4j_ready=true
                     break
-                else
-                    log "Neo4j database not ready yet..."
                 fi
-            else
-                log "Neo4j HTTP interface not ready yet..."
-            fi
-            
-            sleep 10
-        done
+                
+                # Enhanced diagnostics - check container status first
+                if ! docker exec "$neo4j_container" ps aux | grep -q neo4j 2>/dev/null; then
+                    log "Neo4j process not running in container yet..."
+                    sleep 10
+                    continue
+                fi
+                
+                # Check basic HTTP API connectivity (try both curl and wget)
+                if docker exec "$neo4j_container" curl -s -f http://localhost:7474/ > /dev/null 2>&1; then
+                    log "Neo4j HTTP interface is responding"
+                    
+                    # Check database connectivity  
+                    if docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+                        -H "Content-Type: application/json" \
+                        -d '{"statements":[{"statement":"RETURN 1 as test"}]}' \
+                        http://localhost:7474/db/neo4j/tx/commit 2>/dev/null | grep -q "result"; then
+                        log "Neo4j database is accepting queries"
+                        neo4j_ready=true
+                        break
+                    else
+                        log "Neo4j database not ready yet..."
+                    fi
+                elif docker exec "$neo4j_container" wget --no-verbose --tries=1 --spider http://localhost:7474 > /dev/null 2>&1; then
+                    log "Neo4j HTTP interface responding (via wget)"
+                    # For wget, try simpler endpoint check
+                    if docker exec "$neo4j_container" wget --no-verbose --tries=1 --spider http://localhost:7474/db/neo4j/ > /dev/null 2>&1; then
+                        log "Neo4j database endpoints accessible"
+                        neo4j_ready=true
+                        break
+                    else
+                        log "Neo4j HTTP interface ready but database not accessible yet..."
+                    fi
+                else
+                    log "Neo4j HTTP interface not ready yet..."
+                fi
+                
+                sleep 10
+            done
+        fi
         
         if [ "$neo4j_ready" = false ]; then
             log_warning "Neo4j failed to become ready within 2 minutes, skipping online backup methods"
@@ -173,8 +209,8 @@ EOF
                         log_warning "Failed to copy Neo4j HTTP API export"
                     fi
                 else
-                log_warning "Neo4j HTTP API export failed"
-            fi
+                    log_warning "Neo4j HTTP API export failed"
+                fi
             else
                 log_warning "APOC plugin not available, skipping HTTP API export method"
             fi
@@ -223,11 +259,16 @@ EOF
         if [ ! -f "$BACKUP_DIR/neo4j.dump" ] && [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ]; then
             log "Using enhanced fallback: optimized data copy with consistency checks..."
             
-            # Request another checkpoint before copying
-            docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
-                -H "Content-Type: application/json" \
-                -d '{"statements":[{"statement":"CALL db.checkpoint()"}]}' \
-                http://localhost:7474/db/neo4j/tx/commit > /dev/null 2>&1
+            # Try to request checkpoint if Neo4j API is accessible
+            if [ "$neo4j_ready" = true ]; then
+                log "Requesting checkpoint via API before fallback copy..."
+                docker exec "$neo4j_container" curl -s -u neo4j:"${NEO4J_PASSWORD}" \
+                    -H "Content-Type: application/json" \
+                    -d '{"statements":[{"statement":"CALL db.checkpoint()"}]}' \
+                    http://localhost:7474/db/neo4j/tx/commit > /dev/null 2>&1
+            else
+                log "Neo4j API not accessible, proceeding with filesystem-level sync..."
+            fi
             
             # Wait for any pending writes to complete
             sleep 3
