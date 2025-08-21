@@ -28,6 +28,32 @@ log_warning() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') [WARNING] $*"
 }
 
+# Enhanced docker cp with verification
+verified_docker_cp() {
+    local source="$1"
+    local destination="$2"
+    local description="${3:-file}"
+    
+    log "Copying $description: $source -> $destination"
+    
+    # Attempt copy operation
+    if docker cp "$source" "$destination" 2>/dev/null; then
+        # Verify the destination file/directory exists
+        if [ -e "$destination" ]; then
+            # Get file size for verification  
+            local size=$(du -sh "$destination" 2>/dev/null | cut -f1 || echo "unknown")
+            log "✅ Successfully copied and verified $description (size: $size)"
+            return 0
+        else
+            log_error "❌ Copy appeared successful but $description not found at destination"
+            return 1
+        fi
+    else
+        log_error "❌ Failed to copy $description"
+        return 1
+    fi
+}
+
 echo -e "${BLUE}🔧 Veris Memory Backup/Restore Integration v2.0${NC}"
 echo -e "${BLUE}===============================================${NC}"
 log "Action: $ACTION, Environment: $ENVIRONMENT"
@@ -44,7 +70,32 @@ create_backup() {
     
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     BACKUP_DIR="${BACKUP_ROOT}/${ENVIRONMENT}/${TIMESTAMP}"
-    mkdir -p "$BACKUP_DIR"
+    
+    # Enhanced backup directory creation with comprehensive error handling
+    log "Creating backup directory: $BACKUP_DIR"
+    if ! mkdir -p "$BACKUP_DIR" 2>/dev/null; then
+        log_error "❌ Failed to create backup directory: $BACKUP_DIR"
+        log_error "Check permissions on parent directory: ${BACKUP_ROOT}"
+        return 1
+    fi
+    
+    # Verify directory is writable
+    if ! touch "$BACKUP_DIR/.write_test" 2>/dev/null; then
+        log_error "❌ Backup directory is not writable: $BACKUP_DIR"
+        log_error "Check filesystem permissions and disk space"
+        return 1
+    fi
+    rm -f "$BACKUP_DIR/.write_test"
+    
+    # Verify sufficient disk space (at least 1GB free)
+    available_space=$(df "$BACKUP_DIR" | awk 'NR==2 {print $4}')
+    if [ "$available_space" -lt 1048576 ]; then  # 1GB in KB
+        log_error "❌ Insufficient disk space for backup: ${available_space}KB available"
+        log_error "Require at least 1GB free space in backup location"
+        return 1
+    fi
+    
+    log "✅ Backup directory ready: $BACKUP_DIR (${available_space}KB available)"
     
     # Create metadata file
     cat > "$BACKUP_DIR/metadata.json" << EOF
@@ -77,8 +128,8 @@ EOF
                     curl -s "http://localhost:6333/collections/project_context/snapshots/${SNAPSHOT_NAME}" \
                     -o "/tmp/${SNAPSHOT_NAME}" 2>/dev/null; then
                     
-                    if docker cp "$qdrant_container:/tmp/${SNAPSHOT_NAME}" \
-                        "$BACKUP_DIR/qdrant.snapshot" 2>/dev/null; then
+                    if verified_docker_cp "$qdrant_container:/tmp/${SNAPSHOT_NAME}" \
+                        "$BACKUP_DIR/qdrant.snapshot" "Qdrant snapshot"; then
                         log "✅ Qdrant API backup successful"
                     else
                         log_warning "Failed to copy Qdrant snapshot, trying fallback"
@@ -96,8 +147,8 @@ EOF
         # Fallback: Direct volume copy
         if [ ! -f "$BACKUP_DIR/qdrant.snapshot" ]; then
             log "Using fallback: volume copy..."
-            if docker cp "$qdrant_container:/qdrant/storage" \
-                "$BACKUP_DIR/qdrant-storage" 2>/dev/null; then
+            if verified_docker_cp "$qdrant_container:/qdrant/storage" \
+                "$BACKUP_DIR/qdrant-storage" "Qdrant storage directory"; then
                 log "✅ Qdrant fallback backup successful"
             else
                 log_error "❌ Qdrant backup failed completely"
@@ -214,8 +265,8 @@ EOF
                     # Wait a moment for export to complete
                     sleep 2
                     
-                    if docker cp "$neo4j_container:/tmp/neo4j-export.cypher" \
-                        "$BACKUP_DIR/neo4j-export.cypher" 2>/dev/null; then
+                    if verified_docker_cp "$neo4j_container:/tmp/neo4j-export.cypher" \
+                        "$BACKUP_DIR/neo4j-export.cypher" "Neo4j APOC export"; then
                         log "✅ Neo4j HTTP API backup successful (APOC export)"
                     else
                         log_warning "Failed to copy Neo4j HTTP API export"
@@ -261,8 +312,8 @@ EOF
             
             # Copy with enhanced options for better consistency
             if docker exec "$neo4j_container" sh -c 'sync && sleep 1' 2>/dev/null && \
-               docker cp "$neo4j_container:/var/lib/neo4j/data" \
-                "$BACKUP_DIR/neo4j-data" 2>/dev/null; then
+               verified_docker_cp "$neo4j_container:/var/lib/neo4j/data" \
+                "$BACKUP_DIR/neo4j-data" "Neo4j data directory"; then
                 
                 # Verify backup contains expected files
                 if [ -f "$BACKUP_DIR/neo4j-data/databases/neo4j/neostore" ]; then
@@ -321,8 +372,8 @@ EOF
             done
             
             # Copy the RDB file
-            if docker cp "$redis_container:/data/dump.rdb" \
-                "$BACKUP_DIR/redis.rdb" 2>/dev/null; then
+            if verified_docker_cp "$redis_container:/data/dump.rdb" \
+                "$BACKUP_DIR/redis.rdb" "Redis RDB file"; then
                 log "✅ Redis backup successful"
             else
                 log_error "❌ Failed to copy Redis dump file"
@@ -369,6 +420,19 @@ EOF
     else
         log_error "❌ Backup failed: No components were backed up successfully"
         echo -e "${RED}❌ Backup failed: No components were backed up successfully${NC}"
+        
+        # Enhanced failure diagnostics
+        log_error "📊 Backup failure analysis:"
+        log_error "  → Expected files not found:"
+        [ ! -f "$BACKUP_DIR/qdrant.snapshot" ] && [ ! -d "$BACKUP_DIR/qdrant-storage" ] && log_error "    • Qdrant backup missing"
+        [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ] && [ ! -f "$BACKUP_DIR/neo4j.dump" ] && [ ! -d "$BACKUP_DIR/neo4j-data" ] && log_error "    • Neo4j backup missing"
+        [ ! -f "$BACKUP_DIR/redis.rdb" ] && log_error "    • Redis backup missing"
+        
+        log_error "  → Troubleshooting steps:"
+        log_error "    1. Check backup directory permissions: $BACKUP_DIR"
+        log_error "    2. Verify sufficient disk space: $(df -h "$BACKUP_DIR" 2>/dev/null | tail -1 || echo 'Unable to check')"
+        log_error "    3. Check container accessibility with: docker ps"
+        log_error "    4. Review logs above for specific docker cp failures"
     fi
     
     # Cleanup old backups (keep last 7)
