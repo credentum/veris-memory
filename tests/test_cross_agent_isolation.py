@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from core.agent_namespace import AgentNamespace
+from src.core.agent_namespace import AgentNamespace
 
 
 class TestCrossAgentDataIsolation:

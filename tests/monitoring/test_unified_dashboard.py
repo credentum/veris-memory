@@ -17,7 +17,7 @@ import os
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from monitoring.dashboard import (
+from src.monitoring.dashboard import (
     UnifiedDashboard, 
     SystemMetrics, 
     ServiceMetrics, 

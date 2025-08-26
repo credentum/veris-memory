@@ -19,7 +19,7 @@ class TestMonitoringModuleFinal:
     def setup_clean_environment(self):
         """Set up clean test environment."""
         # Clear global monitor
-        import core.monitoring
+        import src.core.monitoring
 
         core.monitoring._monitor = None
 
@@ -40,7 +40,7 @@ class TestMonitoringModuleFinal:
     def test_mcpmetrics_prometheus_unavailable(self):
         """Test MCPMetrics when Prometheus is not available."""
         with patch("core.monitoring.PROMETHEUS_AVAILABLE", False):
-            from core.monitoring import MCPMetrics
+            from src.core.monitoring import MCPMetrics
 
             metrics = MCPMetrics()
             assert metrics.enabled is False
@@ -82,7 +82,7 @@ class TestMonitoringModuleFinal:
                     with patch("core.monitoring.Gauge", return_value=mock_gauge):
                         with patch("core.monitoring.Info", return_value=mock_info):
                             with patch("core.monitoring.generate_latest", mock_generate):
-                                from core.monitoring import MCPMetrics
+                                from src.core.monitoring import MCPMetrics
 
                                 metrics = MCPMetrics()
                                 assert metrics.enabled is True
@@ -116,7 +116,7 @@ class TestMonitoringModuleFinal:
     def test_mcptracing_opentelemetry_unavailable(self):
         """Test MCPTracing when OpenTelemetry is not available."""
         with patch("core.monitoring.OPENTELEMETRY_AVAILABLE", False):
-            from core.monitoring import MCPTracing
+            from src.core.monitoring import MCPTracing
 
             tracing = MCPTracing()
             assert tracing.enabled is False
@@ -132,7 +132,7 @@ class TestMonitoringModuleFinal:
     async def test_mcptracing_trace_operation_disabled(self):
         """Test trace_operation when tracing is disabled."""
         with patch("core.monitoring.OPENTELEMETRY_AVAILABLE", False):
-            from core.monitoring import MCPTracing
+            from src.core.monitoring import MCPTracing
 
             tracing = MCPTracing()
             assert tracing.enabled is False
@@ -143,7 +143,7 @@ class TestMonitoringModuleFinal:
     def test_mcptracing_custom_service_name(self):
         """Test MCPTracing with custom service name."""
         with patch("core.monitoring.OPENTELEMETRY_AVAILABLE", False):
-            from core.monitoring import MCPTracing
+            from src.core.monitoring import MCPTracing
 
             tracing = MCPTracing("custom-service")
             # When disabled, service_name may not be set
@@ -153,7 +153,7 @@ class TestMonitoringModuleFinal:
     def test_mcptracing_cleanup_edge_cases(self):
         """Test MCPTracing cleanup with various edge cases."""
         with patch("core.monitoring.OPENTELEMETRY_AVAILABLE", False):
-            from core.monitoring import MCPTracing
+            from src.core.monitoring import MCPTracing
 
             tracing = MCPTracing()
 
@@ -194,7 +194,7 @@ class TestMonitoringModuleFinal:
 
         with patch("core.monitoring.MCPMetrics", return_value=mock_metrics):
             with patch("core.monitoring.MCPTracing", return_value=mock_tracing):
-                from core.monitoring import MCPMonitor
+                from src.core.monitoring import MCPMonitor
 
                 monitor = MCPMonitor()
 
@@ -216,7 +216,7 @@ class TestMonitoringModuleFinal:
 
         with patch("core.monitoring.MCPMetrics", return_value=mock_metrics):
             with patch("core.monitoring.MCPTracing", return_value=mock_tracing):
-                from core.monitoring import MCPMonitor
+                from src.core.monitoring import MCPMonitor
 
                 monitor = MCPMonitor()
 
@@ -230,7 +230,7 @@ class TestMonitoringModuleFinal:
 
         with patch("core.monitoring.MCPMetrics", return_value=mock_metrics):
             with patch("core.monitoring.MCPTracing"):
-                from core.monitoring import MCPMonitor
+                from src.core.monitoring import MCPMonitor
 
                 monitor = MCPMonitor()
 
@@ -265,7 +265,7 @@ class TestMonitoringModuleFinal:
 
         with patch("core.monitoring.MCPMetrics", return_value=mock_metrics):
             with patch("core.monitoring.MCPTracing"):
-                from core.monitoring import MCPMonitor
+                from src.core.monitoring import MCPMonitor
 
                 monitor = MCPMonitor()
 
@@ -296,7 +296,7 @@ class TestMonitoringModuleFinal:
 
         with patch("core.monitoring.MCPMetrics", return_value=mock_metrics):
             with patch("core.monitoring.MCPTracing", return_value=mock_tracing):
-                from core.monitoring import MCPMonitor
+                from src.core.monitoring import MCPMonitor
 
                 monitor = MCPMonitor()
 
@@ -325,7 +325,7 @@ class TestMonitoringModuleFinal:
 
         with patch("core.monitoring.MCPMetrics", return_value=mock_metrics):
             with patch("core.monitoring.MCPTracing", return_value=mock_tracing):
-                from core.monitoring import MCPMonitor
+                from src.core.monitoring import MCPMonitor
 
                 monitor = MCPMonitor()
                 summary = monitor.get_health_summary()
@@ -340,7 +340,7 @@ class TestMonitoringModuleFinal:
 
         with patch("core.monitoring.MCPMetrics", return_value=mock_metrics):
             with patch("core.monitoring.MCPTracing"):
-                from core.monitoring import MCPMonitor
+                from src.core.monitoring import MCPMonitor
 
                 monitor = MCPMonitor()
                 result = monitor.get_metrics_endpoint()
@@ -357,7 +357,7 @@ class TestMonitoringModuleFinal:
 
         with patch("core.monitoring.MCPMetrics"):
             with patch("core.monitoring.MCPTracing", return_value=mock_tracing):
-                from core.monitoring import MCPMonitor
+                from src.core.monitoring import MCPMonitor
 
                 monitor = MCPMonitor()
                 monitor.cleanup()
@@ -372,7 +372,7 @@ class TestMonitoringModuleFinal:
 
         with patch("core.monitoring.MCPMetrics"):
             with patch("core.monitoring.MCPTracing", return_value=mock_tracing):
-                from core.monitoring import MCPMonitor
+                from src.core.monitoring import MCPMonitor
 
                 monitor = MCPMonitor()
                 monitor.cleanup()
@@ -388,7 +388,7 @@ class TestMonitoringModuleFinal:
 
         with patch("core.monitoring.MCPMetrics"):
             with patch("core.monitoring.MCPTracing", return_value=mock_tracing):
-                from core.monitoring import MCPMonitor
+                from src.core.monitoring import MCPMonitor
 
                 monitor = MCPMonitor()
                 # Should not raise exception
@@ -404,8 +404,8 @@ class TestMonitoringModuleFinal:
         with patch("core.monitoring.MCPMetrics"):
             with patch("core.monitoring.MCPTracing"):
                 # Clear global monitor first
-                import core.monitoring
-                from core.monitoring import (
+                import src.core.monitoring
+                from src.core.monitoring import (
                     get_monitor,
                     monitor_embedding,
                     monitor_mcp_request,
@@ -440,7 +440,7 @@ class TestMonitoringModuleFinal:
 
         with patch("core.monitoring.MCPMetrics", return_value=mock_metrics):
             with patch("core.monitoring.MCPTracing", return_value=mock_tracing):
-                from core.monitoring import MCPMonitor
+                from src.core.monitoring import MCPMonitor
 
                 monitor = MCPMonitor()
 
@@ -456,7 +456,7 @@ class TestMonitoringModuleFinal:
 
     def test_module_level_constants(self):
         """Test module-level constants and flags."""
-        from core.monitoring import OPENTELEMETRY_AVAILABLE, PROMETHEUS_AVAILABLE
+        from src.core.monitoring import OPENTELEMETRY_AVAILABLE, PROMETHEUS_AVAILABLE
 
         # These should be boolean values
         assert isinstance(PROMETHEUS_AVAILABLE, bool)
@@ -472,21 +472,21 @@ class TestMonitoringModuleFinal:
         with patch("core.monitoring.logger") as mock_logger:
             # Test warning when prometheus unavailable
             with patch("core.monitoring.PROMETHEUS_AVAILABLE", False):
-                from core.monitoring import MCPMetrics
+                from src.core.monitoring import MCPMetrics
 
                 metrics = MCPMetrics()
                 # Should have logged warning
 
             # Test warning when opentelemetry unavailable
             with patch("core.monitoring.OPENTELEMETRY_AVAILABLE", False):
-                from core.monitoring import MCPTracing
+                from src.core.monitoring import MCPTracing
 
                 tracing = MCPTracing()
                 # Should have logged warning
 
     def test_edge_case_error_handling(self):
         """Test various edge cases and error handling scenarios."""
-        from core.monitoring import MCPMonitor
+        from src.core.monitoring import MCPMonitor
 
         # Test with all monitoring disabled
         mock_metrics = Mock()
@@ -509,8 +509,8 @@ class TestMonitoringModuleFinal:
 
     def test_global_monitor_singleton_persistence(self):
         """Test that global monitor singleton persists across calls."""
-        import core.monitoring
-        from core.monitoring import get_monitor
+        import src.core.monitoring
+        from src.core.monitoring import get_monitor
 
         # Clear global monitor
         core.monitoring._monitor = None

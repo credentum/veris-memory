@@ -25,7 +25,7 @@ with patch.dict("sys.modules", {"duckdb": Mock(), "storage.kv_store": Mock()}):
     mock_kv_store.CacheEntry = mock_cache_entry
 
     with patch.dict("sys.modules", {"storage.kv_store": mock_kv_store}):
-        from storage.context_kv import ContextKV
+        from src.storage.context_kv import ContextKV
 
 
 class MockMetricEvent:

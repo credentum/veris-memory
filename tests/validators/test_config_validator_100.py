@@ -122,7 +122,7 @@ class TestMainEntryPoint:
     def test_module_main_execution(self):
         """Test that the module can be executed as main."""
         # Save the original __name__
-        import validators.config_validator as module
+        import src.validators.config_validator as module
 
         original_name = module.__name__
 

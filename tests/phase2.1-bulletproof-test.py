@@ -16,8 +16,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
 
 try:
-    from storage.reranker_bulletproof import BulletproofReranker, extract_chunk_text, clamp_for_rerank
-    from storage.query_expansion import MultiQueryExpander, FieldBoostProcessor
+    from src.storage.reranker_bulletproof import BulletproofReranker, extract_chunk_text, clamp_for_rerank
+    from src.storage.query_expansion import MultiQueryExpander, FieldBoostProcessor
     BULLETPROOF_AVAILABLE = True
     print("✅ Bulletproof components loaded")
 except ImportError as e:

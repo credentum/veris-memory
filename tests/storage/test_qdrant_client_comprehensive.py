@@ -18,7 +18,7 @@ import pytest
 import yaml
 from qdrant_client.models import Distance, VectorParams
 
-from storage.qdrant_client import VectorDBInitializer
+from src.storage.qdrant_client import VectorDBInitializer
 
 
 class MockQdrantClient:
@@ -456,7 +456,7 @@ class TestQdrantCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, [])
@@ -477,7 +477,7 @@ class TestQdrantCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, [])
@@ -497,7 +497,7 @@ class TestQdrantCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, [])
@@ -519,7 +519,7 @@ class TestQdrantCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["--force"])
@@ -539,7 +539,7 @@ class TestQdrantCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["--skip-test"])
@@ -560,7 +560,7 @@ class TestQdrantCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, [])
@@ -582,7 +582,7 @@ class TestQdrantCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, [])

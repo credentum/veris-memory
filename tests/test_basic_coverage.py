@@ -15,7 +15,7 @@ class TestBasicImports:
     def test_import_config(self):
         """Test importing config module."""
         try:
-            from core.config import Config
+            from src.core.config import Config
 
             config = Config()
             assert config is not None
@@ -34,7 +34,7 @@ class TestBasicImports:
     def test_import_storage(self):
         """Test importing storage modules."""
         try:
-            from storage.kv_store import ContextKV
+            from src.storage.kv_store import ContextKV
 
             kv = ContextKV()
             assert kv is not None
@@ -44,7 +44,7 @@ class TestBasicImports:
     def test_import_validators(self):
         """Test importing validator modules."""
         try:
-            from validators.kv_validators import validate_redis_key
+            from src.validators.kv_validators import validate_redis_key
 
             assert callable(validate_redis_key)
         except ImportError:
@@ -57,7 +57,7 @@ class TestBasicFunctionality:
     def test_kv_store_basic(self):
         """Test basic KV store functionality."""
         try:
-            from storage.kv_store import ContextKV
+            from src.storage.kv_store import ContextKV
 
             kv = ContextKV()
             assert hasattr(kv, "redis")
@@ -72,7 +72,7 @@ class TestBasicFunctionality:
     def test_config_basic(self):
         """Test basic config functionality."""
         try:
-            from core.config import Config
+            from src.core.config import Config
 
             config = Config()
             # Test that config has basic attributes
@@ -84,7 +84,7 @@ class TestBasicFunctionality:
     def test_utils_basic(self):
         """Test basic utils functionality."""
         try:
-            from core.utils import sanitize_error_message
+            from src.core.utils import sanitize_error_message
 
             result = sanitize_error_message("test error", [])
             assert isinstance(result, str)
@@ -95,7 +95,7 @@ class TestBasicFunctionality:
     def test_validators_basic(self):
         """Test basic validator functionality."""
         try:
-            from validators.kv_validators import validate_redis_key
+            from src.validators.kv_validators import validate_redis_key
 
             result = validate_redis_key("test_data_key")  # renamed from 'test_key'
             assert isinstance(result, bool)
@@ -110,7 +110,7 @@ class TestErrorHandling:
     def test_config_error_handling(self):
         """Test config error handling."""
         try:
-            from core.config import Config
+            from src.core.config import Config
 
             # Test that config can be created without errors
             config = Config()
@@ -123,7 +123,7 @@ class TestErrorHandling:
     def test_kv_store_error_handling(self):
         """Test KV store error handling."""
         try:
-            from storage.kv_store import ContextKV
+            from src.storage.kv_store import ContextKV
 
             kv = ContextKV()
 
@@ -142,7 +142,7 @@ class TestErrorHandling:
     def test_utils_error_handling(self):
         """Test utils error handling."""
         try:
-            from core.utils import sanitize_error_message
+            from src.core.utils import sanitize_error_message
 
             # Test with edge cases
             result1 = sanitize_error_message("", [])
@@ -162,7 +162,7 @@ class TestMockIntegrations:
     def test_kv_store_with_mock_redis(self, mock_redis):
         """Test KV store with mocked Redis."""
         try:
-            from storage.kv_store import ContextKV
+            from src.storage.kv_store import ContextKV
 
             # Mock Redis connection
             mock_redis_instance = AsyncMock()

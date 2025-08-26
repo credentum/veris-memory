@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import yaml
 
-from storage.kv_store import CacheEntry, ContextKV, DuckDBAnalytics, MetricEvent, RedisConnector
+from src.storage.kv_store import CacheEntry, ContextKV, DuckDBAnalytics, MetricEvent, RedisConnector
 
 
 class TestMetricEvent:

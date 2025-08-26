@@ -28,7 +28,7 @@ from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from monitoring.veris_sentinel import (
+from src.monitoring.veris_sentinel import (
     CheckResult, SentinelConfig, VerisHealthProbe, 
     GoldenFactRecall, ParaphraseRobustness, MetricsWiring, SecurityNegatives,
     BackupRestore, ConfigParity, CapacitySmoke, 

@@ -5,7 +5,7 @@ Tests for kv_validators module
 
 from datetime import datetime, timedelta
 
-from validators.kv_validators import (  # noqa: E402
+from src.validators.kv_validators import (  # noqa: E402
     sanitize_metric_name,
     validate_cache_entry,
     validate_metric_event,

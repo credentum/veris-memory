@@ -17,14 +17,14 @@ from unittest.mock import patch
 
 import pytest
 
-from core.config_error import (
+from src.core.config_error import (
     ConfigFileNotFoundError,
     ConfigParseError,
     ConfigurationError,
     ConfigValidationError,
 )
-from core.test_config import get_minimal_config, get_test_config, merge_configs
-from core.utils import get_environment, get_secure_connection_config, sanitize_error_message
+from src.core.test_config import get_minimal_config, get_test_config, merge_configs
+from src.core.utils import get_environment, get_secure_connection_config, sanitize_error_message
 
 
 class TestSanitizeErrorMessage:

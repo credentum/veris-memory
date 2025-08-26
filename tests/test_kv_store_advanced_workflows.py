@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import yaml
 
-from storage.kv_store import ContextKV, DuckDBAnalytics, MetricEvent, RedisConnector
+from src.storage.kv_store import ContextKV, DuckDBAnalytics, MetricEvent, RedisConnector
 
 
 class TestRedisConnectorAdvancedWorkflows:

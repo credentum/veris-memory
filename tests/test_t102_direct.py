@@ -7,7 +7,7 @@ import sys
 import time
 sys.path.insert(0, 'src')
 
-from storage.reranker_bulletproof import BulletproofReranker
+from src.storage.reranker_bulletproof import BulletproofReranker
 
 def test_t102_direct():
     """Test T-102 fix with proper candidate format"""

@@ -23,7 +23,7 @@ import yaml
 from neo4j.exceptions import AuthError, ClientError, DatabaseError, ServiceUnavailable
 
 # Import handled by conftest.py
-from storage.neo4j_client import Neo4jInitializer  # noqa: E402
+from src.storage.neo4j_client import Neo4jInitializer  # noqa: E402
 
 
 class TestNeo4jBusinessLogic:
@@ -645,7 +645,7 @@ class TestNeo4jBusinessLogic:
     @patch("sys.exit")
     def test_main_function_successful_execution(self, mock_exit, mock_echo):
         """Test main function successful execution path."""
-        from storage.neo4j_client import main
+        from src.storage.neo4j_client import main
 
         with patch("storage.neo4j_client.Neo4jInitializer") as mock_initializer_class:
             mock_initializer = AsyncMock()
@@ -687,7 +687,7 @@ class TestNeo4jBusinessLogic:
     @patch("sys.exit")
     def test_main_function_connection_failure(self, mock_exit, mock_echo):
         """Test main function with connection failure."""
-        from storage.neo4j_client import main
+        from src.storage.neo4j_client import main
 
         with patch("storage.neo4j_client.Neo4jInitializer") as mock_initializer_class:
             mock_initializer = AsyncMock()
@@ -718,7 +718,7 @@ class TestNeo4jBusinessLogic:
     @patch("sys.exit")
     def test_main_function_constraint_failure(self, mock_exit, mock_echo):
         """Test main function with constraint creation failure."""
-        from storage.neo4j_client import main
+        from src.storage.neo4j_client import main
 
         with patch("storage.neo4j_client.Neo4jInitializer") as mock_initializer_class:
             mock_initializer = AsyncMock()
@@ -750,7 +750,7 @@ class TestNeo4jBusinessLogic:
     @patch("sys.exit")
     def test_main_function_skip_flags(self, mock_exit, mock_echo):
         """Test main function with skip flags."""
-        from storage.neo4j_client import main
+        from src.storage.neo4j_client import main
 
         with patch("storage.neo4j_client.Neo4jInitializer") as mock_initializer_class:
             mock_initializer = AsyncMock()

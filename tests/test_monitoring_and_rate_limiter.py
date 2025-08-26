@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import pytest
 import yaml
 
-from core.rate_limiter import TokenBucket
+from src.core.rate_limiter import TokenBucket
 
 
 class TestTokenBucket:

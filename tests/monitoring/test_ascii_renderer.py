@@ -14,7 +14,7 @@ import sys
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from monitoring.ascii_renderer import ASCIIRenderer
+from src.monitoring.ascii_renderer import ASCIIRenderer
 
 
 class TestASCIIRenderer:

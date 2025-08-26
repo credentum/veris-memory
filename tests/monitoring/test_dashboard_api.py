@@ -19,7 +19,7 @@ from fastapi.websockets import WebSocketDisconnect
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from monitoring.dashboard_api import DashboardAPI, setup_dashboard_api
+from src.monitoring.dashboard_api import DashboardAPI, setup_dashboard_api
 
 
 class TestDashboardAPI:

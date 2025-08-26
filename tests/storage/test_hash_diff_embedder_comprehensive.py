@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, Mock, mock_open, patch
 import pytest
 import yaml
 
-from storage.hash_diff_embedder import DocumentHash, EmbeddingTask, HashDiffEmbedder  # noqa: E402
+from src.storage.hash_diff_embedder import DocumentHash, EmbeddingTask, HashDiffEmbedder  # noqa: E402
 
 
 class TestDocumentHash:
@@ -689,7 +689,7 @@ class TestHashDiffEmbedder:
             mock_embedder.return_value = mock_embedder_instance
 
             with patch("os.path.isfile", return_value=True):
-                from storage.hash_diff_embedder import main
+                from src.storage.hash_diff_embedder import main
 
                 await main()
 
@@ -719,7 +719,7 @@ async def test_main_directory(mock_click, mock_argparse, mock_embedder):
 
     with patch("os.path.isfile", return_value=False):
         with patch("os.path.isdir", return_value=True):
-            from storage.hash_diff_embedder import main
+            from src.storage.hash_diff_embedder import main
 
             await main()
 
@@ -745,7 +745,7 @@ async def test_main_connection_failure(mock_click, mock_argparse, mock_embedder)
     mock_embedder_instance.connect.return_value = False
     mock_embedder.return_value = mock_embedder_instance
 
-    from storage.hash_diff_embedder import main
+    from src.storage.hash_diff_embedder import main
 
     await main()
 

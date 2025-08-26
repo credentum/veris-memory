@@ -18,7 +18,7 @@ from unittest.mock import Mock, mock_open, patch
 import pytest
 import yaml
 
-from storage.kv_store import CacheEntry, ContextKV, DuckDBAnalytics, MetricEvent, RedisConnector
+from src.storage.kv_store import CacheEntry, ContextKV, DuckDBAnalytics, MetricEvent, RedisConnector
 
 
 class TestMetricEvent:
@@ -950,7 +950,7 @@ class TestKVStoreCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.kv_store import test_connection
+        from src.storage.kv_store import test_connection
 
         runner = CliRunner()
         result = runner.invoke(test_connection, ["--redis-pass", "password", "--verbose"])
@@ -970,7 +970,7 @@ class TestKVStoreCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.kv_store import record_metric
+        from src.storage.kv_store import record_metric
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1005,7 +1005,7 @@ class TestKVStoreCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.kv_store import activity_summary
+        from src.storage.kv_store import activity_summary
 
         runner = CliRunner()
         result = runner.invoke(activity_summary, ["--hours", "12"])

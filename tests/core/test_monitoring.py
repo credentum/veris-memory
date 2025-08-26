@@ -109,7 +109,7 @@ class TestMCPTracing:
     def test_init_opentelemetry_unavailable(self):
         """Test MCPTracing when OpenTelemetry is not available (real scenario)."""
         with patch("core.monitoring.OPENTELEMETRY_AVAILABLE", False):
-            from core.monitoring import MCPTracing
+            from src.core.monitoring import MCPTracing
 
             tracing = MCPTracing()
             assert tracing.enabled is False
@@ -123,7 +123,7 @@ class TestMCPTracing:
     async def test_trace_operation_disabled(self):
         """Test trace operation when tracing is disabled."""
         with patch("core.monitoring.OPENTELEMETRY_AVAILABLE", False):
-            from core.monitoring import MCPTracing
+            from src.core.monitoring import MCPTracing
 
             tracing = MCPTracing()
 
@@ -162,7 +162,7 @@ class TestGlobalFunctions:
 def test_monitor_mcp_request_decorator():
     """Test monitor_mcp_request decorator."""
     # Test decorator creation without actually calling it
-    from core.monitoring import monitor_mcp_request
+    from src.core.monitoring import monitor_mcp_request
 
     # Just test that the decorator can be created
     decorator = monitor_mcp_request("test_endpoint")
@@ -171,7 +171,7 @@ def test_monitor_mcp_request_decorator():
 
 def test_monitor_storage_decorator():
     """Test monitor_storage decorator."""
-    from core.monitoring import monitor_storage
+    from src.core.monitoring import monitor_storage
 
     # Just test that the decorator can be created
     decorator = monitor_storage("redis", "set")
@@ -180,7 +180,7 @@ def test_monitor_storage_decorator():
 
 def test_monitor_embedding_decorator():
     """Test monitor_embedding decorator."""
-    from core.monitoring import monitor_embedding
+    from src.core.monitoring import monitor_embedding
 
     # Just test that the decorator can be created
     decorator = monitor_embedding("openai")

@@ -20,8 +20,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src'))
 
 try:
-    from monitoring.sentinel.alert_manager import AlertManager, AlertDeduplicator
-    from monitoring.sentinel.models import CheckResult
+    from src.monitoring.sentinel.alert_manager import AlertManager, AlertDeduplicator
+    from src.monitoring.sentinel.models import CheckResult
     ALERT_MANAGER_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Could not import alert manager: {e}")

@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import yaml
 
-from storage.qdrant_client import VectorDBInitializer  # noqa: E402
+from src.storage.qdrant_client import VectorDBInitializer  # noqa: E402
 
 
 class TestVectorDBInitializer:
@@ -491,7 +491,7 @@ class TestVectorDBInitializerConfigHandling:
 @patch("storage.qdrant_client.VectorDBInitializer")
 def test_main_function(mock_initializer):
     """Test the main function."""
-    from storage.qdrant_client import main
+    from src.storage.qdrant_client import main
 
     mock_instance = AsyncMock()
     mock_instance.initialize.return_value = True
@@ -507,7 +507,7 @@ def test_main_function(mock_initializer):
 @patch("storage.qdrant_client.VectorDBInitializer")
 def test_main_function_failure(mock_initializer):
     """Test the main function with initialization failure."""
-    from storage.qdrant_client import main
+    from src.storage.qdrant_client import main
 
     mock_instance = AsyncMock()
     mock_instance.initialize.return_value = False
@@ -522,7 +522,7 @@ def test_main_function_failure(mock_initializer):
 @patch("storage.qdrant_client.VectorDBInitializer")
 def test_main_function_with_exception(mock_initializer):
     """Test the main function with exception during initialization."""
-    from storage.qdrant_client import main
+    from src.storage.qdrant_client import main
 
     mock_initializer.side_effect = Exception("Initialization error")
 

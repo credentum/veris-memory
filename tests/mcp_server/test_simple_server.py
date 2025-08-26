@@ -31,7 +31,7 @@ class TestSimpleMCPServer:
     async def test_list_resources(self):
         """Test resource listing."""
         # Import the functions directly since server handlers are internal
-        from mcp_server.simple_server import list_resources
+        from src.mcp_server.simple_server import list_resources
 
         resources = await list_resources()
 
@@ -43,7 +43,7 @@ class TestSimpleMCPServer:
     @pytest.mark.asyncio
     async def test_read_health_resource(self):
         """Test reading health resource."""
-        from mcp_server.simple_server import read_resource
+        from src.mcp_server.simple_server import read_resource
 
         health_data = await read_resource("context://health")
         health_json = json.loads(health_data)
@@ -56,7 +56,7 @@ class TestSimpleMCPServer:
     @pytest.mark.asyncio
     async def test_read_storage_resource(self):
         """Test reading storage resource."""
-        from mcp_server.simple_server import read_resource
+        from src.mcp_server.simple_server import read_resource
 
         storage_data = await read_resource("context://storage")
         storage_json = json.loads(storage_data)
@@ -68,7 +68,7 @@ class TestSimpleMCPServer:
     @pytest.mark.asyncio
     async def test_list_tools(self):
         """Test tool listing."""
-        from mcp_server.simple_server import list_tools
+        from src.mcp_server.simple_server import list_tools
 
         tools = await list_tools()
 

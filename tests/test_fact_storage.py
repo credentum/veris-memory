@@ -16,9 +16,9 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from storage.fact_store import FactStore, Fact
-from core.intent_classifier import IntentClassifier, IntentType, IntentResult
-from core.fact_extractor import FactExtractor, ExtractedFact
+from src.storage.fact_store import FactStore, Fact
+from src.core.intent_classifier import IntentClassifier, IntentType, IntentResult
+from src.core.fact_extractor import FactExtractor, ExtractedFact
 from middleware.scope_validator import ScopeValidator, ScopeContext, ScopeValidationError
 
 

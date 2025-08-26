@@ -16,10 +16,10 @@ from pathlib import Path
 
 import pytest
 
-from core.agent_namespace import AgentSession
-from storage.duckdb_analytics import AnalyticsResult, TimeSeriesData
-from storage.hash_diff_embedder import DocumentHash, EmbeddingTask
-from storage.types import (
+from src.core.agent_namespace import AgentSession
+from src.storage.duckdb_analytics import AnalyticsResult, TimeSeriesData
+from src.storage.hash_diff_embedder import DocumentHash, EmbeddingTask
+from src.storage.types import (
     JSON,
     CollectionName,
     ContextData,

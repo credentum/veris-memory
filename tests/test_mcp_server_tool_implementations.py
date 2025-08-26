@@ -43,9 +43,9 @@ except ImportError:
 
 # Import dependencies for mocking
 try:
-    from storage.kv_store import ContextKV
-    from storage.neo4j_client import Neo4jInitializer
-    from storage.qdrant_client import VectorDBInitializer
+    from src.storage.kv_store import ContextKV
+    from src.storage.neo4j_client import Neo4jInitializer
+    from src.storage.qdrant_client import VectorDBInitializer
 except ImportError:
     pass
 

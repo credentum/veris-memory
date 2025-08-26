@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
 
 # Handle optional dependencies gracefully
 try:
-    from storage.reranker_bulletproof import (
+    from src.storage.reranker_bulletproof import (
         extract_chunk_text, 
         clamp_for_rerank, 
         BulletproofReranker, 

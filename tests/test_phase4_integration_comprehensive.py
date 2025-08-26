@@ -16,7 +16,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 
 # Import all Phase 4 components
-from monitoring.fact_telemetry import (
+from src.monitoring.fact_telemetry import (
     FactTelemetry, FactOperation, TelemetryLevel, telemetry_context,
     get_telemetry, initialize_telemetry
 )
@@ -24,17 +24,17 @@ from security.fact_privacy import (
     PrivacyEnforcer, DataClassifier, PIIDetector, PrivacyAwareFact,
     DataClassification, RedactionLevel
 )
-from core.feature_gates import (
+from src.core.feature_gates import (
     FeatureGateManager, FeatureState, is_feature_enabled, feature_gate
 )
-from monitoring.fact_monitoring import (
+from src.monitoring.fact_monitoring import (
     FactMonitoringSystem, record_operation_metric, record_custom_metric,
     get_monitoring_system, initialize_monitoring
 )
 
 # Import storage components for integration testing
-from storage.fact_store import FactStore
-from storage.graph_fact_store import GraphFactStore
+from src.storage.fact_store import FactStore
+from src.storage.graph_fact_store import GraphFactStore
 
 
 class TestPhase4EndToEndIntegration:
