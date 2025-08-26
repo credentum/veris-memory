@@ -23,6 +23,7 @@ class SearchMode(str, Enum):
     VECTOR = "vector"
     GRAPH = "graph"
     KV = "kv"
+    TEXT = "text"  # BM25 text search
     HYBRID = "hybrid"
     AUTO = "auto"
 
@@ -48,8 +49,9 @@ class QueryDispatcher:
         self.backends: Dict[str, BackendSearchInterface] = {}
         self.backend_priorities = {
             "vector": 1,  # Highest priority for semantic search
-            "graph": 2,   # Medium priority for relationship queries  
-            "kv": 3       # Lowest priority, used for direct lookups
+            "text": 2,    # High priority for keyword/BM25 search
+            "graph": 3,   # Medium priority for relationship queries  
+            "kv": 4       # Lowest priority, used for direct lookups
         }
         self.default_policy = DispatchPolicy.PARALLEL
         self.timing_collector = TimingCollector()
@@ -94,6 +96,29 @@ class QueryDispatcher:
     def get_backend(self, name: str) -> Optional[BackendSearchInterface]:
         """Get a specific backend by name."""
         return self.backends.get(name)
+    
+    async def search(
+        self,
+        query: str,
+        options: SearchOptions,
+        search_mode: SearchMode
+    ) -> SearchResultResponse:
+        """
+        Simplified search interface for RetrievalCore compatibility.
+        
+        Args:
+            query: Search query string
+            options: Search configuration options
+            search_mode: Which backends to use
+            
+        Returns:
+            SearchResultResponse with merged and ranked results
+        """
+        return await self.dispatch_query(
+            query=query,
+            search_mode=search_mode,
+            options=options
+        )
     
     async def dispatch_query(
         self,
@@ -307,6 +332,8 @@ class QueryDispatcher:
             return ["graph"] if "graph" in available_backends else []
         elif search_mode == SearchMode.KV:
             return ["kv"] if "kv" in available_backends else []
+        elif search_mode == SearchMode.TEXT:
+            return ["text"] if "text" in available_backends else []
         elif search_mode == SearchMode.HYBRID:
             # Use all available backends
             return sorted(available_backends, key=lambda x: self.backend_priorities.get(x, 999))
@@ -329,6 +356,12 @@ class QueryDispatcher:
         if any(word in query.lower() for word in ["related", "connected", "linked", "relationship", "depends"]):
             if "graph" in available:
                 selected.append("graph")
+        
+        # Exact keyword/phrase queries favor text search
+        if any(phrase in query for phrase in ['"', "'", "exact:"]) or \
+           any(keyword in query.lower() for keyword in ["find", "search", "contains", "keyword"]):
+            if "text" in available:
+                selected.append("text")
         
         # Semantic queries favor vector
         if len(query.split()) > 1 and not selected:  # Multi-word queries are often semantic
