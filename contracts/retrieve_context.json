@@ -20,9 +20,9 @@
       },
       "search_mode": {
         "type": "string",
-        "enum": ["vector", "graph", "kv", "hybrid", "auto"],
+        "enum": ["vector", "graph", "kv", "text", "hybrid", "auto"],
         "default": "hybrid",
-        "description": "Search mode: vector (semantic), graph (relationships), kv (key-value), hybrid (combined), auto (intelligent selection)"
+        "description": "Search mode: vector (semantic), graph (relationships), kv (key-value), text (BM25 keyword search), hybrid (combined), auto (intelligent selection)"
       },
       "limit": {
         "type": "integer",
@@ -144,7 +144,7 @@
         "type": "array",
         "items": {
           "type": "string",
-          "enum": ["vector", "graph", "kv"]
+          "enum": ["vector", "graph", "kv", "text"]
         },
         "description": "List of backends that were queried (RetrievalCore integration)"
       }

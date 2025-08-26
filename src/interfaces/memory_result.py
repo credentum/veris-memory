@@ -17,6 +17,7 @@ class ResultSource(str, Enum):
     VECTOR = "vector"
     GRAPH = "graph" 
     KV = "kv"
+    TEXT = "text"
     HYBRID = "hybrid"
 
 
