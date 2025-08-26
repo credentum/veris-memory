@@ -347,17 +347,73 @@ jobs:
           echo "COVERAGE_BASELINE=$effective_baseline" >> $GITHUB_ENV
           echo "Coverage baseline loaded: $baseline% (effective: $effective_baseline% with $tolerance% tolerance)"
 
+      # ---------- Detect Infrastructure Changes ----------
+      - name: Detect Infrastructure Changes
+        id: detect-infra
+        shell: bash
+        run: |
+          # Get list of changed files
+          echo "Fetching changed files for PR..."
+          changed_files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD 2>/dev/null || \
+                         git diff --name-only HEAD~1...HEAD)
+          
+          echo "Changed files:"
+          echo "$changed_files"
+          
+          # Check if only infrastructure files were changed
+          is_infra_only=true
+          has_source_changes=false
+          
+          while IFS= read -r file; do
+            # Skip empty lines
+            [[ -z "$file" ]] && continue
+            
+            # Check if this is a source code file
+            if [[ "$file" == src/*.py ]] || \
+               [[ "$file" == tests/*.py ]] || \
+               [[ "$file" == "requirements.txt" ]] || \
+               [[ "$file" == "requirements-dev.txt" ]]; then
+              has_source_changes=true
+              is_infra_only=false
+              echo "Found source code change: $file"
+            fi
+            
+            # Infrastructure files (not requiring coverage)
+            if [[ "$file" == .github/workflows/* ]] || \
+               [[ "$file" == dockerfiles/* ]] || \
+               [[ "$file" == docker-compose*.yml ]] || \
+               [[ "$file" == scripts/*.sh ]] || \
+               [[ "$file" == *.md ]] || \
+               [[ "$file" == .gitignore ]] || \
+               [[ "$file" == pytest*.ini ]] || \
+               [[ "$file" == Makefile ]]; then
+              echo "Found infrastructure file: $file"
+            else
+              # If it's not infrastructure and not source, still treat as needing coverage
+              if [[ "$file" != src/*.py ]] && [[ "$file" != tests/*.py ]]; then
+                echo "Found other file (will run coverage): $file"
+                is_infra_only=false
+              fi
+            fi
+          done <<< "$changed_files"
+          
+          # Set output
+          if [[ "$is_infra_only" == "true" ]]; then
+            echo "This appears to be an infrastructure-only PR"
+            echo "is_infrastructure=true" >> $GITHUB_OUTPUT
+          else
+            echo "This PR contains code changes requiring coverage analysis"
+            echo "is_infrastructure=false" >> $GITHUB_OUTPUT
+          fi
+
       # ---------- Extract and Store Coverage Metrics ----------
       - name: Extract Coverage Metrics
         if: always()
         shell: bash
         run: |
-          # Skip coverage for infrastructure-only PRs
-          if [[ "${{ github.head_ref }}" == *"docker-compose"* ]] || \
-             [[ "${{ github.head_ref }}" == *"infra"* ]] || \
-             [[ "${{ github.head_ref }}" == *"workflow"* ]] || \
-             [[ "${{ github.head_ref }}" == *"fix/28"* ]]; then
-            echo "Skipping coverage check for infrastructure PR"
+          # Skip coverage for infrastructure-only PRs (based on file changes, not branch name)
+          if [[ "${{ steps.detect-infra.outputs.is_infrastructure }}" == "true" ]]; then
+            echo "Skipping coverage check for infrastructure-only PR"
             echo "COVERAGE_PCT=${{ env.COVERAGE_BASELINE }}" >> $GITHUB_ENV
             # Set to baseline to avoid failure
             echo "COVERAGE_FAILED=false" >> $GITHUB_ENV
