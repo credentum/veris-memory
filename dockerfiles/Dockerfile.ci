@@ -13,6 +13,12 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
+    wget \
+    unzip \
+    bash \
+    bc \
+    jq \
+    ca-certificates \
     build-essential \
     gcc \
     g++ \
@@ -36,10 +42,17 @@ RUN pip install --upgrade pip setuptools wheel && \
 RUN pip install \
     yamale \
     python-gnupg \
-    tenacity
+    tenacity \
+    pytest-xdist \
+    pytest-timeout
 
 # Install Node.js dependencies for schema validation
 RUN npm install -g ajv-cli
+
+# Install Bun
+RUN curl -fsSL https://bun.sh/install | bash && \
+    mv /root/.bun/bin/bun /usr/local/bin/ && \
+    chmod +x /usr/local/bin/bun
 
 # Pre-compile Python files for faster startup
 RUN python -m compileall -q /usr/local/lib/python3.11
