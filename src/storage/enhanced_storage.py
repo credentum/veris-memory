@@ -12,6 +12,7 @@ import logging
 import time
 import uuid
 import json
+import random
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
@@ -106,7 +107,10 @@ class EnhancedStorageOrchestrator:
         neo4j_client: Optional[Neo4jInitializer] = None,
         kv_store: Optional[KVStore] = None,
         text_backend: Optional[TextSearchBackend] = None,
-        embedding_generator: Optional[Any] = None
+        embedding_generator: Optional[Any] = None,
+        max_concurrent_operations: int = 10,
+        rate_limit_per_second: float = 5.0,
+        retry_max_attempts: int = 3
     ):
         """
         Initialize the storage orchestrator.
@@ -117,12 +121,22 @@ class EnhancedStorageOrchestrator:
             kv_store: Key-value store client
             text_backend: Text search backend
             embedding_generator: Service for generating embeddings
+            max_concurrent_operations: Maximum concurrent storage operations
+            rate_limit_per_second: Rate limit for operations per second
+            retry_max_attempts: Maximum retry attempts for failed operations
         """
         self.qdrant_client = qdrant_client
         self.neo4j_client = neo4j_client
         self.kv_store = kv_store
         self.text_backend = text_backend or get_text_backend()
         self.embedding_generator = embedding_generator
+        
+        # Rate limiting and retry configuration
+        self.max_concurrent_operations = max_concurrent_operations
+        self.rate_limit_per_second = rate_limit_per_second
+        self.retry_max_attempts = retry_max_attempts
+        self._rate_limit_semaphore = asyncio.Semaphore(max_concurrent_operations)
+        self._last_operation_time = 0.0
         
         # Track available backends
         self.available_backends = {
@@ -133,6 +147,39 @@ class EnhancedStorageOrchestrator:
         }
         
         logger.info(f"Storage orchestrator initialized with backends: {self.available_backends}")
+    
+    async def _apply_rate_limit(self) -> None:
+        """Apply rate limiting to prevent overwhelming backends."""
+        current_time = time.time()
+        time_since_last = current_time - self._last_operation_time
+        min_interval = 1.0 / self.rate_limit_per_second
+        
+        if time_since_last < min_interval:
+            sleep_time = min_interval - time_since_last
+            await asyncio.sleep(sleep_time)
+        
+        self._last_operation_time = time.time()
+    
+    async def _retry_operation(self, operation_func, *args, **kwargs) -> Any:
+        """Retry an operation with exponential backoff."""
+        last_exception = None
+        
+        for attempt in range(self.retry_max_attempts):
+            try:
+                async with self._rate_limit_semaphore:
+                    await self._apply_rate_limit()
+                    return await operation_func(*args, **kwargs)
+            except Exception as e:
+                last_exception = e
+                if attempt < self.retry_max_attempts - 1:
+                    # Exponential backoff with jitter
+                    delay = (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(f"Operation failed (attempt {attempt + 1}/{self.retry_max_attempts}), retrying in {delay:.2f}s: {str(e)[:100]}")
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(f"Operation failed after {self.retry_max_attempts} attempts: {str(e)[:100]}")
+        
+        raise last_exception or Exception("Operation failed after all retries")
     
     async def store_context(self, request: StorageRequest) -> StorageResponse:
         """
@@ -160,19 +207,19 @@ class EnhancedStorageOrchestrator:
         storage_tasks = []
         
         if "vector" in active_backends and self.qdrant_client:
-            task = self._store_in_vector_db(request, text_content)
+            task = self._retry_operation(self._store_in_vector_db, request, text_content)
             storage_tasks.append(task)
         
         if "graph" in active_backends and self.neo4j_client:
-            task = self._store_in_graph_db(request, text_content)
+            task = self._retry_operation(self._store_in_graph_db, request, text_content)
             storage_tasks.append(task)
         
         if "kv" in active_backends and self.kv_store:
-            task = self._store_in_kv_store(request, text_content)
+            task = self._retry_operation(self._store_in_kv_store, request, text_content)
             storage_tasks.append(task)
         
         if "text" in active_backends and self.text_backend:
-            task = self._store_in_text_backend(request, text_content)
+            task = self._retry_operation(self._store_in_text_backend, request, text_content)
             storage_tasks.append(task)
         
         # Execute all storage operations concurrently

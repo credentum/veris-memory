@@ -13,6 +13,7 @@ import asyncio
 import logging
 import time
 import json
+import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Set, Tuple, Iterator
 from dataclasses import dataclass
@@ -26,6 +27,30 @@ from ..interfaces.memory_result import MemoryResult
 
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_error_message(error_msg: str) -> str:
+    """Sanitize error messages to prevent sensitive data exposure."""
+    # Remove potential sensitive patterns
+    patterns_to_remove = [
+        r'password[=:]\s*\S+',  # passwords
+        r'token[=:]\s*\S+',     # tokens
+        r'key[=:]\s*\S+',       # keys
+        r'secret[=:]\s*\S+',    # secrets
+        r'api[_-]?key[=:]\s*\S+',  # API keys
+        r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b',  # IP addresses
+        r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',  # email addresses
+    ]
+    
+    sanitized = error_msg
+    for pattern in patterns_to_remove:
+        sanitized = re.sub(pattern, '[REDACTED]', sanitized, flags=re.IGNORECASE)
+    
+    # Truncate very long error messages
+    if len(sanitized) > 200:
+        sanitized = sanitized[:197] + "..."
+    
+    return sanitized
 
 
 class MigrationStatus(str, Enum):
@@ -161,8 +186,9 @@ class DataMigrationEngine:
             
         except Exception as e:
             job.status = MigrationStatus.FAILED
-            job.errors.append(f"Job failed: {str(e)}")
-            logger.error(f"Migration job {job.job_id} failed: {e}")
+            sanitized_error = _sanitize_error_message(str(e))
+            job.errors.append(f"Job failed: {sanitized_error}")
+            logger.error(f"Migration job {job.job_id} failed: {sanitized_error}")
             
         finally:
             # Cleanup
@@ -307,7 +333,7 @@ class DataMigrationEngine:
                     source_id=str(point.id) if hasattr(point, 'id') else "unknown",
                     target_id=None,
                     success=False,
-                    error_message=f"Migration failed: {str(e)}",
+                    error_message=f"Migration failed: {_sanitize_error_message(str(e))}",
                     processing_time_ms=processing_time
                 )
     
@@ -477,7 +503,7 @@ class DataMigrationEngine:
                     source_id="unknown",
                     target_id=None,
                     success=False,
-                    error_message=f"Migration failed: {str(e)}",
+                    error_message=f"Migration failed: {_sanitize_error_message(str(e))}",
                     processing_time_ms=processing_time
                 )
     
