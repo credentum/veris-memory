@@ -397,22 +397,29 @@ class CypherValidator:
         """
         warnings = []
 
-        # Check for potential injection patterns
-        injection_patterns = [
+        # Check for basic injection patterns
+        basic_patterns = [
             r";\s*\w+",  # Multiple statements
             r"\bEXEC\b",
             r"\bEVAL\b",  # Dynamic execution
-            r"--",  # SQL-style comments (not valid in Cypher)
-            r"/\*.*?\*/",  # Any SQL-style /* */ comments (suspicious in Cypher context)
+            r"--",  # SQL-style line comments (not valid in Cypher)
         ]
 
-        for pattern in injection_patterns:
+        for pattern in basic_patterns:
             if re.search(pattern, query, re.IGNORECASE):
                 return ValidationResult(
                     is_valid=False,
                     error_message="Query contains potentially malicious patterns",
                     error_type="potential_injection",
                 )
+
+        # Check for SQL-style block comments with context awareness
+        if self._contains_suspicious_comments(query):
+            return ValidationResult(
+                is_valid=False,
+                error_message="Query contains potentially malicious comment patterns",
+                error_type="potential_injection",
+            )
 
         # Check for resource-intensive operations
         if len(re.findall(r"\*", query)) > 3:
@@ -432,6 +439,69 @@ class CypherValidator:
                 warnings.append(f"Large LIMIT value: {limit_val}")
 
         return ValidationResult(is_valid=True, warnings=warnings)
+
+    def _contains_suspicious_comments(self, query: str) -> bool:
+        """Check for suspicious comment patterns that could indicate injection attempts.
+        
+        This method performs context-aware checking to distinguish between:
+        - Legitimate Cypher comments (// style)
+        - Suspicious SQL-style comments that could hide injection
+        - Comments containing potential SQL commands
+        
+        Args:
+            query: The original query string (before comment normalization)
+            
+        Returns:
+            True if suspicious comment patterns are found, False otherwise
+        """
+        # Find all SQL-style block comments /* ... */
+        block_comment_pattern = r'/\*.*?\*/'
+        block_comments = re.findall(block_comment_pattern, query, re.DOTALL)
+        
+        for comment in block_comments:
+            comment_content = comment[2:-2].strip()  # Remove /* and */
+            
+            # Check if comment contains suspicious SQL/Cypher keywords
+            suspicious_keywords = [
+                r'\bCREATE\b', r'\bDELETE\b', r'\bDROP\b', r'\bSET\b',
+                r'\bMERGE\b', r'\bREMOVE\b', r'\bDETACH\b',
+                r'\bEXEC\b', r'\bEVAL\b', r'\bCALL\b',
+                r'\bUNION\b', r'\bSELECT\b', r'\bINSERT\b', r'\bUPDATE\b'
+            ]
+            
+            for keyword_pattern in suspicious_keywords:
+                if re.search(keyword_pattern, comment_content, re.IGNORECASE):
+                    return True
+            
+            # Check for comment-based query termination attempts
+            if re.search(r';\s*\w', comment_content):
+                return True
+                
+            # Check for encoded/obfuscated content
+            if len(comment_content) > 100:  # Very long comments are suspicious
+                return True
+                
+            # Check for hex/base64 patterns that might hide commands
+            if re.search(r'[0-9a-fA-F]{20,}', comment_content) or \
+               re.search(r'[A-Za-z0-9+/]{20,}={0,2}', comment_content):
+                return True
+        
+        # Check for line comments with suspicious patterns
+        line_comment_pattern = r'//.*$'
+        line_comments = re.findall(line_comment_pattern, query, re.MULTILINE)
+        
+        for comment in line_comments:
+            comment_content = comment[2:].strip()  # Remove //
+            
+            # Very long line comments might be suspicious
+            if len(comment_content) > 200:
+                return True
+                
+            # Comments that look like they're trying to hide code
+            if comment_content.count(';') > 2:  # Multiple statements
+                return True
+        
+        return False
 
     def is_query_safe(self, query: str, parameters: Dict[str, Any] = None) -> bool:
         """
