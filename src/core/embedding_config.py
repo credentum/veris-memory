@@ -351,7 +351,7 @@ async def create_embedding_generator(config: Dict[str, Any]) -> EmbeddingGenerat
         # Force fallback to development mode
         embedding_config.provider = "development"
         embedding_config.model = "hash-based"
-        embedding_config.dimensions = 1536
+        embedding_config.dimensions = 384
         generator = EmbeddingGenerator(embedding_config)
         await generator.initialize()
 
