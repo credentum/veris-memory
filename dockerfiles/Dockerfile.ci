@@ -73,7 +73,10 @@ RUN mkdir -p \
     context/logs/signatures
 
 # Set up git safe directory (for GitHub Actions)
-RUN git config --global --add safe.directory /github/workspace
+# Both paths are needed: /github/workspace for some contexts, /__w/* for GitHub Actions runner
+RUN git config --global --add safe.directory /github/workspace && \
+    git config --global --add safe.directory '/__w/*/*' && \
+    git config --global --add safe.directory '*'
 
 # Labels for GitHub Container Registry
 LABEL org.opencontainers.image.source="https://github.com/credentum/veris-memory"
