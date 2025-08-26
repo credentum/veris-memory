@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 import yaml
 
-from storage.neo4j_client import Neo4jInitializer  # noqa: E402
+from src.storage.neo4j_client import Neo4jInitializer  # noqa: E402
 
 
 class TestNeo4jInitializer:
@@ -575,7 +575,7 @@ class TestNeo4jConfigHandling:
 @patch("storage.neo4j_client.Neo4jInitializer")
 def test_main_function(mock_initializer):
     """Test the main function."""
-    from storage.neo4j_client import main
+    from src.storage.neo4j_client import main
 
     mock_instance = AsyncMock()
     mock_instance.initialize.return_value = True
@@ -592,7 +592,7 @@ def test_main_function(mock_initializer):
 @patch("storage.neo4j_client.Neo4jInitializer")
 def test_main_function_missing_credentials(mock_initializer):
     """Test the main function with missing credentials."""
-    from storage.neo4j_client import main
+    from src.storage.neo4j_client import main
 
     # Test with missing credentials
     with patch("sys.argv", ["neo4j_client.py"]):
@@ -603,7 +603,7 @@ def test_main_function_missing_credentials(mock_initializer):
 @patch("storage.neo4j_client.Neo4jInitializer")
 def test_main_function_initialization_failure(mock_initializer):
     """Test the main function with initialization failure."""
-    from storage.neo4j_client import main
+    from src.storage.neo4j_client import main
 
     mock_instance = AsyncMock()
     mock_instance.initialize.return_value = False
@@ -619,7 +619,7 @@ def test_main_function_initialization_failure(mock_initializer):
 @patch("storage.neo4j_client.Neo4jInitializer")
 def test_main_function_with_exception(mock_initializer):
     """Test the main function with exception during initialization."""
-    from storage.neo4j_client import main
+    from src.storage.neo4j_client import main
 
     mock_initializer.side_effect = Exception("Initialization error")
 

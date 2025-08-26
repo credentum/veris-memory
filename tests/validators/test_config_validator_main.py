@@ -150,7 +150,7 @@ class TestMainCLI:
     def test_main_entry_point(self, mock_main):
         """Test the if __name__ == '__main__' block."""
         # Import the module to trigger the __main__ check
-        import validators.config_validator
+        import src.validators.config_validator
 
         # The __main__ block should call main()
         # We can't directly test this, but we can verify the structure exists

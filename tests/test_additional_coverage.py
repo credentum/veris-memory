@@ -16,7 +16,7 @@ class TestRateLimiterComponents:
     def test_token_bucket_creation(self):
         """Test TokenBucket creation and basic operations."""
         try:
-            from core.rate_limiter import TokenBucket
+            from src.core.rate_limiter import TokenBucket
 
             bucket = TokenBucket(capacity=10, refill_rate=1.0)
             assert bucket.capacity == 10
@@ -29,7 +29,7 @@ class TestRateLimiterComponents:
     def test_sliding_window_limiter(self):
         """Test SlidingWindowLimiter creation and basic operations."""
         try:
-            from core.rate_limiter import SlidingWindowLimiter
+            from src.core.rate_limiter import SlidingWindowLimiter
 
             limiter = SlidingWindowLimiter(max_requests=100, window_seconds=60)
             assert limiter.max_requests == 100
@@ -41,7 +41,7 @@ class TestRateLimiterComponents:
     def test_mcp_rate_limiter(self):
         """Test MCPRateLimiter creation and basic operations."""
         try:
-            from core.rate_limiter import MCPRateLimiter
+            from src.core.rate_limiter import MCPRateLimiter
 
             limiter = MCPRateLimiter()
             assert limiter is not None
@@ -67,7 +67,7 @@ class TestConfigComponents:
     def test_config_attributes(self):
         """Test config attributes in detail."""
         try:
-            from core.config import Config
+            from src.core.config import Config
 
             config = Config()
 
@@ -88,7 +88,7 @@ class TestConfigComponents:
     def test_config_class_methods(self):
         """Test config class methods if available."""
         try:
-            from core.config import Config
+            from src.core.config import Config
 
             config = Config()
 
@@ -116,7 +116,7 @@ class TestUtilsComponents:
     def test_sanitize_error_message_variations(self):
         """Test error message sanitization with various inputs."""
         try:
-            from core.utils import sanitize_error_message
+            from src.core.utils import sanitize_error_message
 
             test_cases = [
                 ("Simple error message", []),
@@ -140,7 +140,7 @@ class TestUtilsComponents:
     def test_get_environment_variations(self):
         """Test environment detection with various environments."""
         try:
-            from core.utils import get_environment
+            from src.core.utils import get_environment
 
             # Test default environment
             env = get_environment()
@@ -161,7 +161,7 @@ class TestUtilsComponents:
     def test_get_secure_connection_config_variations(self):
         """Test secure connection config with various inputs."""
         try:
-            from core.utils import get_secure_connection_config
+            from src.core.utils import get_secure_connection_config
 
             test_configs = [
                 ({}, "redis"),
@@ -186,7 +186,7 @@ class TestKVStoreComponents:
     def test_kv_store_attributes(self):
         """Test KV store attributes and methods."""
         try:
-            from storage.kv_store import ContextKV
+            from src.storage.kv_store import ContextKV
 
             kv = ContextKV()
 
@@ -208,7 +208,7 @@ class TestKVStoreComponents:
     def test_kv_store_connection_scenarios(self, mock_redis):
         """Test KV store connection scenarios."""
         try:
-            from storage.kv_store import ContextKV
+            from src.storage.kv_store import ContextKV
 
             # Test successful connection
             mock_redis_instance = AsyncMock()
@@ -243,7 +243,7 @@ class TestValidatorComponents:
     def test_kv_validators_with_various_inputs(self):
         """Test KV validators with various input types."""
         try:
-            from validators.kv_validators import (
+            from src.validators.kv_validators import (
                 validate_cache_entry,
                 validate_metric_event,
                 validate_redis_key,
@@ -308,7 +308,7 @@ class TestNamespaceComponents:
     def test_agent_namespace_edge_cases(self):
         """Test agent namespace with edge cases."""
         try:
-            from core.agent_namespace import AgentNamespace
+            from src.core.agent_namespace import AgentNamespace
 
             namespace = AgentNamespace()
 

@@ -24,7 +24,7 @@ import logging
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from monitoring.veris_sentinel import (
+from src.monitoring.veris_sentinel import (
     SentinelConfig, SentinelRunner, VerisHealthProbe, 
     GoldenFactRecall, MetricsWiring, SecurityNegatives,
     ConfigParity, CapacitySmoke
@@ -328,7 +328,7 @@ class TestSentinelIntegration:
     @pytest.mark.integration 
     async def test_sentinel_api_integration(self, sentinel_runner):
         """Test Sentinel API endpoints with real data."""
-        from monitoring.veris_sentinel import SentinelAPI
+        from src.monitoring.veris_sentinel import SentinelAPI
         
         # Create API instance
         api = SentinelAPI(sentinel_runner, port=9091)  # Use different port for testing

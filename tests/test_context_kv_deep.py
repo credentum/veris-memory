@@ -18,8 +18,8 @@ from unittest.mock import Mock, patch
 import pytest
 
 # Import the ContextKV class and dependencies
-from storage.context_kv import ContextKV
-from storage.kv_store import MetricEvent
+from src.storage.context_kv import ContextKV
+from src.storage.kv_store import MetricEvent
 
 
 class TestContextKVInitialization:

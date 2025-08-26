@@ -24,8 +24,8 @@ from qdrant_client.models import (
     VectorParams,
 )
 
-from core.config import Config
-from storage.qdrant_client import VectorDBInitializer
+from src.core.config import Config
+from src.storage.qdrant_client import VectorDBInitializer
 
 
 class TestVectorDBInitializerConfigLoading:

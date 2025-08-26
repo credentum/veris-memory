@@ -79,7 +79,7 @@ def mock_config_loader(test_config):
 @pytest.fixture
 def neo4j_client_mock(test_config):
     """Create a mock Neo4j client for testing."""
-    from storage.neo4j_client import Neo4jInitializer
+    from src.storage.neo4j_client import Neo4jInitializer
 
     client = Neo4jInitializer(config=test_config, test_mode=True)
     return client
@@ -88,7 +88,7 @@ def neo4j_client_mock(test_config):
 @pytest.fixture
 def qdrant_client_mock(test_config):
     """Create a mock Qdrant client for testing."""
-    from storage.qdrant_client import VectorDBInitializer
+    from src.storage.qdrant_client import VectorDBInitializer
 
     client = VectorDBInitializer(config=test_config, test_mode=True)
     return client
@@ -97,7 +97,7 @@ def qdrant_client_mock(test_config):
 @pytest.fixture
 def kv_store_mock(test_config):
     """Create a mock KV store for testing."""
-    from storage.kv_store import ContextKV
+    from src.storage.kv_store import ContextKV
 
     store = ContextKV(config=test_config, test_mode=True)
     return store

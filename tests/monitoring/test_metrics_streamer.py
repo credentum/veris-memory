@@ -17,7 +17,7 @@ import sys
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from monitoring.streaming import (
+from src.monitoring.streaming import (
     MetricsStreamer, 
     StreamingMetrics, 
     StreamingHealthMonitor

@@ -20,8 +20,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src'))
 
 try:
-    from monitoring.sentinel.webhook_alerter import GitHubWebhookAlerter
-    from monitoring.sentinel.models import CheckResult
+    from src.monitoring.sentinel.webhook_alerter import GitHubWebhookAlerter
+    from src.monitoring.sentinel.models import CheckResult
     WEBHOOK_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Could not import webhook alerter: {e}")

@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import yaml
 
-from storage.hash_diff_embedder import EmbeddingTask  # noqa: E402
+from src.storage.hash_diff_embedder import EmbeddingTask  # noqa: E402
 
 
 @pytest.fixture
@@ -625,7 +625,7 @@ class TestMainFunction:
                 mock_embedder_class.return_value = mock_embedder
 
                 # Import and run main
-                from storage.hash_diff_embedder_async import main
+                from src.storage.hash_diff_embedder_async import main
 
                 await main()
 
@@ -651,7 +651,7 @@ class TestMainFunction:
                 mock_embedder.connect.return_value = False
                 mock_embedder_class.return_value = mock_embedder
 
-                from storage.hash_diff_embedder_async import main
+                from src.storage.hash_diff_embedder_async import main
 
                 await main()
 

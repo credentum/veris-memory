@@ -18,7 +18,7 @@ mock_duckdb = Mock()
 mock_duckdb.connect = Mock(return_value=Mock())
 
 with patch.dict("sys.modules", {"duckdb": mock_duckdb}):
-    from storage.types import ContextData
+    from src.storage.types import ContextData
 
 
 class TestEndToEndWorkflows:

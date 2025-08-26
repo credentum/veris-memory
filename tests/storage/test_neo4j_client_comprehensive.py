@@ -18,7 +18,7 @@ import pytest
 import yaml
 from neo4j.exceptions import AuthError, ServiceUnavailable
 
-from storage.neo4j_client import Neo4jInitializer
+from src.storage.neo4j_client import Neo4jInitializer
 
 
 class TestNeo4jInitializer:
@@ -532,7 +532,7 @@ class TestNeo4jCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.neo4j_client import main
+        from src.storage.neo4j_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["--username", "neo4j", "--password", "password"])
@@ -555,7 +555,7 @@ class TestNeo4jCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.neo4j_client import main
+        from src.storage.neo4j_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["--username", "neo4j", "--password", "password"])
@@ -576,7 +576,7 @@ class TestNeo4jCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.neo4j_client import main
+        from src.storage.neo4j_client import main
 
         runner = CliRunner()
         result = runner.invoke(
@@ -623,7 +623,7 @@ class TestNeo4jCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.neo4j_client import main
+        from src.storage.neo4j_client import main
 
         runner = CliRunner()
         with patch("click.echo") as mock_echo:
@@ -654,7 +654,7 @@ class TestNeo4jCliCommands:
 
         from click.testing import CliRunner
 
-        from storage.neo4j_client import main
+        from src.storage.neo4j_client import main
 
         runner = CliRunner()
         with patch("click.echo") as mock_echo:

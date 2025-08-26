@@ -11,7 +11,7 @@ from datetime import datetime
 import pytest
 
 # Import only from the specific types module to avoid cascade
-from storage.types import (
+from src.storage.types import (
     JSON,
     CollectionName,
     ContextData,

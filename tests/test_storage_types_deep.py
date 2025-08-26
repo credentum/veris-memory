@@ -15,7 +15,7 @@ from typing import Any, List, Optional
 
 import pytest
 
-from storage.types import (  # Type aliases; Dataclasses; Protocols
+from src.storage.types import (  # Type aliases; Dataclasses; Protocols
     JSON,
     CollectionName,
     ContextData,

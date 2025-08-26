@@ -12,7 +12,7 @@ from unittest.mock import patch
 import yaml
 from click.testing import CliRunner
 
-from validators.config_validator import (
+from src.validators.config_validator import (
     ConfigValidator,
     main,
     validate_all_configs,
@@ -20,7 +20,7 @@ from validators.config_validator import (
     validate_environment_variables,
     validate_mcp_config,
 )
-from validators.kv_validators import (
+from src.validators.kv_validators import (
     sanitize_metric_name,
     validate_cache_entry,
     validate_metric_event,

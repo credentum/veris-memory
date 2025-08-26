@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
-from core.config import Config
-from core.rate_limiter import get_rate_limiter
+from src.core.config import Config
+from src.core.rate_limiter import get_rate_limiter
 
 
 class TestConfig:
@@ -105,7 +105,7 @@ class TestUtils:
 
     def test_sanitize_error_message(self):
         """Test error message sanitization."""
-        from core.utils import sanitize_error_message
+        from src.core.utils import sanitize_error_message
 
         error_msg = "Connection failed with password: secret123"
         sensitive_values = ["secret123"]
@@ -117,7 +117,7 @@ class TestUtils:
 
     def test_get_environment(self):
         """Test environment detection."""
-        from core.utils import get_environment
+        from src.core.utils import get_environment
 
         result = get_environment()
         assert isinstance(result, str)
@@ -125,7 +125,7 @@ class TestUtils:
 
     def test_get_secure_connection_config(self):
         """Test secure connection config."""
-        from core.utils import get_secure_connection_config
+        from src.core.utils import get_secure_connection_config
 
         config = {"ssl": True, "port": 443}
         result = get_secure_connection_config(config, "test_service")
@@ -166,7 +166,7 @@ class TestRateLimitCheck:
     @patch("core.rate_limiter.time.time")
     def test_rate_limit_check_function(self, mock_time):
         """Test the rate_limit_check function directly."""
-        from core.rate_limiter import rate_limit_check
+        from src.core.rate_limiter import rate_limit_check
 
         mock_time.return_value = 1000
 

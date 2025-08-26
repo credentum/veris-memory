@@ -17,8 +17,8 @@ from unittest.mock import Mock, mock_open, patch
 import pytest
 import yaml
 
-from core.config_error import ConfigParseError
-from storage.qdrant_client import VectorDBInitializer
+from src.core.config_error import ConfigParseError
+from src.storage.qdrant_client import VectorDBInitializer
 
 
 class TestVectorDBInitializerInitialization:
@@ -683,7 +683,7 @@ class TestVectorDBInitializerCLI:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, [])
@@ -703,7 +703,7 @@ class TestVectorDBInitializerCLI:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, [])
@@ -721,7 +721,7 @@ class TestVectorDBInitializerCLI:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, [])
@@ -739,7 +739,7 @@ class TestVectorDBInitializerCLI:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, [])
@@ -759,7 +759,7 @@ class TestVectorDBInitializerCLI:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, [])
@@ -778,7 +778,7 @@ class TestVectorDBInitializerCLI:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["--force"])
@@ -797,7 +797,7 @@ class TestVectorDBInitializerCLI:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["--skip-test"])
@@ -816,7 +816,7 @@ class TestVectorDBInitializerCLI:
 
         from click.testing import CliRunner
 
-        from storage.qdrant_client import main
+        from src.storage.qdrant_client import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["--force", "--skip-test"])

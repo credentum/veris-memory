@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-from validators.config_validator import validate_all_configs
-from validators.kv_validators import (
+from src.validators.config_validator import validate_all_configs
+from src.validators.kv_validators import (
     validate_cache_entry,
     validate_metric_event,
     validate_redis_key,
@@ -264,7 +264,7 @@ class TestValidatorIntegration:
         assert validate_session_data({"user": "test", "session_id": "123"}) is True
 
         # Test sanitize function
-        from validators.kv_validators import sanitize_metric_name
+        from src.validators.kv_validators import sanitize_metric_name
 
         assert sanitize_metric_name("test.metric-name_123") == "test.metric-name_123"
         assert sanitize_metric_name("test@metric#name!") == "test_metric_name_"

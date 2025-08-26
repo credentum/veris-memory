@@ -19,7 +19,7 @@ from unittest.mock import mock_open, patch
 import pytest
 import yaml
 
-from storage.hash_diff_embedder import DocumentHash, EmbeddingTask, HashDiffEmbedder
+from src.storage.hash_diff_embedder import DocumentHash, EmbeddingTask, HashDiffEmbedder
 
 
 class TestDocumentHashDataclass:

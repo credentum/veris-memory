@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.agent_namespace import AgentNamespace, NamespaceError
+from src.core.agent_namespace import AgentNamespace, NamespaceError
 
 
 class TestAgentNamespaceValidation:

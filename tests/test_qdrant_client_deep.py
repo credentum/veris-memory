@@ -16,7 +16,7 @@ from unittest.mock import Mock, mock_open, patch
 import pytest
 import yaml
 
-from storage.qdrant_client import VectorDBInitializer
+from src.storage.qdrant_client import VectorDBInitializer
 
 
 class TestVectorDBInitializerInitialization:
@@ -130,7 +130,7 @@ class TestVectorDBInitializerConfigLoading:
         """Test config loading when result is not a dictionary in production mode."""
         with patch("builtins.open", mock_open(read_data="not_a_dict")):
             with patch("yaml.safe_load", return_value="not_a_dict"):
-                from core.config_error import ConfigParseError
+                from src.core.config_error import ConfigParseError
 
                 initializer = VectorDBInitializer.__new__(VectorDBInitializer)
                 initializer.test_mode = False

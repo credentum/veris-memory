@@ -47,9 +47,9 @@ import sys
 sys.path.append('/workspaces/agent-context-template/context-store/src')
 
 try:
-    from storage.reranker_triage import TriageReranker
-    from storage.query_expansion import MultiQueryExpander, FieldBoostProcessor
-    from storage.embedding_models import EMBEDDING_MODELS, EmbeddingModelTester
+    from src.storage.reranker_triage import TriageReranker
+    from src.storage.query_expansion import MultiQueryExpander, FieldBoostProcessor
+    from src.storage.embedding_models import EMBEDDING_MODELS, EmbeddingModelTester
     TRIAGE_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"Triage modules not available: {e}")

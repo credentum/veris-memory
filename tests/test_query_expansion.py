@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
 
 # Handle optional dependencies gracefully
 try:
-    from storage.query_expansion import MultiQueryExpander, FieldBoostProcessor
+    from src.storage.query_expansion import MultiQueryExpander, FieldBoostProcessor
     QUERY_EXPANSION_AVAILABLE = True
 except ImportError as e:
     QUERY_EXPANSION_AVAILABLE = False
@@ -326,7 +326,7 @@ class TestIntegrationScenarios(unittest.TestCase):
             import sys
             import os
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
-            from storage.reranker_bulletproof import BulletproofReranker
+            from src.storage.reranker_bulletproof import BulletproofReranker
             self.reranker = BulletproofReranker(debug_mode=True)
             self.reranker_available = True
         except ImportError:

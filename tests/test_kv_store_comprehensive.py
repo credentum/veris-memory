@@ -16,7 +16,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from storage.kv_store import CacheEntry, MetricEvent, RedisConnector
+from src.storage.kv_store import CacheEntry, MetricEvent, RedisConnector
 
 
 class TestMetricEventDataclass:

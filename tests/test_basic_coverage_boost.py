@@ -15,7 +15,7 @@ import pytest
 def test_imports_work():
     """Test that all modules can be imported without errors."""
     try:
-        from core.rate_limiter import TokenBucket
+        from src.core.rate_limiter import TokenBucket
         from src.core import config, utils
 
         assert config is not None
@@ -27,7 +27,7 @@ def test_imports_work():
 
 def test_config_constants():
     """Test Config class constants."""
-    from core.config import Config
+    from src.core.config import Config
 
     # Test all the constants exist
     assert hasattr(Config, "EMBEDDING_DIMENSIONS")
@@ -44,7 +44,7 @@ def test_config_constants():
 
 def test_utils_functions():
     """Test utils functions with simple inputs."""
-    from core.utils import get_environment, get_secure_connection_config, sanitize_error_message
+    from src.core.utils import get_environment, get_secure_connection_config, sanitize_error_message
 
     # Test sanitize_error_message
     result = sanitize_error_message("Test error message")
@@ -61,7 +61,7 @@ def test_utils_functions():
 
 def test_token_bucket_basic():
     """Test TokenBucket basic functionality."""
-    from core.rate_limiter import TokenBucket
+    from src.core.rate_limiter import TokenBucket
 
     bucket = TokenBucket(capacity=10, refill_rate=5.0)
 
@@ -79,7 +79,7 @@ def test_token_bucket_basic():
 def test_sliding_window_basic():
     """Test SlidingWindowLimiter basic functionality."""
     try:
-        from core.rate_limiter import SlidingWindowLimiter
+        from src.core.rate_limiter import SlidingWindowLimiter
 
         limiter = SlidingWindowLimiter(max_requests=10, window_seconds=60)
 
@@ -98,7 +98,7 @@ def test_sliding_window_basic():
 def test_agent_namespace_basic():
     """Test AgentNamespace basic functionality."""
     try:
-        from core.agent_namespace import AgentNamespace
+        from src.core.agent_namespace import AgentNamespace
 
         # Test initialization (no config_path needed)
         namespace = AgentNamespace()
@@ -121,7 +121,7 @@ def test_agent_namespace_basic():
 def test_base_component_basic():
     """Test BaseComponent basic functionality."""
     try:
-        from core.base_component import BaseComponent
+        from src.core.base_component import BaseComponent
 
         # Create a temporary config file
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -152,7 +152,7 @@ def test_base_component_basic():
 def test_validators_basic():
     """Test validator functions."""
     try:
-        from validators.kv_validators import sanitize_metric_name, validate_redis_key
+        from src.validators.kv_validators import sanitize_metric_name, validate_redis_key
 
         # Test validate_redis_key
         result = validate_redis_key("valid_key")
@@ -169,7 +169,7 @@ def test_validators_basic():
 def test_storage_types_basic():
     """Test storage types."""
     try:
-        from storage.types import ContextDocument
+        from src.storage.types import ContextDocument
 
         # Test ContextDocument creation
         doc = ContextDocument(
@@ -190,7 +190,7 @@ def test_storage_types_basic():
 async def test_rate_limit_check_function():
     """Test the rate_limit_check function."""
     try:
-        from core.rate_limiter import rate_limit_check
+        from src.core.rate_limiter import rate_limit_check
 
         result = await rate_limit_check("test_endpoint", {"agent_id": "test"})
 
@@ -204,7 +204,7 @@ async def test_rate_limit_check_function():
 def test_embedding_config_basic():
     """Test embedding configuration."""
     try:
-        from core.embedding_config import EmbeddingConfig
+        from src.core.embedding_config import EmbeddingConfig
 
         # Create basic config dict (not file path)
         config_dict = {"embeddings": {"provider": "openai", "model": "text-embedding-3-small"}}
@@ -225,7 +225,7 @@ def test_embedding_config_basic():
 def test_ssl_config_basic():
     """Test SSL configuration."""
     try:
-        from core.ssl_config import SSLConfig
+        from src.core.ssl_config import SSLConfig
 
         config = SSLConfig()
 

@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from storage.kv_store import ContextKV, RedisConnector  # noqa: E402
+from src.storage.kv_store import ContextKV, RedisConnector  # noqa: E402
 
 
 class TestRedisConnector:
@@ -711,7 +711,7 @@ class TestContextKVAdvanced:
     @patch("storage.kv_store.ContextKV")
     def test_main_function(mock_context_kv):
         """Test the main function."""
-        from storage.kv_store import main
+        from src.storage.kv_store import main
 
         mock_instance = AsyncMock()
         mock_instance.connect.return_value = True
@@ -729,7 +729,7 @@ class TestContextKVAdvanced:
 @patch("storage.kv_store.ContextKV")
 def test_main_function_connection_failure(mock_context_kv):
     """Test main function with connection failure."""
-    from storage.kv_store import main
+    from src.storage.kv_store import main
 
     mock_instance = AsyncMock()
     mock_instance.connect.return_value = False
@@ -744,7 +744,7 @@ def test_main_function_connection_failure(mock_context_kv):
 @patch("storage.kv_store.ContextKV")
 def test_main_function_with_exception(mock_context_kv):
     """Test main function with exception during execution."""
-    from storage.kv_store import main
+    from src.storage.kv_store import main
 
     mock_context_kv.side_effect = Exception("Initialization error")
 

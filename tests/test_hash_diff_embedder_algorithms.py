@@ -8,7 +8,7 @@ and statistical validation of hash distributions.
 import math
 import unittest
 
-from storage.hash_diff_embedder import HashDiffEmbedder
+from src.storage.hash_diff_embedder import HashDiffEmbedder
 
 
 class TestHashDiffEmbedderBasics(unittest.TestCase):

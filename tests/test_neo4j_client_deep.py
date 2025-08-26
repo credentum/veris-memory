@@ -16,7 +16,7 @@ from unittest.mock import Mock, mock_open, patch
 import pytest
 import yaml
 
-from storage.neo4j_client import Neo4jInitializer
+from src.storage.neo4j_client import Neo4jInitializer
 
 
 class TestNeo4jInitializerInitialization:
@@ -119,7 +119,7 @@ class TestNeo4jInitializerConfigLoading:
         """Test config loading with YAML error in production mode."""
         with patch("builtins.open", mock_open(read_data="invalid: yaml: content")):
             with patch("yaml.safe_load", side_effect=yaml.YAMLError("Invalid YAML")):
-                from core.config_error import ConfigParseError
+                from src.core.config_error import ConfigParseError
 
                 initializer = Neo4jInitializer.__new__(Neo4jInitializer)
                 initializer.test_mode = False
@@ -144,7 +144,7 @@ class TestNeo4jInitializerConfigLoading:
         """Test config loading when result is not a dictionary in production mode."""
         with patch("builtins.open", mock_open(read_data="not_a_dict")):
             with patch("yaml.safe_load", return_value="not_a_dict"):
-                from core.config_error import ConfigParseError
+                from src.core.config_error import ConfigParseError
 
                 initializer = Neo4jInitializer.__new__(Neo4jInitializer)
                 initializer.test_mode = False

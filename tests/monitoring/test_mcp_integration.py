@@ -18,9 +18,9 @@ import sys
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from monitoring.dashboard import UnifiedDashboard
-from monitoring.dashboard_api import DashboardAPI
-from monitoring.streaming import MetricsStreamer
+from src.monitoring.dashboard import UnifiedDashboard
+from src.monitoring.dashboard_api import DashboardAPI
+from src.monitoring.streaming import MetricsStreamer
 
 
 class TestMCPToolContractsIntegration:

@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from core.rate_limiter import (
+from src.core.rate_limiter import (
     MCPRateLimiter,
     SlidingWindowLimiter,
     TokenBucket,

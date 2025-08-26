@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import yaml
 
-from storage.hash_diff_embedder import DocumentHash, HashDiffEmbedder  # noqa: E402
+from src.storage.hash_diff_embedder import DocumentHash, HashDiffEmbedder  # noqa: E402
 
 
 class TestHashDiffEmbedderCoverage:
@@ -377,7 +377,7 @@ class TestHashDiffEmbedderCoverage:
     @patch("storage.hash_diff_embedder.HashDiffEmbedder.embed_document")
     def test_main_single_file(self, mock_embed_doc, mock_connect):
         """Test main function with single file"""
-        from storage.hash_diff_embedder import main
+        from src.storage.hash_diff_embedder import main
 
         with tempfile.TemporaryDirectory() as temp_dir:
             test_file = Path(temp_dir) / "test.yaml"
@@ -399,7 +399,7 @@ class TestHashDiffEmbedderCoverage:
     @patch("storage.hash_diff_embedder.HashDiffEmbedder.embed_document")
     def test_main_single_file_failed(self, mock_embed_doc, mock_connect):
         """Test main function with single file that fails"""
-        from storage.hash_diff_embedder import main
+        from src.storage.hash_diff_embedder import main
 
         with tempfile.TemporaryDirectory() as temp_dir:
             test_file = Path(temp_dir) / "test.yaml"
@@ -421,7 +421,7 @@ class TestHashDiffEmbedderCoverage:
     @patch("storage.hash_diff_embedder.HashDiffEmbedder.cleanup_orphaned_vectors")
     def test_main_directory_with_cleanup(self, mock_cleanup, mock_embed_dir, mock_connect):
         """Test main function with directory and cleanup option"""
-        from storage.hash_diff_embedder import main
+        from src.storage.hash_diff_embedder import main
 
         with tempfile.TemporaryDirectory() as temp_dir:
             mock_connect.return_value = True
@@ -442,7 +442,7 @@ class TestHashDiffEmbedderCoverage:
     @patch("storage.hash_diff_embedder.HashDiffEmbedder.connect")
     def test_main_connection_failure(self, mock_connect):
         """Test main function when connection fails"""
-        from storage.hash_diff_embedder import main
+        from src.storage.hash_diff_embedder import main
 
         mock_connect.return_value = False
 
