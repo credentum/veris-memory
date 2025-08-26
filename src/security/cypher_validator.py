@@ -403,8 +403,7 @@ class CypherValidator:
             r"\bEXEC\b",
             r"\bEVAL\b",  # Dynamic execution
             r"--",  # SQL-style comments (not valid in Cypher)
-            r"/\*.*?\*/\s*/\*",  # Adjacent /* */ comment blocks (suspicious)
-            r"/\*[^*/]*;[^*/]*\*/",  # Comments containing semicolons (injection attempt)
+            r"/\*.*?\*/",  # Any SQL-style /* */ comments (suspicious in Cypher context)
         ]
 
         for pattern in injection_patterns:

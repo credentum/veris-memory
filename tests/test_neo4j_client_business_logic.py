@@ -24,6 +24,7 @@ from neo4j.exceptions import AuthError, ClientError, DatabaseError, ServiceUnava
 
 # Import handled by conftest.py
 from src.storage.neo4j_client import Neo4jInitializer  # noqa: E402
+from src.core.config_error import ConfigParseError
 
 
 class TestNeo4jBusinessLogic:
@@ -104,9 +105,8 @@ class TestNeo4jBusinessLogic:
             # Create YAML that will fail to parse
             f.write("invalid\n  yaml: content\n[unclosed")
 
-        # The actual implementation doesn't catch YAML errors, it only catches FileNotFoundError
-        # and checks if config is a dict. Let's test for the actual YAML exception
-        with pytest.raises((SystemExit, yaml.YAMLError)):
+        # The actual implementation catches YAML errors and converts them to ConfigParseError
+        with pytest.raises(ConfigParseError):
             Neo4jInitializer(invalid_config_path)
 
     def test_load_config_non_dict_yaml_error_handling(self):
@@ -115,12 +115,12 @@ class TestNeo4jBusinessLogic:
         with open(non_dict_config_path, "w") as f:
             yaml.dump(["item1", "item2", "item3"], f)
 
-        with pytest.raises(SystemExit):
+        with pytest.raises(ConfigParseError):
             Neo4jInitializer(non_dict_config_path)
 
     # ==================== CONNECTION MANAGEMENT TESTS ====================
 
-    @patch("core.utils.get_secure_connection_config")
+    @patch("src.core.utils.get_secure_connection_config")
     @patch("neo4j.GraphDatabase.driver")
     @patch("getpass.getpass")
     def test_connect_without_password_prompts_user(
@@ -130,11 +130,11 @@ class TestNeo4jBusinessLogic:
         mock_get_config.return_value = {"host": "localhost", "port": 7687, "ssl": False}
         mock_getpass.return_value = "user_entered_password"
 
-        mock_driver_instance = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver_instance = Mock()
+        mock_session = Mock()
+        mock_session.run.return_value.single.return_value = {"test": 1}
         mock_driver_instance.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver_instance.session.return_value.__exit__ = Mock(return_value=None)
-        mock_session.run.return_value.single.return_value = {"test": 1}
         mock_driver.return_value = mock_driver_instance
 
         initializer = Neo4jInitializer(self.config_path)
@@ -146,7 +146,7 @@ class TestNeo4jBusinessLogic:
             "bolt://localhost:7687", auth=("neo4j", "user_entered_password")
         )
 
-    @patch("core.utils.get_secure_connection_config")
+    @patch("src.core.utils.get_secure_connection_config")
     @patch("neo4j.GraphDatabase.driver")
     def test_connect_ssl_protocol_selection(self, mock_driver, mock_get_config):
         """Test SSL protocol selection based on configuration."""
@@ -167,7 +167,7 @@ class TestNeo4jBusinessLogic:
             "bolt+s://neo4j.example.com:7687", auth=("neo4j", "password")
         )
 
-    @patch("core.utils.get_secure_connection_config")
+    @patch("src.core.utils.get_secure_connection_config")
     @patch("neo4j.GraphDatabase.driver")
     def test_connect_service_unavailable_error_handling(self, mock_driver, mock_get_config):
         """Test handling of ServiceUnavailable exception during connection."""
@@ -180,7 +180,7 @@ class TestNeo4jBusinessLogic:
         assert result is False
         assert initializer.driver is None
 
-    @patch("core.utils.get_secure_connection_config")
+    @patch("src.core.utils.get_secure_connection_config")
     @patch("neo4j.GraphDatabase.driver")
     def test_connect_auth_error_handling(self, mock_driver, mock_get_config):
         """Test handling of AuthError exception during connection."""
@@ -193,9 +193,9 @@ class TestNeo4jBusinessLogic:
         assert result is False
         assert initializer.driver is None
 
-    @patch("core.utils.get_secure_connection_config")
+    @patch("src.core.utils.get_secure_connection_config")
     @patch("neo4j.GraphDatabase.driver")
-    @patch("core.utils.sanitize_error_message")
+    @patch("src.core.utils.sanitize_error_message")
     def test_connect_generic_error_sanitization(self, mock_sanitize, mock_driver, mock_get_config):
         """Test error message sanitization for generic connection errors."""
         mock_get_config.return_value = {"host": "localhost", "port": 7687, "ssl": False}
@@ -210,7 +210,7 @@ class TestNeo4jBusinessLogic:
             "Connection failed with password: secret123", ["secret123", "neo4j"]
         )
 
-    @patch("core.utils.get_secure_connection_config")
+    @patch("src.core.utils.get_secure_connection_config")
     @patch("neo4j.GraphDatabase.driver")
     def test_connect_session_verification_success(self, mock_driver, mock_get_config):
         """Test successful session verification during connection."""
@@ -846,7 +846,7 @@ class TestNeo4jBusinessLogic:
 
     # ==================== EDGE CASE AND ERROR HANDLING TESTS ====================
 
-    @patch("core.utils.get_secure_connection_config")
+    @patch("src.core.utils.get_secure_connection_config")
     @patch("neo4j.GraphDatabase.driver")
     def test_connection_with_custom_port(self, mock_driver, mock_get_config):
         """Test connection with custom port configuration."""
