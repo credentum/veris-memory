@@ -22,7 +22,7 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from pathlib import Path
 import aiohttp
 from aiohttp import web
-from aiohttp.test import AioHTTPTestCase, unittest_run_loop
+from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
 
 # Import Sentinel components
 import sys
@@ -31,8 +31,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from monitoring.veris_sentinel import (
     CheckResult, SentinelConfig, VerisHealthProbe, 
     GoldenFactRecall, ParaphraseRobustness, MetricsWiring, SecurityNegatives,
-    BackupRestore, ConfigParity, CapacitySmoke, GraphIntentValidation,
-    ContentPipelineMonitoring, SentinelRunner, SentinelAPI
+    BackupRestore, ConfigParity, CapacitySmoke, 
+    SentinelRunner, SentinelAPI
 )
 
 

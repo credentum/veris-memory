@@ -20,7 +20,7 @@ from typing import Dict, List, Any, Optional, Union
 from .models import CheckResult, SentinelConfig
 from .checks import CHECK_REGISTRY
 from .alert_manager import AlertManager
-from ...core.import_utils import safe_import
+from src.core.import_utils import safe_import
 
 logger = logging.getLogger(__name__)
 

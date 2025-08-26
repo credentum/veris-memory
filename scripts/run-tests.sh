@@ -250,16 +250,20 @@ for module, stats in sorted(modules.items()):
 
 # Function to run tests in CI mode (matches GitHub Actions)
 run_ci_tests() {
+    local workers="$(detect_workers)"
     print_header "CI TEST MODE - GitHub Actions Compatible"
-    print_status "Running tests as configured in CI/CD pipeline..."
+    print_status "Running tests as configured in CI/CD pipeline with $workers parallel workers..."
     
-    # Match the exact command from GitHub Actions
+    # Run tests with parallel execution for speed in CI
     python3 -m pytest tests/ \
+        -n $workers \
+        --dist loadscope \
         --cov=src \
         --cov-report=term \
         --cov-report=json \
         -m "not integration and not e2e" \
-        --tb=short
+        --tb=short \
+        --maxfail=$MAX_FAILURES
 }
 
 # Function to run tests in DEBUG mode
