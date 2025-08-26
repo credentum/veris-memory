@@ -28,6 +28,11 @@ jobs:
   claude-pr-review:
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/credentum/veris-memory-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     timeout-minutes: 15 # Add timeout to prevent infinite hanging
     permissions:
       contents: read
@@ -35,36 +40,13 @@ jobs:
       issues: write # allow auto-file follow-up issues
       statuses: write # allow setting commit status
       id-token: write # for future Sigstore attestation
+      packages: read # allow pulling container from registry
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # full history for context diff
-
-      - name: Setup Python and Node
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
-          pip install pre-commit
-          pip install yamale
-          npm install -g ajv-cli
-
-      - name: Create directories
-        run: |
-          mkdir -p context/.duckdb
-          mkdir -p context/.graph_cache
-          mkdir -p context/.vector_cache
-          mkdir -p context/.embeddings_cache
-          mkdir -p context/trace
-          mkdir -p context/archive
-          mkdir -p context/mcp_contracts
-          mkdir -p context/logs/cleanup
-          mkdir -p context/logs/eval
-          mkdir -p context/logs/kv
-          mkdir -p context/logs/prompts
-          mkdir -p context/logs/signatures
 
       - name: Run Claude Code Review
         id: claude-review
