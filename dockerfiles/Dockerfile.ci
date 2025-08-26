@@ -42,7 +42,9 @@ RUN pip install --upgrade pip setuptools wheel && \
 RUN pip install \
     yamale \
     python-gnupg \
-    tenacity
+    tenacity \
+    pytest-xdist \
+    pytest-timeout
 
 # Install Node.js dependencies for schema validation
 RUN npm install -g ajv-cli
