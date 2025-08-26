@@ -28,6 +28,12 @@ jobs:
   claude-pr-review:
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
+    # Note: Container will be used once available. For now, fallback to manual setup
+    # container:
+    #   image: ghcr.io/credentum/veris-memory-ci:latest
+    #   credentials:
+    #     username: ${{ github.actor }}
+    #     password: ${{ secrets.GITHUB_TOKEN }}
     timeout-minutes: 15 # Add timeout to prevent infinite hanging
     permissions:
       contents: read
@@ -35,6 +41,7 @@ jobs:
       issues: write # allow auto-file follow-up issues
       statuses: write # allow setting commit status
       id-token: write # for future Sigstore attestation
+      packages: read # allow pulling container from registry
 
     steps:
       - name: Checkout repository
@@ -42,6 +49,7 @@ jobs:
         with:
           fetch-depth: 0 # full history for context diff
 
+      # Temporary: Manual setup until container is available on main branch
       - name: Setup Python and Node
         run: |
           python -m pip install --upgrade pip
