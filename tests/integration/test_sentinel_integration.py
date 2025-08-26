@@ -17,7 +17,7 @@ from datetime import datetime
 
 from src.monitoring.sentinel.runner import SentinelRunner
 from src.monitoring.sentinel.models import SentinelConfig, CheckResult
-from src.monitoring.alerts.telegram import TelegramAlert
+from src.monitoring.sentinel.telegram_alerter import TelegramAlerter
 
 
 class TestSentinelIntegration:

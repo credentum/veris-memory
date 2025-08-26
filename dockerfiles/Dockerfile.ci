@@ -44,7 +44,9 @@ RUN pip install \
     python-gnupg \
     tenacity \
     pytest-xdist \
-    pytest-timeout
+    pytest-timeout \
+    docker \
+    aiohttp[speedups]
 
 # Install Node.js dependencies for schema validation
 RUN npm install -g ajv-cli
