@@ -593,7 +593,7 @@ async def startup_event() -> None:
         # PHASE 1: Initialize unified backend architecture
         if UNIFIED_BACKEND_AVAILABLE:
             try:
-                print("🔧 Initializing unified backend architecture...")
+                logger.info("🔧 Initializing unified backend architecture...")
                 
                 # Initialize QueryDispatcher
                 query_dispatcher = QueryDispatcher()
@@ -608,49 +608,49 @@ async def startup_event() -> None:
                         with open(config_path, "r") as f:
                             base_config = yaml.safe_load(f)
                         embedding_generator = await create_embedding_generator(base_config)
-                        print("✅ Embedding generator initialized for MCP")
+                        logger.info("✅ Embedding generator initialized for MCP")
                     else:
-                        print("⚠️ Config file not found, using fallback embedding")
+                        logger.warning("⚠️ Config file not found, using fallback embedding")
                 except Exception as e:
-                    print(f"⚠️ Embedding generator initialization failed: {e}")
+                    logger.warning(f"⚠️ Embedding generator initialization failed: {e}")
                 
                 # Initialize Vector Backend (if Qdrant available)
                 if qdrant_client and embedding_generator:
                     try:
                         vector_backend = VectorBackend(qdrant_client, embedding_generator)
                         query_dispatcher.register_backend("vector", vector_backend)
-                        print("✅ Vector backend registered with MCP dispatcher")
+                        logger.info("✅ Vector backend registered with MCP dispatcher")
                     except Exception as e:
-                        print(f"⚠️ Vector backend initialization failed: {e}")
+                        logger.warning(f"⚠️ Vector backend initialization failed: {e}")
                 
                 # Initialize Graph Backend (if Neo4j available) 
                 if neo4j_client:
                     try:
                         graph_backend = GraphBackend(neo4j_client)
                         query_dispatcher.register_backend("graph", graph_backend)
-                        print("✅ Graph backend registered with MCP dispatcher")
+                        logger.info("✅ Graph backend registered with MCP dispatcher")
                     except Exception as e:
-                        print(f"⚠️ Graph backend initialization failed: {e}")
+                        logger.warning(f"⚠️ Graph backend initialization failed: {e}")
                 
                 # Initialize KV Backend (if Redis available)
                 if kv_store:
                     try:
                         kv_backend = KVBackend(kv_store)
                         query_dispatcher.register_backend("kv", kv_backend)
-                        print("✅ KV backend registered with MCP dispatcher")
+                        logger.info("✅ KV backend registered with MCP dispatcher")
                     except Exception as e:
-                        print(f"⚠️ KV backend initialization failed: {e}")
+                        logger.warning(f"⚠️ KV backend initialization failed: {e}")
                 
                 # Initialize unified RetrievalCore
                 retrieval_core = initialize_retrieval_core(query_dispatcher)
-                print("✅ Unified RetrievalCore initialized - MCP now uses same search path as API")
+                logger.info("✅ Unified RetrievalCore initialized - MCP now uses same search path as API")
                 
             except Exception as e:
-                print(f"⚠️ Unified backend architecture initialization failed: {e}")
+                logger.error(f"⚠️ Unified backend architecture initialization failed: {e}")
                 query_dispatcher = None
                 retrieval_core = None
         else:
-            print("⚠️ Unified backend architecture not available, using legacy search")
+            logger.warning("⚠️ Unified backend architecture not available, using legacy search")
         
         # Initialize dashboard monitoring if available
         if DASHBOARD_AVAILABLE:

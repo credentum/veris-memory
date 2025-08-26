@@ -1,5 +1,6 @@
 # Custom Qdrant image with health check tools
-FROM qdrant/qdrant:v1.9.6
+# Using SHA256 digest for security (pinned to v1.9.6)
+FROM qdrant/qdrant:v1.9.6@sha256:d63acd24c397c45b730d16baa032a9fa7da9e8e1c7e5349bc35ef1bdac4d54e3
 
 # Install curl for health checks
 # Qdrant is based on Debian/Ubuntu

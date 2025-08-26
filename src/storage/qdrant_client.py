@@ -346,8 +346,10 @@ class VectorDBInitializer:
             from qdrant_client.models import PointStruct
 
             # PHASE 0: Verbose logging for storage pipeline
-            logger.info(f"📦 Storing vector: ID={vector_id}, embedding_dims={len(embedding)}, metadata_keys={list((metadata or {}).keys())}")
-            logger.debug(f"📊 Embedding checksum: first_6_values={embedding[:6]}, last_value={embedding[-1] if embedding else 'None'}")
+            logger.info(f"📦 Storing vector: ID={vector_id}, embedding_dims={len(embedding)}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"📊 Embedding checksum: first_6_values={embedding[:6]}, last_value={embedding[-1] if embedding else 'None'}")
+                logger.debug(f"📋 Metadata keys: {list((metadata or {}).keys())}")
 
             upsert_result = self.client.upsert(
                 collection_name=collection_name,
