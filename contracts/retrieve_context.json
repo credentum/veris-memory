@@ -2,8 +2,8 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "schema_version": "1.0",
   "name": "retrieve_context",
-  "description": "Retrieve context using hybrid search (vector similarity + graph traversal)",
-  "version": "1.0.0",
+  "description": "Retrieve context using unified hybrid search architecture with backend timing metrics",
+  "version": "1.1.0",
   "inputSchema": {
     "type": "object",
     "required": ["query"],
@@ -20,9 +20,9 @@
       },
       "search_mode": {
         "type": "string",
-        "enum": ["vector", "graph", "hybrid"],
+        "enum": ["vector", "graph", "kv", "hybrid", "auto"],
         "default": "hybrid",
-        "description": "Search mode to use"
+        "description": "Search mode: vector (semantic), graph (relationships), kv (key-value), hybrid (combined), auto (intelligent selection)"
       },
       "limit": {
         "type": "integer",
@@ -124,6 +124,29 @@
       "message": {
         "type": "string",
         "description": "Additional information or error message"
+      },
+      "backend_timings": {
+        "type": "object",
+        "description": "Per-backend response times in milliseconds (RetrievalCore integration)",
+        "additionalProperties": {
+          "type": "number",
+          "minimum": 0
+        },
+        "examples": [
+          {
+            "vector": 25.1,
+            "graph": 20.1,
+            "kv": 5.3
+          }
+        ]
+      },
+      "backends_used": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["vector", "graph", "kv"]
+        },
+        "description": "List of backends that were queried (RetrievalCore integration)"
       }
     }
   },
@@ -162,7 +185,12 @@
         ],
         "total_count": 1,
         "search_mode_used": "hybrid",
-        "message": "Found 1 matching context"
+        "message": "Found 1 contexts using unified search architecture",
+        "backend_timings": {
+          "vector": 15.2,
+          "graph": 8.5
+        },
+        "backends_used": ["vector", "graph"]
       }
     }
   ]

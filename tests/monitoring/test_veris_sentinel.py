@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from monitoring.veris_sentinel import (
     CheckResult, SentinelConfig, VerisHealthProbe, 
     GoldenFactRecall, ParaphraseRobustness, MetricsWiring, SecurityNegatives,
-    BackupRestore, ConfigParity, CapacitySmoke, 
+    BackupRestore, ConfigParity, CapacitySmoke,
     SentinelRunner, SentinelAPI
 )
 

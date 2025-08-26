@@ -121,7 +121,7 @@ class TestSentinelIntegration:
     @pytest.mark.asyncio
     async def test_telegram_alert_integration(self) -> None:
         """Test Telegram alert sending with mock API."""
-        alert = TelegramAlert(
+        alert = TelegramAlerter(
             bot_token="test_token",
             chat_id="test_chat"
         )

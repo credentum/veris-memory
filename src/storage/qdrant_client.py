@@ -9,6 +9,7 @@ This module:
 4. Provides search and indexing capabilities
 """
 
+import logging
 import sys
 import time
 from typing import Any, Dict, Optional
@@ -16,6 +17,9 @@ from typing import Any, Dict, Optional
 import click
 import yaml
 from qdrant_client import QdrantClient
+
+# Configure module logger
+logger = logging.getLogger(__name__)
 
 # Import configuration error handling
 try:
@@ -108,6 +112,14 @@ class VectorDBInitializer:
         use_ssl = qdrant_config.get("ssl", False)
         timeout = qdrant_config.get("timeout", 5)
 
+        # PHASE 0: Check Qdrant client and server compatibility
+        try:
+            import qdrant_client
+            client_version = getattr(qdrant_client, '__version__', 'unknown')
+            logger.info(f"🔗 Qdrant client version: {client_version}")
+        except Exception as e:
+            logger.warning(f"⚠️  Could not determine Qdrant client version: {e}")
+
         try:
             # Use appropriate protocol based on SSL setting
             if use_ssl:
@@ -122,12 +134,32 @@ class VectorDBInitializer:
                 self.client = QdrantClient(host=host, port=port, timeout=timeout)
             # Test connection
             if self.client:
-                self.client.get_collections()
-                click.echo(f"✓ Connected to Qdrant at {host}:{port}")
+                collections = self.client.get_collections()
+                
+                # PHASE 0: Try to get server version for compatibility check
+                try:
+                    # Attempt to get server info/version if available
+                    server_info = getattr(self.client, '_client', None)
+                    if hasattr(server_info, 'get') and callable(getattr(server_info, 'get', None)):
+                        try:
+                            # This is a best-effort attempt - different Qdrant versions expose this differently
+                            version_response = server_info.get("/")
+                            if hasattr(version_response, 'json'):
+                                server_info_data = version_response.json()
+                                server_version = server_info_data.get('version', 'unknown')
+                                logger.info(f"🖥️  Qdrant server version: {server_version}")
+                        except:
+                            logger.info("🖥️  Qdrant server version: unable to determine (connection works)")
+                    else:
+                        logger.info("🖥️  Qdrant server version: unable to determine (connection works)")
+                except Exception as version_error:
+                    logger.debug(f"🖥️  Qdrant server version check failed: {version_error}")
+                
+                logger.info(f"✓ Connected to Qdrant at {host}:{port}")
                 return True
             return False
         except Exception as e:
-            click.echo(f"✗ Failed to connect to Qdrant at {host}:{port}: {e}", err=True)
+            logger.error(f"✗ Failed to connect to Qdrant at {host}:{port}: {e}")
             return False
 
     def create_collection(self, force: bool = False) -> bool:
@@ -135,7 +167,7 @@ class VectorDBInitializer:
         collection_name = self.config.get("qdrant", {}).get("collection_name", "project_context")
 
         if not self.client:
-            click.echo("✗ Not connected to Qdrant", err=True)
+            logger.error("✗ Not connected to Qdrant")
             return False
 
         try:
@@ -144,18 +176,18 @@ class VectorDBInitializer:
             exists = any(c.name == collection_name for c in collections)
 
             if exists and not force:
-                click.echo(
+                logger.info(
                     f"Collection '{collection_name}' already exists. Use --force to recreate."
                 )
                 return True
 
             if exists and force:
-                click.echo(f"Deleting existing collection '{collection_name}'...")
+                logger.info(f"Deleting existing collection '{collection_name}'...")
                 self.client.delete_collection(collection_name)
                 time.sleep(1)  # Give Qdrant time to process
 
             # Create collection with optimal settings for embeddings
-            click.echo(f"Creating collection '{collection_name}'...")
+            logger.info(f"Creating collection '{collection_name}'...")
 
             # SPRINT 11: Enforce v1.0 dimension requirement (384)
             if Config.EMBEDDING_DIMENSIONS != 384:
@@ -183,11 +215,11 @@ class VectorDBInitializer:
                 ),
             )
 
-            click.echo(f"✓ Collection '{collection_name}' created successfully")
+            logger.info(f"✓ Collection '{collection_name}' created successfully")
             return True
 
         except Exception as e:
-            click.echo(f"✗ Failed to create collection: {e}", err=True)
+            logger.error(f"✗ Failed to create collection: {e}")
             return False
 
     def verify_setup(self) -> bool:
@@ -313,7 +345,13 @@ class VectorDBInitializer:
         try:
             from qdrant_client.models import PointStruct
 
-            self.client.upsert(
+            # PHASE 0: Verbose logging for storage pipeline
+            logger.info(f"📦 Storing vector: ID={vector_id}, embedding_dims={len(embedding)}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"📊 Embedding checksum: first_6_values={embedding[:6]}, last_value={embedding[-1] if embedding else 'None'}")
+                logger.debug(f"📋 Metadata keys: {list((metadata or {}).keys())}")
+
+            upsert_result = self.client.upsert(
                 collection_name=collection_name,
                 points=[
                     PointStruct(
@@ -324,6 +362,31 @@ class VectorDBInitializer:
                 ],
                 wait=True,  # Ensure immediate availability for retrieval
             )
+            
+            # PHASE 0: Log upsert response details  
+            logger.info(f"✅ Qdrant upsert response: operation_id={getattr(upsert_result, 'operation_id', 'N/A')}, status={getattr(upsert_result, 'status', 'unknown')}")
+            
+            # PHASE 0 FIX: Write-after-read verification
+            # Verify the vector was actually stored by attempting to retrieve it
+            try:
+                retrieved_points = self.client.retrieve(
+                    collection_name=collection_name,
+                    ids=[vector_id]
+                )
+                if not retrieved_points or len(retrieved_points) == 0:
+                    raise RuntimeError(f"Storage verification failed: Vector {vector_id} not found after upsert")
+                
+                # Additional verification: check if vector exists and has expected properties
+                stored_point = retrieved_points[0]
+                if not stored_point.vector or len(stored_point.vector) != len(embedding):
+                    raise RuntimeError(f"Storage verification failed: Vector {vector_id} corrupted or incomplete")
+                    
+                logger.info(f"✓ Vector storage verified: {vector_id} exists with {len(stored_point.vector)} dimensions")
+                
+            except Exception as verification_error:
+                # This is a critical failure - the upsert claimed success but verification failed
+                raise RuntimeError(f"Storage verification failed for vector {vector_id}: {verification_error}")
+            
             return vector_id
         except ConnectionError as e:
             raise RuntimeError(f"Qdrant connection error: {e}")
