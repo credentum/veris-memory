@@ -33,6 +33,7 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user root
     timeout-minutes: 15 # Add timeout to prevent infinite hanging
     permissions:
       contents: read
@@ -47,6 +48,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # full history for context diff
+
+      - name: Fix Git safe directory
+        run: |
+          # Fix Git safe directory issue in container
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "/__w/veris-memory/veris-memory"
+          git config --global --add safe.directory "/__w"
+          git config --global --add safe.directory "*"
+          # Verify Git is working
+          git status
 
       - name: Run Claude Code Review
         id: claude-review
