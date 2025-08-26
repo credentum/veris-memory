@@ -42,8 +42,19 @@ def migration_cli():
 @click.option('--max-concurrent', default=5, help='Maximum concurrent operations')
 @click.option('--dry-run', is_flag=True, help='Run without making changes')
 @click.option('--config-path', default='.ctxrc.yaml', help='Path to configuration file')
-def backfill(source, target, batch_size, max_concurrent, dry_run, config_path):
+@click.option('--test-mode', is_flag=True, help='Run in test mode (default: False for production)')
+def backfill(source, target, batch_size, max_concurrent, dry_run, config_path, test_mode):
     """Backfill existing data to text search backend."""
+    
+    # Validate input parameters
+    if batch_size <= 0 or batch_size > 10000:
+        click.echo("❌ Error: batch-size must be between 1 and 10000")
+        return 1
+    
+    if max_concurrent <= 0 or max_concurrent > 100:
+        click.echo("❌ Error: max-concurrent must be between 1 and 100")
+        return 1
+    
     async def _run_backfill():
         # Initialize clients
         click.echo("Initializing storage clients...")
@@ -57,14 +68,14 @@ def backfill(source, target, batch_size, max_concurrent, dry_run, config_path):
             
             if source in ['qdrant', 'all']:
                 try:
-                    qdrant_client = VectorDBInitializer(config_path=config_path, test_mode=True)
+                    qdrant_client = VectorDBInitializer(config_path=config_path, test_mode=test_mode)
                     click.echo("✓ Qdrant client initialized")
                 except Exception as e:
                     click.echo(f"⚠ Qdrant client failed: {e}")
             
             if source in ['neo4j', 'all']:
                 try:
-                    neo4j_client = Neo4jInitializer(config_path=config_path, test_mode=True)
+                    neo4j_client = Neo4jInitializer(config_path=config_path, test_mode=test_mode)
                     click.echo("✓ Neo4j client initialized")
                 except Exception as e:
                     click.echo(f"⚠ Neo4j client failed: {e}")
@@ -149,7 +160,8 @@ def backfill(source, target, batch_size, max_concurrent, dry_run, config_path):
 
 @migration_cli.command()
 @click.option('--config-path', default='.ctxrc.yaml', help='Path to configuration file')
-def status(config_path):
+@click.option('--test-mode', is_flag=True, help='Run in test mode (default: False for production)')
+def status(config_path, test_mode):
     """Check status of storage backends and text search index."""
     async def _check_status():
         click.echo("🔍 Checking backend status...\n")
@@ -158,13 +170,13 @@ def status(config_path):
         backends = {}
         
         try:
-            qdrant_client = VectorDBInitializer(config_path=config_path, test_mode=True)
+            qdrant_client = VectorDBInitializer(config_path=config_path, test_mode=test_mode)
             backends['Qdrant (Vector)'] = "✓ Available"
         except Exception as e:
             backends['Qdrant (Vector)'] = f"❌ Error: {e}"
         
         try:
-            neo4j_client = Neo4jInitializer(config_path=config_path, test_mode=True)
+            neo4j_client = Neo4jInitializer(config_path=config_path, test_mode=test_mode)
             backends['Neo4j (Graph)'] = "✓ Available"
         except Exception as e:
             backends['Neo4j (Graph)'] = f"❌ Error: {e}"
@@ -283,7 +295,8 @@ def rebuild_text_index(config_path):
 @click.option('--content-type', default='text', help='Type of content')
 @click.option('--tags', help='Comma-separated tags')
 @click.option('--config-path', default='.ctxrc.yaml', help='Path to configuration file')
-def test_store(content, content_type, tags, config_path):
+@click.option('--test-mode', is_flag=True, help='Run in test mode (default: False for production)')
+def test_store(content, content_type, tags, config_path, test_mode):
     """Test storing content in all backends."""
     async def _test_store():
         click.echo(f"💾 Testing storage: '{content[:50]}...' (type: {content_type})\n")
@@ -296,12 +309,12 @@ def test_store(content, content_type, tags, config_path):
             text_backend = initialize_text_backend()
             
             try:
-                qdrant_client = VectorDBInitializer(config_path=config_path, test_mode=True)
+                qdrant_client = VectorDBInitializer(config_path=config_path, test_mode=test_mode)
             except Exception as e:
                 click.echo(f"⚠ Qdrant not available: {e}")
             
             try:
-                neo4j_client = Neo4jInitializer(config_path=config_path, test_mode=True)
+                neo4j_client = Neo4jInitializer(config_path=config_path, test_mode=test_mode)
             except Exception as e:
                 click.echo(f"⚠ Neo4j not available: {e}")
             

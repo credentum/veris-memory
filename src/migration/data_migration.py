@@ -187,10 +187,14 @@ class DataMigrationEngine:
         # Get all vectors from Qdrant
         try:
             # Use scroll to get all points in batches
-            collection_name = "context_embeddings"  # Default collection name
+            collection_name = getattr(job, 'collection_name', "context_embeddings")  # Configurable collection name
+            # Add memory usage monitoring for large batches
+            if job.batch_size > 1000:
+                logger.warning(f"Large batch size {job.batch_size} may cause memory issues")
+            
             scroll_result = self.qdrant_client.client.scroll(
                 collection_name=collection_name,
-                limit=job.batch_size,
+                limit=min(job.batch_size, 1000),  # Cap batch size to prevent memory issues
                 with_payload=True,
                 with_vectors=False  # We don't need vectors for text indexing
             )
@@ -324,11 +328,18 @@ class DataMigrationEngine:
                     elif "title" in value and "description" in value:
                         return f"{value['title']} {value['description']}"
         
-        # Fallback: concatenate all string values
+        # Fallback: concatenate all string values (with limits to prevent memory issues)
         text_parts = []
+        max_parts = 50  # Limit number of parts to prevent excessive concatenation
+        max_part_length = 1000  # Limit each part length
+        
         for key, value in payload.items():
+            if len(text_parts) >= max_parts:
+                break
             if isinstance(value, str) and value.strip() and key not in ["id", "type", "source"]:
-                text_parts.append(value)
+                # Truncate individual parts to prevent memory issues
+                truncated_value = value[:max_part_length] if len(value) > max_part_length else value
+                text_parts.append(truncated_value)
         
         return " ".join(text_parts) if text_parts else None
     
@@ -481,11 +492,18 @@ class DataMigrationEngine:
                 if isinstance(value, str) and value.strip():
                     return value
         
-        # Handle JSON fields (from flattened storage)
+        # Handle JSON fields (from flattened storage) with size limits
         json_fields = [k for k in node.keys() if k.endswith("_json")]
         for field in json_fields:
             try:
-                json_data = json.loads(node[field])
+                json_str = node[field]
+                # Security: Validate JSON size before parsing to prevent DoS
+                max_json_size = 1024 * 1024  # 1MB limit
+                if isinstance(json_str, str) and len(json_str.encode('utf-8')) > max_json_size:
+                    logger.warning(f"Skipping large JSON field {field}: {len(json_str.encode('utf-8'))} bytes")
+                    continue
+                    
+                json_data = json.loads(json_str)
                 if isinstance(json_data, dict):
                     text = self._extract_text_from_payload(json_data)
                     if text:
