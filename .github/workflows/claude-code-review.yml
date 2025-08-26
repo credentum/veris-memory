@@ -29,8 +29,7 @@ jobs:
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     container:
-      # Use PR-specific container tag if available, fallback to latest
-      image: ghcr.io/credentum/veris-memory-ci:pr-${{ github.event.pull_request.number }}
+      image: ghcr.io/credentum/veris-memory-ci:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
