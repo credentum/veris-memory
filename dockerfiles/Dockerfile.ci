@@ -13,6 +13,9 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
+    unzip \
+    bash \
+    bc \
     build-essential \
     gcc \
     g++ \
@@ -40,6 +43,11 @@ RUN pip install \
 
 # Install Node.js dependencies for schema validation
 RUN npm install -g ajv-cli
+
+# Install Bun
+RUN curl -fsSL https://bun.sh/install | bash && \
+    mv /root/.bun/bin/bun /usr/local/bin/ && \
+    chmod +x /usr/local/bin/bun
 
 # Pre-compile Python files for faster startup
 RUN python -m compileall -q /usr/local/lib/python3.11
