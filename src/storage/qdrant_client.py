@@ -108,6 +108,14 @@ class VectorDBInitializer:
         use_ssl = qdrant_config.get("ssl", False)
         timeout = qdrant_config.get("timeout", 5)
 
+        # PHASE 0: Check Qdrant client and server compatibility
+        try:
+            import qdrant_client
+            client_version = getattr(qdrant_client, '__version__', 'unknown')
+            click.echo(f"🔗 Qdrant client version: {client_version}")
+        except Exception as e:
+            click.echo(f"⚠️  Could not determine Qdrant client version: {e}", err=True)
+
         try:
             # Use appropriate protocol based on SSL setting
             if use_ssl:
@@ -122,7 +130,27 @@ class VectorDBInitializer:
                 self.client = QdrantClient(host=host, port=port, timeout=timeout)
             # Test connection
             if self.client:
-                self.client.get_collections()
+                collections = self.client.get_collections()
+                
+                # PHASE 0: Try to get server version for compatibility check
+                try:
+                    # Attempt to get server info/version if available
+                    server_info = getattr(self.client, '_client', None)
+                    if hasattr(server_info, 'get') and callable(getattr(server_info, 'get', None)):
+                        try:
+                            # This is a best-effort attempt - different Qdrant versions expose this differently
+                            version_response = server_info.get("/")
+                            if hasattr(version_response, 'json'):
+                                server_info_data = version_response.json()
+                                server_version = server_info_data.get('version', 'unknown')
+                                click.echo(f"🖥️  Qdrant server version: {server_version}")
+                        except:
+                            click.echo("🖥️  Qdrant server version: unable to determine (connection works)")
+                    else:
+                        click.echo("🖥️  Qdrant server version: unable to determine (connection works)")
+                except Exception as version_error:
+                    click.echo(f"🖥️  Qdrant server version check failed: {version_error}")
+                
                 click.echo(f"✓ Connected to Qdrant at {host}:{port}")
                 return True
             return False
@@ -313,7 +341,11 @@ class VectorDBInitializer:
         try:
             from qdrant_client.models import PointStruct
 
-            self.client.upsert(
+            # PHASE 0: Verbose logging for storage pipeline
+            click.echo(f"📦 Storing vector: ID={vector_id}, embedding_dims={len(embedding)}, metadata_keys={list((metadata or {}).keys())}")
+            click.echo(f"📊 Embedding checksum: first_6_values={embedding[:6]}, last_value={embedding[-1] if embedding else 'None'}")
+
+            upsert_result = self.client.upsert(
                 collection_name=collection_name,
                 points=[
                     PointStruct(
@@ -324,6 +356,31 @@ class VectorDBInitializer:
                 ],
                 wait=True,  # Ensure immediate availability for retrieval
             )
+            
+            # PHASE 0: Log upsert response details  
+            click.echo(f"✅ Qdrant upsert response: operation_id={getattr(upsert_result, 'operation_id', 'N/A')}, status={getattr(upsert_result, 'status', 'unknown')}")
+            
+            # PHASE 0 FIX: Write-after-read verification
+            # Verify the vector was actually stored by attempting to retrieve it
+            try:
+                retrieved_points = self.client.retrieve(
+                    collection_name=collection_name,
+                    ids=[vector_id]
+                )
+                if not retrieved_points or len(retrieved_points) == 0:
+                    raise RuntimeError(f"Storage verification failed: Vector {vector_id} not found after upsert")
+                
+                # Additional verification: check if vector exists and has expected properties
+                stored_point = retrieved_points[0]
+                if not stored_point.vector or len(stored_point.vector) != len(embedding):
+                    raise RuntimeError(f"Storage verification failed: Vector {vector_id} corrupted or incomplete")
+                    
+                click.echo(f"✓ Vector storage verified: {vector_id} exists with {len(stored_point.vector)} dimensions")
+                
+            except Exception as verification_error:
+                # This is a critical failure - the upsert claimed success but verification failed
+                raise RuntimeError(f"Storage verification failed for vector {vector_id}: {verification_error}")
+            
             return vector_id
         except ConnectionError as e:
             raise RuntimeError(f"Qdrant connection error: {e}")

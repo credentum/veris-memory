@@ -117,6 +117,24 @@ except ImportError as e:
     QdrantClientLib = None
 from ..validators.config_validator import validate_all_configs
 
+# PHASE 1: Import unified backend architecture
+try:
+    from ..core.query_dispatcher import QueryDispatcher
+    from ..core.retrieval_core import initialize_retrieval_core
+    from ..backends.vector_backend import VectorBackend
+    from ..backends.graph_backend import GraphBackend
+    from ..backends.kv_backend import KVBackend
+    from ..core.embedding_config import create_embedding_generator
+    UNIFIED_BACKEND_AVAILABLE = True
+    logger.info("Unified backend architecture available")
+except ImportError as e:
+    logger.warning(f"Unified backend architecture not available: {e}")
+    UNIFIED_BACKEND_AVAILABLE = False
+    QueryDispatcher = None
+    VectorBackend = None
+    GraphBackend = None
+    KVBackend = None
+
 # Import monitoring dashboard components
 try:
     from ..monitoring.dashboard import UnifiedDashboard
@@ -333,6 +351,10 @@ qdrant_client = None
 kv_store = None
 simple_redis = None  # Direct Redis client for scratchpad operations
 
+# PHASE 1: Global unified search infrastructure
+query_dispatcher = None
+retrieval_core = None
+
 # Global dashboard components
 dashboard = None
 websocket_connections = set()  # Track WebSocket connections
@@ -494,7 +516,7 @@ def validate_startup_credentials() -> Dict[str, Optional[str]]:
 @app.on_event("startup")
 async def startup_event() -> None:
     """Initialize storage clients and MCP validation on startup."""
-    global neo4j_client, qdrant_client, kv_store, dashboard
+    global neo4j_client, qdrant_client, kv_store, dashboard, query_dispatcher, retrieval_core
     
     # Initialize MCP contract validator
     try:
@@ -567,6 +589,68 @@ async def startup_event() -> None:
             print("⚠️ SimpleRedisClient connection failed, scratchpad operations may fail")
 
         print("✅ Storage initialization completed (services may be degraded)")
+        
+        # PHASE 1: Initialize unified backend architecture
+        if UNIFIED_BACKEND_AVAILABLE:
+            try:
+                print("🔧 Initializing unified backend architecture...")
+                
+                # Initialize QueryDispatcher
+                query_dispatcher = QueryDispatcher()
+                
+                # Initialize embedding generator (needed for VectorBackend)
+                embedding_generator = None
+                try:
+                    # Load config (same way as API does)
+                    config_path = ".ctxrc.yaml"
+                    if os.path.exists(config_path):
+                        import yaml
+                        with open(config_path, "r") as f:
+                            base_config = yaml.safe_load(f)
+                        embedding_generator = await create_embedding_generator(base_config)
+                        print("✅ Embedding generator initialized for MCP")
+                    else:
+                        print("⚠️ Config file not found, using fallback embedding")
+                except Exception as e:
+                    print(f"⚠️ Embedding generator initialization failed: {e}")
+                
+                # Initialize Vector Backend (if Qdrant available)
+                if qdrant_client and embedding_generator:
+                    try:
+                        vector_backend = VectorBackend(qdrant_client, embedding_generator)
+                        query_dispatcher.register_backend("vector", vector_backend)
+                        print("✅ Vector backend registered with MCP dispatcher")
+                    except Exception as e:
+                        print(f"⚠️ Vector backend initialization failed: {e}")
+                
+                # Initialize Graph Backend (if Neo4j available) 
+                if neo4j_client:
+                    try:
+                        graph_backend = GraphBackend(neo4j_client)
+                        query_dispatcher.register_backend("graph", graph_backend)
+                        print("✅ Graph backend registered with MCP dispatcher")
+                    except Exception as e:
+                        print(f"⚠️ Graph backend initialization failed: {e}")
+                
+                # Initialize KV Backend (if Redis available)
+                if kv_store:
+                    try:
+                        kv_backend = KVBackend(kv_store)
+                        query_dispatcher.register_backend("kv", kv_backend)
+                        print("✅ KV backend registered with MCP dispatcher")
+                    except Exception as e:
+                        print(f"⚠️ KV backend initialization failed: {e}")
+                
+                # Initialize unified RetrievalCore
+                retrieval_core = initialize_retrieval_core(query_dispatcher)
+                print("✅ Unified RetrievalCore initialized - MCP now uses same search path as API")
+                
+            except Exception as e:
+                print(f"⚠️ Unified backend architecture initialization failed: {e}")
+                query_dispatcher = None
+                retrieval_core = None
+        else:
+            print("⚠️ Unified backend architecture not available, using legacy search")
         
         # Initialize dashboard monitoring if available
         if DASHBOARD_AVAILABLE:
@@ -1274,6 +1358,57 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
     comprehensive context retrieval.
     """
     try:
+        # PHASE 1: Use unified RetrievalCore if available
+        if retrieval_core:
+            try:
+                logger.info(f"Using unified RetrievalCore for search: query_length={len(request.query)}, mode={request.search_mode}")
+                
+                # Execute search through unified retrieval core
+                search_response = await retrieval_core.search(
+                    query=request.query,
+                    limit=request.limit,
+                    search_mode=request.search_mode,
+                    context_type=getattr(request, 'context_type', None),
+                    metadata_filters=getattr(request, 'metadata_filters', None),
+                    score_threshold=0.0  # Use default threshold
+                )
+                
+                # Convert SearchResultResponse to MCP format
+                results = []
+                for memory_result in search_response.results:
+                    results.append({
+                        "id": memory_result.id,
+                        "content": memory_result.metadata,  # Full metadata
+                        "score": memory_result.score,
+                        "source": memory_result.source.value,  # Convert enum to string
+                        "text": memory_result.text,
+                        "type": memory_result.type.value if memory_result.type else "general",
+                        "title": memory_result.title,
+                        "tags": memory_result.tags,
+                        "namespace": memory_result.namespace,
+                        "user_id": memory_result.user_id
+                    })
+                
+                logger.info(
+                    f"Unified search completed: results={len(results)}, "
+                    f"backends_used={search_response.backends_used}, "
+                    f"backend_timings={search_response.backend_timings}"
+                )
+                
+                return {
+                    "results": results,
+                    "total_count": len(results),
+                    "search_mode_used": request.search_mode,
+                    "backend_timings": search_response.backend_timings,  # PHASE 1: Now includes proper timing!
+                    "backends_used": search_response.backends_used,
+                    "message": f"Found {len(results)} contexts using unified search architecture"
+                }
+                
+            except Exception as unified_error:
+                logger.error(f"Unified RetrievalCore failed, falling back to legacy: {unified_error}")
+                # Fall through to legacy implementation
+        
+        # LEGACY FALLBACK: Direct Qdrant/Neo4j calls (for backward compatibility)
         results = []
 
         if request.search_mode in ["vector", "hybrid"] and qdrant_client:
