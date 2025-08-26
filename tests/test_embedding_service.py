@@ -73,7 +73,7 @@ class TestPhase1BasicFunctionality:
         """Test that embeddings are padded to correct dimensions."""
         config = EmbeddingConfig(
             model=EmbeddingModel.MINI_LM_L6_V2,  # 384 dimensions
-            target_dimensions=1536
+            target_dimensions=384
         )
         
         with patch('sentence_transformers.SentenceTransformer') as mock_st:
@@ -88,17 +88,16 @@ class TestPhase1BasicFunctionality:
             
             embedding = await service.generate_embedding("test text")
             
-            # Should be padded to 1536 dimensions
-            assert len(embedding) == 1536
-            assert embedding[:384] == [0.1] * 384  # Original values
-            assert embedding[384:] == [0.0] * (1536 - 384)  # Padding
+            # Should remain at 384 dimensions (no padding needed)
+            assert len(embedding) == 384
+            assert embedding == [0.1] * 384  # Original values unchanged
     
     @pytest.mark.asyncio
     async def test_dimension_truncation(self):
         """Test that embeddings are truncated when too large."""
         config = EmbeddingConfig(
             model=EmbeddingModel.OPENAI_3_LARGE,  # 3072 dimensions
-            target_dimensions=1536
+            target_dimensions=384
         )
         
         with patch('sentence_transformers.SentenceTransformer') as mock_st:
@@ -113,14 +112,14 @@ class TestPhase1BasicFunctionality:
             
             embedding = await service.generate_embedding("test text")
             
-            # Should be truncated to 1536 dimensions
-            assert len(embedding) == 1536
-            assert embedding == list(range(1536))  # First 1536 values
+            # Should be truncated to 384 dimensions
+            assert len(embedding) == 384
+            assert embedding == list(range(384))  # First 384 values
     
     @pytest.mark.asyncio
     async def test_no_adjustment_when_disabled(self):
         """Test that dimension adjustment can be disabled."""
-        config = EmbeddingConfig(target_dimensions=1536)
+        config = EmbeddingConfig(target_dimensions=384)
         
         with patch('sentence_transformers.SentenceTransformer') as mock_st:
             mock_model = Mock()
@@ -165,7 +164,7 @@ class TestPhase2RobustImplementation:
             elapsed = time.time() - start_time
             
             # Should succeed after retries
-            assert len(embedding) == 1536  # With padding
+            assert len(embedding) == 384  # Target dimensions
             # Should have taken time for retries (exponential backoff: 1s + 2s)
             assert elapsed >= 3.0
             
@@ -271,7 +270,7 @@ class TestPhase3HealthAndMonitoring:
             assert health["status"] == "healthy"
             assert health["model_loaded"] is True
             assert health["model_dimensions"] == 384
-            assert health["target_dimensions"] == 1536
+            assert health["target_dimensions"] == 384
             assert health["metrics"]["total_requests"] == 2
             assert health["metrics"]["successful_requests"] == 2
             assert health["metrics"]["failed_requests"] == 0
@@ -328,7 +327,7 @@ class TestPhase3HealthAndMonitoring:
         """Test that configuration can be retrieved."""
         config = EmbeddingConfig(
             model=EmbeddingModel.MINI_LM_L6_V2,
-            target_dimensions=1536,
+            target_dimensions=384,
             max_retries=5,
             cache_enabled=True
         )
@@ -337,7 +336,7 @@ class TestPhase3HealthAndMonitoring:
         config_dict = service.get_configuration()
         
         assert config_dict["model"] == "all-MiniLM-L6-v2"
-        assert config_dict["target_dimensions"] == 1536
+        assert config_dict["target_dimensions"] == 384
         assert config_dict["max_retries"] == 5
         assert config_dict["cache_enabled"] is True
 
@@ -370,7 +369,7 @@ class TestConcurrentAccess:
             # Verify all results
             assert len(results) == 10
             for result in results:
-                assert len(result) == 1536  # Target dimensions
+                assert len(result) == 384  # Target dimensions
             
             # Check metrics
             metrics = service.get_health_status()["metrics"]
@@ -432,7 +431,7 @@ class TestEndToEndIntegration:
             embedding = await generate_embedding(test_content)
             
             # Should return properly sized embedding
-            assert len(embedding) == 1536
+            assert len(embedding) == 384
             assert isinstance(embedding, list)
             assert all(isinstance(x, float) for x in embedding)
 

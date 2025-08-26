@@ -213,7 +213,7 @@ class EmbeddingGenerator:
             logger.error(f"Failed to initialize HuggingFace model: {e}")
             return False
 
-    async def generate_embedding(self, text: str) -> List[float]:
+    async def generate_embedding(self, text: str, adjust_dimensions: bool = True) -> List[float]:
         """Generate embedding for text with Sprint 11 v1.0 dimension validation.
 
         Args:
@@ -351,7 +351,7 @@ async def create_embedding_generator(config: Dict[str, Any]) -> EmbeddingGenerat
         # Force fallback to development mode
         embedding_config.provider = "development"
         embedding_config.model = "hash-based"
-        embedding_config.dimensions = 1536
+        embedding_config.dimensions = 384
         generator = EmbeddingGenerator(embedding_config)
         await generator.initialize()
 

@@ -76,7 +76,7 @@ class EmbeddingModel(Enum):
 class EmbeddingConfig:
     """Configuration for embedding service."""
     model: EmbeddingModel = EmbeddingModel.MINI_LM_L6_V2
-    target_dimensions: int = 1536
+    target_dimensions: int = 384
     max_retries: int = 3
     timeout_seconds: float = 30.0
     cache_enabled: bool = True
