@@ -27,6 +27,13 @@ from ..storage.qdrant_client import VectorDBInitializer
 logger = logging.getLogger(__name__)
 
 
+# Configuration constants
+MAX_JSON_SIZE_BYTES = 1024 * 1024  # 1MB default limit for JSON parsing
+MAX_TEXT_PARTS = 50  # Maximum number of text parts in concatenation
+MAX_PART_LENGTH = 1000  # Maximum length of each text part
+MAX_ERROR_MESSAGE_LENGTH = 200  # Maximum length of error messages
+
+
 def _sanitize_error_message(error_msg: str) -> str:
     """Sanitize error messages to prevent sensitive data exposure."""
     # Remove potential sensitive patterns
@@ -45,8 +52,8 @@ def _sanitize_error_message(error_msg: str) -> str:
         sanitized = re.sub(pattern, "[REDACTED]", sanitized, flags=re.IGNORECASE)
 
     # Truncate very long error messages
-    if len(sanitized) > 200:
-        sanitized = sanitized[:197] + "..."
+    if len(sanitized) > MAX_ERROR_MESSAGE_LENGTH:
+        sanitized = sanitized[:MAX_ERROR_MESSAGE_LENGTH - 3] + "..."
 
     return sanitized
 
@@ -91,7 +98,7 @@ class MigrationJob:
     error_count: int = 0
     errors: List[str] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialize the errors list if not provided."""
         if self.errors is None:
             self.errors = []
@@ -108,7 +115,7 @@ class MigrationResult:
     processing_time_ms: float = 0.0
     metadata: Dict[str, Any] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialize the metadata dictionary if not provided."""
         if self.metadata is None:
             self.metadata = {}
@@ -386,15 +393,13 @@ class DataMigrationEngine:
 
         # Fallback: concatenate all string values (with limits to prevent memory issues)
         text_parts = []
-        max_parts = 50  # Limit number of parts to prevent excessive concatenation
-        max_part_length = 1000  # Limit each part length
 
         for key, value in payload.items():
-            if len(text_parts) >= max_parts:
+            if len(text_parts) >= MAX_TEXT_PARTS:
                 break
             if isinstance(value, str) and value.strip() and key not in ["id", "type", "source"]:
                 # Truncate individual parts to prevent memory issues
-                truncated_value = value[:max_part_length] if len(value) > max_part_length else value
+                truncated_value = value[:MAX_PART_LENGTH] if len(value) > MAX_PART_LENGTH else value
                 text_parts.append(truncated_value)
 
         return " ".join(text_parts) if text_parts else None
@@ -555,8 +560,7 @@ class DataMigrationEngine:
             try:
                 json_str = node[field]
                 # Security: Validate JSON size before parsing to prevent DoS
-                max_json_size = 1024 * 1024  # 1MB limit
-                if isinstance(json_str, str) and len(json_str.encode("utf-8")) > max_json_size:
+                if isinstance(json_str, str) and len(json_str.encode("utf-8")) > MAX_JSON_SIZE_BYTES:
                     logger.warning(
                         f"Skipping large JSON field {field}: {len(json_str.encode('utf-8'))} bytes"
                     )

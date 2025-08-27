@@ -36,7 +36,8 @@ class StorageResult:
     processing_time_ms: float = 0.0
     metadata: Dict[str, Any] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        """Initialize the metadata dictionary if not provided."""
         if self.metadata is None:
             self.metadata = {}
 
@@ -53,7 +54,8 @@ class StorageRequest:
     backends: Optional[List[str]] = None  # Specific backends to use, None = all
     tags: Optional[List[str]] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        """Initialize default values for optional fields."""
         if self.context_id is None:
             self.context_id = str(uuid.uuid4())
         if self.metadata is None:

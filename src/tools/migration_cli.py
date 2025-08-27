@@ -24,6 +24,13 @@ from ..storage.neo4j_client import Neo4jInitializer
 from ..storage.qdrant_client import VectorDBInitializer
 
 
+# Configuration constants for CLI validation
+MIN_BATCH_SIZE = 1
+MAX_BATCH_SIZE = 10000
+MIN_CONCURRENT = 1
+MAX_CONCURRENT = 100
+
+
 @click.group()
 def migration_cli():
     """Veris Memory Data Migration Tools."""
@@ -49,12 +56,12 @@ def backfill(source, target, batch_size, max_concurrent, dry_run, config_path, t
     """Backfill existing data to text search backend."""
 
     # Validate input parameters
-    if batch_size <= 0 or batch_size > 10000:
-        click.echo("❌ Error: batch-size must be between 1 and 10000")
+    if batch_size < MIN_BATCH_SIZE or batch_size > MAX_BATCH_SIZE:
+        click.echo(f"❌ Error: batch-size must be between {MIN_BATCH_SIZE} and {MAX_BATCH_SIZE}")
         return 1
 
-    if max_concurrent <= 0 or max_concurrent > 100:
-        click.echo("❌ Error: max-concurrent must be between 1 and 100")
+    if max_concurrent < MIN_CONCURRENT or max_concurrent > MAX_CONCURRENT:
+        click.echo(f"❌ Error: max-concurrent must be between {MIN_CONCURRENT} and {MAX_CONCURRENT}")
         return 1
 
     async def _run_backfill():
