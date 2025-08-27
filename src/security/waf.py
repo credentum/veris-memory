@@ -28,7 +28,7 @@ class WAFRule:
     compiled_pattern: Optional[re.Pattern] = None
     
     def __post_init__(self):
-        """Compile regex pattern after initialization"""
+        """Compile regex pattern after initialization."""
         if self.pattern and not self.compiled_pattern:
             self.compiled_pattern = re.compile(self.pattern, re.IGNORECASE)
 
