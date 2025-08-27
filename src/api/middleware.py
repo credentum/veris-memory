@@ -116,7 +116,7 @@ class ValidationMiddleware(BaseHTTPMiddleware):
             
             return JSONResponse(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                content=error_response.dict()
+                content=error_response.model_dump()
             )
         
         except Exception:
@@ -159,7 +159,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             
             return JSONResponse(
                 status_code=status_code,
-                content=error_response.dict(),
+                content=error_response.model_dump(),
                 headers={"X-Trace-ID": trace_id}
             )
     
@@ -194,8 +194,17 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 {"error_type": error_type}
             )
         
+        # Timeout errors (must come before backend check)
+        if "timeout" in error_str.lower() or error_type in ["TimeoutError", "asyncio.TimeoutError"]:
+            return (
+                ErrorCode.TIMEOUT_ERROR,
+                status.HTTP_504_GATEWAY_TIMEOUT,
+                "Request timeout",
+                {"error_type": error_type}
+            )
+        
         # Backend errors
-        if any(keyword in error_str.lower() for keyword in ["backend", "database", "connection", "timeout"]):
+        if any(keyword in error_str.lower() for keyword in ["backend", "database", "connection"]):
             return (
                 ErrorCode.BACKEND_ERROR,
                 status.HTTP_502_BAD_GATEWAY,
@@ -209,15 +218,6 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 ErrorCode.NOT_FOUND,
                 status.HTTP_404_NOT_FOUND,
                 "Resource not found",
-                {"error_type": error_type}
-            )
-        
-        # Timeout errors
-        if "timeout" in error_str.lower() or error_type in ["TimeoutError", "asyncio.TimeoutError"]:
-            return (
-                ErrorCode.TIMEOUT_ERROR,
-                status.HTTP_504_GATEWAY_TIMEOUT,
-                "Request timeout",
                 {"error_type": error_type}
             )
         
@@ -275,7 +275,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                content=error_response.dict(),
+                content=error_response.model_dump(),
                 headers={
                     "X-RateLimit-Limit": str(self.requests_per_minute),
                     "X-RateLimit-Remaining": "0",
@@ -340,12 +340,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 class MetricsMiddleware(BaseHTTPMiddleware):
     """Metrics collection middleware for observability."""
     
+    # Class-level shared state so all instances share the same metrics
+    request_count = 0
+    response_times = []
+    status_counts = {}
+    endpoint_metrics = {}
+    
     def __init__(self, app):
         super().__init__(app)
-        self.request_count = 0
-        self.response_times = []
-        self.status_counts = {}
-        self.endpoint_metrics = {}
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Process request with metrics collection."""
@@ -368,40 +370,40 @@ class MetricsMiddleware(BaseHTTPMiddleware):
     
     def _record_metrics(self, request: Request, response: Response, duration_ms: float):
         """Record successful request metrics."""
-        self.request_count += 1
-        self.response_times.append(duration_ms)
+        MetricsMiddleware.request_count += 1
+        MetricsMiddleware.response_times.append(duration_ms)
         
         # Limit response times list to prevent memory growth
-        if len(self.response_times) > 10000:
-            self.response_times = self.response_times[-5000:]
+        if len(MetricsMiddleware.response_times) > 10000:
+            MetricsMiddleware.response_times = MetricsMiddleware.response_times[-5000:]
         
         # Status code metrics
         status_code = response.status_code
-        self.status_counts[status_code] = self.status_counts.get(status_code, 0) + 1
+        MetricsMiddleware.status_counts[status_code] = MetricsMiddleware.status_counts.get(status_code, 0) + 1
         
         # Endpoint metrics
         endpoint = f"{request.method} {request.url.path}"
-        if endpoint not in self.endpoint_metrics:
-            self.endpoint_metrics[endpoint] = {"count": 0, "total_time": 0, "errors": 0}
+        if endpoint not in MetricsMiddleware.endpoint_metrics:
+            MetricsMiddleware.endpoint_metrics[endpoint] = {"count": 0, "total_time": 0, "errors": 0}
         
-        self.endpoint_metrics[endpoint]["count"] += 1
-        self.endpoint_metrics[endpoint]["total_time"] += duration_ms
+        MetricsMiddleware.endpoint_metrics[endpoint]["count"] += 1
+        MetricsMiddleware.endpoint_metrics[endpoint]["total_time"] += duration_ms
     
     def _record_error_metrics(self, request: Request, error: Exception, duration_ms: float):
         """Record error metrics."""
-        self.request_count += 1
-        self.response_times.append(duration_ms)
+        MetricsMiddleware.request_count += 1
+        MetricsMiddleware.response_times.append(duration_ms)
         
         # Error metrics
         endpoint = f"{request.method} {request.url.path}"
-        if endpoint not in self.endpoint_metrics:
-            self.endpoint_metrics[endpoint] = {"count": 0, "total_time": 0, "errors": 0}
+        if endpoint not in MetricsMiddleware.endpoint_metrics:
+            MetricsMiddleware.endpoint_metrics[endpoint] = {"count": 0, "total_time": 0, "errors": 0}
         
-        self.endpoint_metrics[endpoint]["errors"] += 1
+        MetricsMiddleware.endpoint_metrics[endpoint]["errors"] += 1
     
     def get_metrics_summary(self) -> Dict[str, Any]:
         """Get metrics summary."""
-        if not self.response_times:
+        if not MetricsMiddleware.response_times:
             return {
                 "request_count": 0,
                 "avg_response_time_ms": 0,
@@ -411,16 +413,16 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                 "endpoint_metrics": {}
             }
         
-        sorted_times = sorted(self.response_times)
+        sorted_times = sorted(MetricsMiddleware.response_times)
         count = len(sorted_times)
         
         return {
-            "request_count": self.request_count,
+            "request_count": MetricsMiddleware.request_count,
             "avg_response_time_ms": sum(sorted_times) / count,
             "p95_response_time_ms": sorted_times[int(count * 0.95)] if count > 0 else 0,
             "p99_response_time_ms": sorted_times[int(count * 0.99)] if count > 0 else 0,
-            "status_counts": self.status_counts.copy(),
-            "endpoint_metrics": self.endpoint_metrics.copy()
+            "status_counts": MetricsMiddleware.status_counts.copy(),
+            "endpoint_metrics": MetricsMiddleware.endpoint_metrics.copy()
         }
 
 
