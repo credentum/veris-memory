@@ -69,12 +69,12 @@ services:
     networks:
       - context-store-network
 
-  # Vector Database (Qdrant) - Using v1.9.6 with health check tools
+  # Vector Database (Qdrant) - Using v1.15.1 with health check tools
   qdrant:
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile.qdrant
-    image: veris-memory/qdrant:v1.9.6-healthcheck
+    image: veris-memory/qdrant:v1.15.1-healthcheck
     platform: linux/amd64
     ports:
       - "6333:6333"
