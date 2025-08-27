@@ -193,8 +193,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 "Rate limit exceeded",
                 {"error_type": error_type}
             )
-        
-        # Timeout errors (must come before backend check)
+        # Timeout errors (must come before backend errors to avoid being caught by "timeout" keyword)
         if "timeout" in error_str.lower() or error_type in ["TimeoutError", "asyncio.TimeoutError"]:
             return (
                 ErrorCode.TIMEOUT_ERROR,

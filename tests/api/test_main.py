@@ -141,14 +141,11 @@ class TestDependencyInjection:
         """Test error when query dispatcher is not initialized."""
         with pytest.raises(RuntimeError, match="Query dispatcher not initialized"):
             get_query_dispatcher()
-    
-    @patch('src.api.dependencies.query_dispatcher')
-    def test_get_query_dispatcher_initialized(self, mock_dispatcher):
+    def test_get_query_dispatcher_initialized(self):
         """Test getting initialized query dispatcher."""
         mock_instance = MagicMock()
-        mock_dispatcher.return_value = mock_instance
         
-        # Mock the global variable
+        # Mock the global variable directly
         with patch('src.api.dependencies.query_dispatcher', mock_instance):
             result = get_query_dispatcher()
             assert result is mock_instance
@@ -176,7 +173,6 @@ class TestRootEndpoint:
 
 class TestErrorHandling:
     """Test API-level error handling."""
-    
     def test_internal_error_handling(self):
         """Test internal error handling and response format."""
         # Test with uninitialized dispatcher (the actual runtime error)
