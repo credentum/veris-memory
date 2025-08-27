@@ -104,7 +104,6 @@ class MCPBenchmark:
                 qdrant_client = VectorDBInitializer()
                 # Simulate vector search
                 await qdrant_client.search(
-                    collection_name="context_store",
                     query_vector=[0.1] * 384,  # Mock embedding
                     limit=5,
                 )
