@@ -19,7 +19,7 @@ async def test_dashboard_endpoints():
         print("=" * 50)
         
         # Import dashboard components
-        from src.monitoring.dashboard import UnifiedDashboard
+        from monitoring.dashboard import UnifiedDashboard
         print("✅ Dashboard components imported successfully")
         
         # Initialize dashboard
