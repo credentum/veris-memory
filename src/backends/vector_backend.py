@@ -203,13 +203,16 @@ class VectorBackend(BackendSearchInterface):
     async def _perform_vector_search(self, query_vector: List[float], options: SearchOptions) -> List[Any]:
         """Perform the actual vector search operation."""
         try:
-            # Call Qdrant search (compatible with v1.15.1 - using server-side score_threshold)
+            # Call VectorDBInitializer.search() using correct method signature
             results = self.client.search(
-                collection_name=self._collection_name,
                 query_vector=query_vector,
                 limit=options.limit,
-                score_threshold=options.score_threshold if options.score_threshold > 0 else None
+                filter_dict=None  # Use VectorDBInitializer signature
             )
+            
+            # Apply score threshold manually since VectorDBInitializer doesn't support it
+            if options.score_threshold > 0:
+                results = [r for r in results if r.score >= options.score_threshold]
             
             return results
             
