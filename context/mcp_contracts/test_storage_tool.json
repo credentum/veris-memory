@@ -1,0 +1,111 @@
+{
+  "name": "test_storage",
+  "description": "Test storage functionality across all backends",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "content": {
+        "type": "string",
+        "description": "Content to store",
+        "minLength": 1
+      },
+      "content_type": {
+        "type": "string",
+        "default": "text",
+        "description": "Type of content being stored"
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "default": [],
+        "description": "Optional tags for the content"
+      },
+      "test_mode": {
+        "type": "boolean",
+        "default": false,
+        "description": "Run in test mode"
+      }
+    },
+    "required": ["content"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the storage test was successful"
+      },
+      "context_id": {
+        "type": "string",
+        "description": "Unique identifier for the stored context"
+      },
+      "total_time_ms": {
+        "type": "number",
+        "description": "Total time taken for storage operation in milliseconds"
+      },
+      "successful_backends": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "List of backends that successfully stored the content"
+      },
+      "failed_backends": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "List of backends that failed to store the content"
+      },
+      "backend_details": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "backend": {
+              "type": "string",
+              "description": "Backend name"
+            },
+            "success": {
+              "type": "boolean",
+              "description": "Whether this backend succeeded"
+            },
+            "processing_time_ms": {
+              "type": "number",
+              "description": "Processing time for this backend in milliseconds"
+            },
+            "error_message": {
+              "type": "string",
+              "description": "Error message if backend failed"
+            },
+            "metadata": {
+              "type": "object",
+              "description": "Backend-specific metadata"
+            }
+          }
+        },
+        "description": "Detailed results from each backend"
+      },
+      "retrieval_test": {
+        "type": "object",
+        "properties": {
+          "available_in": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Backends where the stored content is available for retrieval"
+          }
+        },
+        "description": "Results of retrieval test after storage"
+      },
+      "error": {
+        "type": "string",
+        "description": "Error message if storage test failed"
+      }
+    },
+    "required": ["success"]
+  }
+}
