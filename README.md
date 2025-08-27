@@ -171,7 +171,7 @@ MCP_SERVER_PORT=8000
 MCP_LOG_LEVEL=info
 
 # Storage settings
-VECTOR_COLLECTION=context_embeddings
+VECTOR_COLLECTION=project_context  # Fixed: Use correct collection name
 GRAPH_DATABASE=context_graph
 ```
 
@@ -182,7 +182,7 @@ GRAPH_DATABASE=context_graph
 - Python 3.8+
 - Node.js 18+
 - Docker and Docker Compose
-- Qdrant v1.14.x
+- Qdrant v1.15.1+ (upgraded for improved performance)
 - Neo4j Community Edition
 
 ### Setup
@@ -584,6 +584,14 @@ class VerisMemoryClient {
 }
 ```
 
+## 🆕 Recent Improvements (v0.9.0)
+
+**Search System Fixes (PR #159):**
+- ✅ Fixed vector backend collection mismatch (now uses `project_context`)
+- ✅ Enhanced text extraction with robust fallback strategies
+- ✅ Added Redis compatibility layer for KV backend operations
+- ✅ Improved error handling and validation across all backends
+
 ## 🔍 Troubleshooting Guide
 
 *Common issues and solutions from production deployments.*
@@ -597,6 +605,11 @@ class VerisMemoryClient {
 | `POST /tools/verify_readiness` | Comprehensive diagnostics | Integration troubleshooting, readiness verification |
 
 ### Common Warnings and What They Mean
+
+**"Vector collection mismatch"**
+- ❌ **Status**: Vector searches returning empty results
+- 🔧 **Action**: Ensure `VECTOR_COLLECTION=project_context` in environment
+- 📊 **Impact**: Fixed in v0.9.0 - collection name now correctly configured
 
 **"Enhanced features unavailable - Qdrant not ready"**
 - ✅ **Status**: System operational with basic functionality
@@ -613,15 +626,23 @@ class VerisMemoryClient {
 - 🔧 **Action**: Check Redis connectivity immediately
 - 📊 **Impact**: Agent state and scratchpad operations fail
 
+### API Endpoint Notes
+
+**MCP Server vs REST API:**
+- MCP Server endpoints: `/tools/*` (e.g., `/tools/retrieve_context` for search)
+- REST API endpoints: `/api/v1/*` (not deployed by default, advanced features)
+- Note: `search_context` only exists in REST API, use `retrieve_context` for MCP
+
 ### Migration from Previous Versions
 
 If you're upgrading from earlier versions that used different field names:
 
-| Old Field | New Field | 
-|-----------|-----------|
-| `user_message` | `text` |
-| `assistant_response` | `text` |  
-| `exchange_type` | `type` |
+| Old Field | New Field | Notes |
+|-----------|-----------|-------|
+| `user_message` | `text` | Unified text field |
+| `assistant_response` | `text` | Unified text field |
+| `exchange_type` | `type` | Must be one of: design, decision, trace, sprint, log |
+| `context_type` | `type` | Field name changed in store_context |
 
 ### MCP Protocol
 
