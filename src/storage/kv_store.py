@@ -11,6 +11,8 @@ This component provides:
 
 import hashlib
 import json
+import os
+import re
 import time
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
@@ -32,7 +34,6 @@ try:
         validate_time_range,
     )
 except ImportError:
-    import os
     import sys
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -125,13 +126,11 @@ class RedisConnector(DatabaseComponent):
         # Password comes from environment variables or config, not hardcoded
         password = kwargs.get("password", None)
         redis_config = self.config.get("redis", {})
-        
+
         # Check REDIS_URL environment variable first for Docker deployments
-        import os
         redis_url = os.getenv("REDIS_URL")
         if redis_url:
             # Parse redis://host:port format
-            import re
             url_match = re.match(r"^redis://([^:/]+):?(\d+)?/?(\d+)?", redis_url)
             if url_match:
                 host = url_match.group(1)
@@ -147,7 +146,7 @@ class RedisConnector(DatabaseComponent):
             host = redis_config.get("host", "localhost")
             port = redis_config.get("port", 6379)
             db = redis_config.get("database", 0)
-        
+
         ssl = redis_config.get("ssl", False)
 
         pool_config = self.perf_config.get("connection_pool", {})
@@ -493,11 +492,11 @@ class RedisConnector(DatabaseComponent):
             finally:
                 self.redis_client = None
                 self.is_connected = False
-    
+
     def get(self, key: str) -> Optional[str]:
         """
         Compatibility method for simple Redis get operations.
-        
+
         This method provides compatibility with simple Redis client usage
         by delegating to the appropriate cache method.
         """
@@ -510,6 +509,7 @@ class RedisConnector(DatabaseComponent):
                     return value
                 # Otherwise, serialize it as JSON
                 import json
+
                 return json.dumps(value) if value is not None else None
             return None
         except Exception as e:
