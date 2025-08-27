@@ -6,7 +6,7 @@ This module defines the standardized format for search results across all backen
 ensuring consistent data structures regardless of the underlying storage system.
 """
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
 from enum import Enum
@@ -55,21 +55,24 @@ class MemoryResult(BaseModel):
     title: Optional[str] = Field(default=None, description="Optional title for the content")
     user_id: Optional[str] = Field(default=None, description="Associated user identifier")
     
-    @validator('text')
+    @field_validator('text')
+    @classmethod
     def text_not_empty(cls, v):
         """Ensure text field is not empty after stripping."""
         if not v or not v.strip():
             raise ValueError('Text field cannot be empty')
         return v.strip()
     
-    @validator('score')
+    @field_validator('score')
+    @classmethod
     def score_valid_range(cls, v):
         """Ensure score is within valid range."""
         if not 0.0 <= v <= 1.0:
             raise ValueError('Score must be between 0.0 and 1.0')
         return v
     
-    @validator('tags')
+    @field_validator('tags')
+    @classmethod
     def tags_normalized(cls, v):
         """Normalize tags to lowercase and remove duplicates."""
         if v is None:
@@ -81,7 +84,7 @@ class MemoryResult(BaseModel):
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "id": "uuid-123-456-789",
                 "text": "User's name is Matt and prefers green color",
@@ -124,18 +127,18 @@ class SearchResultResponse(BaseModel):
     backend_timings: Dict[str, float] = Field(default_factory=dict, description="Per-backend timing breakdown")
     backends_used: List[str] = Field(default_factory=list, description="List of backends that were queried")
     
-    @validator('total_count')
-    def total_count_matches_results(cls, v, values):
+    @model_validator(mode='after')
+    def total_count_matches_results(self):
         """Ensure total_count matches the actual result count."""
-        if 'results' in values:
-            actual_count = len(values['results'])
+        if hasattr(self, 'results') and self.results:
+            actual_count = len(self.results)
             # For paginated results, total_count might be higher
-            if v < actual_count:
+            if self.total_count < actual_count:
                 raise ValueError('total_count cannot be less than actual results count')
-        return v
+        return self
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "success": True,
                 "results": [

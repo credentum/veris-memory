@@ -454,37 +454,14 @@ class CypherValidator:
         Returns:
             True if suspicious comment patterns are found, False otherwise
         """
-        # Find all SQL-style block comments /* ... */
+        # Find all SQL-style block comments /* ... */ - ALL are considered suspicious
+        # since block comments are SQL-style syntax, not valid Cypher
         block_comment_pattern = r'/\*.*?\*/'
         block_comments = re.findall(block_comment_pattern, query, re.DOTALL)
         
-        for comment in block_comments:
-            comment_content = comment[2:-2].strip()  # Remove /* and */
-            
-            # Check if comment contains suspicious SQL/Cypher keywords
-            suspicious_keywords = [
-                r'\bCREATE\b', r'\bDELETE\b', r'\bDROP\b', r'\bSET\b',
-                r'\bMERGE\b', r'\bREMOVE\b', r'\bDETACH\b',
-                r'\bEXEC\b', r'\bEVAL\b', r'\bCALL\b',
-                r'\bUNION\b', r'\bSELECT\b', r'\bINSERT\b', r'\bUPDATE\b'
-            ]
-            
-            for keyword_pattern in suspicious_keywords:
-                if re.search(keyword_pattern, comment_content, re.IGNORECASE):
-                    return True
-            
-            # Check for comment-based query termination attempts
-            if re.search(r';\s*\w', comment_content):
-                return True
-                
-            # Check for encoded/obfuscated content
-            if len(comment_content) > 100:  # Very long comments are suspicious
-                return True
-                
-            # Check for hex/base64 patterns that might hide commands
-            if re.search(r'[0-9a-fA-F]{20,}', comment_content) or \
-               re.search(r'[A-Za-z0-9+/]{20,}={0,2}', comment_content):
-                return True
+        # Any SQL-style block comment is suspicious in Cypher context
+        if block_comments:
+            return True
         
         # Check for line comments with suspicious patterns
         line_comment_pattern = r'//.*$'
