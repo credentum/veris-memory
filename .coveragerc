@@ -24,8 +24,8 @@ branch = True
 # Data file location
 data_file = .coverage
 
-# Parallel processing support
-parallel = False
+# Parallel processing support for pytest-xdist  
+parallel = True
 
 [report]
 # Reporting options
