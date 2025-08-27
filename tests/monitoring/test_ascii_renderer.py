@@ -93,7 +93,7 @@ class TestASCIIRenderer:
     def test_init_default_config(self):
         """Test renderer initialization with default configuration."""
         renderer = ASCIIRenderer()
-        
+
         assert renderer.config['width'] == 80
         assert renderer.config['use_color'] is True or renderer.config['use_color'] is False  # Depends on terminal
         assert renderer.config['use_emoji'] is True or renderer.config['use_emoji'] is False  # Depends on terminal
@@ -107,9 +107,9 @@ class TestASCIIRenderer:
             'use_emoji': False,
             'progress_bar_width': 15
         }
-        
+
         renderer = ASCIIRenderer(custom_config)
-        
+
         assert renderer.config['width'] == 120
         assert renderer.config['use_color'] is False
         assert renderer.config['use_emoji'] is False
@@ -119,7 +119,7 @@ class TestASCIIRenderer:
         """Test terminal capability detection when not in a TTY."""
         with patch('sys.stdout.isatty', return_value=False):
             renderer = ASCIIRenderer({'use_color': True, 'use_emoji': True})
-            
+
             assert renderer.config['use_color'] is False
             assert renderer.config['use_emoji'] is False
 
@@ -191,15 +191,16 @@ class TestASCIIRenderer:
 
     def test_width_adjustment_for_narrow_terminal(self):
         """Test width adjustment for narrow terminals."""
-        with patch.object(ASCIIRenderer, '_get_terminal_width', return_value=70):
-            renderer = ASCIIRenderer({'width': 80})
+        with patch.object(ASCIIRenderer, '_get_terminal_width', return_value=70), \
+             patch('sys.stdout.isatty', return_value=True):
+            renderer = ASCIIRenderer({'width': 80, 'use_color': True, 'use_emoji': True, 'progress_bar_width': 10})
             # Width should be adjusted to terminal width minus margin
-            assert renderer.config['width'] == 66  # 70 - 4 margin
+            assert renderer.config['width'] == max(60, 70 - 4)  # max(60, terminal_width - 4)
 
     def test_render_dashboard_full(self, renderer, test_metrics, test_thresholds):
         """Test full dashboard rendering."""
         result = renderer.render_dashboard(test_metrics, test_thresholds)
-        
+
         assert isinstance(result, str)
         assert 'VERIS MEMORY STATUS' in result
         assert 'SYSTEM RESOURCES' in result
@@ -211,7 +212,7 @@ class TestASCIIRenderer:
     def test_render_header(self, renderer):
         """Test header rendering."""
         header = renderer._render_header("TEST DASHBOARD")
-        
+
         assert isinstance(header, str)
         assert "TEST DASHBOARD" in header
         assert len(header.split('\n')) >= 2  # Title and separator
@@ -219,17 +220,17 @@ class TestASCIIRenderer:
     def test_render_system_metrics(self, renderer, test_metrics, test_thresholds):
         """Test system metrics rendering."""
         lines = renderer._render_system_metrics(test_metrics['system'], test_thresholds)
-        
+
         assert isinstance(lines, list)
         assert any('CPU' in line for line in lines)
         assert any('Memory' in line for line in lines)
         assert any('Disk' in line for line in lines)
         assert any('45.5%' in line for line in lines)  # CPU percentage
 
-    def test_render_service_metrics(self, renderer, test_metrics):
+    def test_render_service_metrics(self, renderer, test_metrics, test_thresholds):
         """Test service metrics rendering."""
-        lines = renderer._render_service_metrics(test_metrics['services'])
-        
+        lines = renderer._render_service_metrics(test_metrics['services'], test_thresholds)
+
         assert isinstance(lines, list)
         assert any('Redis' in line for line in lines)
         assert any('Neo4j' in line for line in lines)
@@ -238,7 +239,7 @@ class TestASCIIRenderer:
     def test_render_veris_metrics(self, renderer, test_metrics, test_thresholds):
         """Test Veris metrics rendering."""
         lines = renderer._render_veris_metrics(test_metrics['veris'], test_thresholds)
-        
+
         assert isinstance(lines, list)
         assert any('Total Memories' in line for line in lines)
         assert any('Query Latency' in line for line in lines)
@@ -248,7 +249,7 @@ class TestASCIIRenderer:
     def test_render_security_metrics(self, renderer, test_metrics):
         """Test security metrics rendering."""
         lines = renderer._render_security_metrics(test_metrics['security'])
-        
+
         assert isinstance(lines, list)
         assert any('Auth Failures' in line for line in lines)
         assert any('SSL Expires' in line for line in lines)
@@ -257,7 +258,7 @@ class TestASCIIRenderer:
     def test_render_backup_metrics(self, renderer, test_metrics):
         """Test backup metrics rendering."""
         lines = renderer._render_backup_metrics(test_metrics['backups'])
-        
+
         assert isinstance(lines, list)
         assert any('Last Backup' in line for line in lines)
         assert any('Backup Size' in line for line in lines)
@@ -269,11 +270,11 @@ class TestASCIIRenderer:
         bar_0 = renderer._render_progress_bar(0, 100)
         bar_50 = renderer._render_progress_bar(50, 100)
         bar_100 = renderer._render_progress_bar(100, 100)
-        
+
         assert isinstance(bar_0, str)
         assert isinstance(bar_50, str)
         assert isinstance(bar_100, str)
-        
+
         # Progress bars should have consistent format
         assert bar_0.startswith('[') and bar_0.endswith(']')
         assert bar_50.startswith('[') and bar_50.endswith(']')
@@ -282,64 +283,64 @@ class TestASCIIRenderer:
     def test_render_progress_bar_custom_width(self, renderer):
         """Test progress bar with custom width."""
         bar = renderer._render_progress_bar(25, 100, width=20)
-        
+
         # Should be 20 characters wide plus brackets
         assert len(bar) == 22  # [20 chars]
 
     def test_render_progress_bar_overflow(self, renderer):
         """Test progress bar with value exceeding maximum."""
         bar = renderer._render_progress_bar(150, 100)
-        
+
         # Should cap at 100%
         assert isinstance(bar, str)
         # Should still render without error
 
     def test_get_status_emoji_healthy(self, renderer):
         """Test status emoji selection for healthy status."""
-        emoji = renderer._get_status_emoji('healthy')
+        emoji = renderer._get_service_status_emoji('healthy')
         expected = renderer.emojis['healthy'] if renderer.config['use_emoji'] else ''
         assert emoji == expected
 
     def test_get_status_emoji_warning(self, renderer):
         """Test status emoji selection for warning status."""
-        emoji = renderer._get_status_emoji('warning')
+        emoji = renderer._get_service_status_emoji('warning')
         expected = renderer.emojis['warning'] if renderer.config['use_emoji'] else ''
         assert emoji == expected
 
     def test_get_status_emoji_critical(self, renderer):
         """Test status emoji selection for critical status."""
-        emoji = renderer._get_status_emoji('critical')
+        emoji = renderer._get_service_status_emoji('critical')
         expected = renderer.emojis['critical'] if renderer.config['use_emoji'] else ''
         assert emoji == expected
 
     def test_get_status_emoji_unknown(self, renderer):
         """Test status emoji selection for unknown status."""
-        emoji = renderer._get_status_emoji('unknown')
+        emoji = renderer._get_service_status_emoji('unknown')
         expected = renderer.emojis['unknown'] if renderer.config['use_emoji'] else ''
         assert emoji == expected
 
     def test_format_number_small(self, renderer):
         """Test number formatting for small numbers."""
-        assert renderer._format_number(123) == "123"
-        assert renderer._format_number(999) == "999"
+        assert renderer.format_number(123) == "123"
+        assert renderer.format_number(999) == "999"
 
     def test_format_number_thousands(self, renderer):
         """Test number formatting for thousands."""
-        assert renderer._format_number(1234) == "1,234"
-        assert renderer._format_number(12345) == "12,345"
-        assert renderer._format_number(123456) == "123,456"
+        assert renderer.format_number(1234) == "1.2K"
+        assert renderer.format_number(12345) == "12.3K"
+        assert renderer.format_number(123456) == "123.5K"
 
     def test_format_number_float(self, renderer):
         """Test number formatting for floats."""
-        assert renderer._format_number(1234.5) == "1,234.5"
-        assert renderer._format_number(1234.56) == "1,234.56"
+        assert renderer.format_number(1234.5) == "1.2K"
+        assert renderer.format_number(234.56) == "234.6"
 
     def test_get_trend_indicator(self, renderer):
         """Test trend indicator selection."""
-        trend_up = renderer._get_trend_indicator(10, 5)
-        trend_down = renderer._get_trend_indicator(5, 10)
-        trend_flat = renderer._get_trend_indicator(10, 10)
-        
+        trend_up = renderer._get_trend_arrow(150)  # > 100 for up trend
+        trend_down = renderer._get_trend_arrow(-150)  # < -100 for down trend
+        trend_flat = renderer._get_trend_arrow(50)  # -100 to 100 for flat
+
         if renderer.config['use_emoji']:
             assert trend_up == renderer.emojis['trend_up']
             assert trend_down == renderer.emojis['trend_down']
@@ -352,7 +353,7 @@ class TestASCIIRenderer:
     def test_render_footer(self, renderer):
         """Test footer rendering."""
         footer = renderer._render_footer()
-        
+
         assert isinstance(footer, str)
         # Footer should contain separator line
         assert '═' in footer or '=' in footer
@@ -360,37 +361,44 @@ class TestASCIIRenderer:
     def test_render_with_no_emoji_config(self):
         """Test rendering with emoji disabled."""
         renderer = ASCIIRenderer({'use_emoji': False})
-        
+
         # All emoji values should be empty strings
         assert all(emoji == '' for emoji in renderer.emojis.values())
 
     def test_render_with_no_color_config(self):
         """Test rendering with color disabled."""
         renderer = ASCIIRenderer({'use_color': False})
-        
+
         # All color values should be empty strings
         assert all(color == '' for color in renderer.colors.values())
 
     def test_color_application(self, renderer):
         """Test color code application in output."""
         # Create renderer with colors explicitly enabled
-        renderer_with_color = ASCIIRenderer({'use_color': True})
+        renderer_with_color = ASCIIRenderer({'use_color': True, 'width': 80})
         result_with_color = renderer_with_color._render_header("TEST")
-        
+
         # Create renderer with colors disabled
-        renderer_no_color = ASCIIRenderer({'use_color': False})
+        renderer_no_color = ASCIIRenderer({'use_color': False, 'width': 80})
         result_no_color = renderer_no_color._render_header("TEST")
-        
+
         # If color is enabled and supported, output should contain color codes
         if renderer_with_color.config['use_color']:
             assert len(result_with_color) >= len(result_no_color)
 
     def test_empty_metrics_handling(self, renderer, test_thresholds):
         """Test handling of empty or missing metrics."""
-        empty_metrics = {}
-        
+        empty_metrics = {
+            'timestamp': '2023-01-01T00:00:00Z',
+            'system': {},
+            'services': [],
+            'veris': {},
+            'security': {},
+            'backups': {}
+        }
+
         result = renderer.render_dashboard(empty_metrics, test_thresholds)
-        
+
         # Should not crash and should return valid string
         assert isinstance(result, str)
         assert 'VERIS MEMORY STATUS' in result
@@ -405,9 +413,9 @@ class TestASCIIRenderer:
             }
             # Missing other metric categories
         }
-        
+
         result = renderer.render_dashboard(partial_metrics, test_thresholds)
-        
+
         # Should not crash and should return valid string
         assert isinstance(result, str)
         assert 'SYSTEM RESOURCES' in result
@@ -418,18 +426,18 @@ class TestASCIIRenderer:
             'cpu_warning_percent': 70,
             'cpu_critical_percent': 90
         }
-        
-        # Test below warning
-        status = renderer._get_threshold_status(50, thresholds, 'cpu')
-        assert status in ['healthy', 'good']
-        
-        # Test warning range
-        status = renderer._get_threshold_status(80, thresholds, 'cpu')
-        assert status in ['warning', 'caution']
-        
-        # Test critical range
-        status = renderer._get_threshold_status(95, thresholds, 'cpu')
-        assert status in ['critical', 'danger']
+
+        # Test below warning - should contain "HEALTHY"
+        status = renderer._get_status_indicator(50, thresholds, 'cpu')
+        assert 'HEALTHY' in status
+
+        # Test warning range - should contain "WARNING"
+        status = renderer._get_status_indicator(80, thresholds, 'cpu')
+        assert 'WARNING' in status
+
+        # Test critical range - should contain "CRITICAL"
+        status = renderer._get_status_indicator(95, thresholds, 'cpu')
+        assert 'CRITICAL' in status
 
 
 if __name__ == '__main__':

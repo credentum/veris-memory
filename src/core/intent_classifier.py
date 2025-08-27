@@ -255,7 +255,7 @@ class IntentClassifier:
             
         return sorted(list(attributes))
 
-    def explain_classification(self, query: str) -> Dict[str, any]:
+    def explain_classification(self, query: str) -> Dict[str, Any]:
         """
         Provide detailed explanation of classification decision.
         

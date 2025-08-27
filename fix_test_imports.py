@@ -16,10 +16,10 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, Any
 
 
-def find_problematic_imports(file_path: Path) -> List[Dict[str, any]]:
+def find_problematic_imports(file_path: Path) -> List[Dict[str, Any]]:
     """Find all imports that need the src. prefix."""
     problematic_patterns = [
         r'^(\s*)from (storage|core|monitoring|mcp_server|validators|api|interfaces)\.([^\s]+) import (.+)$',
@@ -68,7 +68,7 @@ def fix_import_line(line: str) -> str:
     return line
 
 
-def fix_file_imports(file_path: Path, dry_run: bool = False) -> Dict[str, any]:
+def fix_file_imports(file_path: Path, dry_run: bool = False) -> Dict[str, Any]:
     """Fix all imports in a single file."""
     try:
         relative_path = file_path.relative_to(Path.cwd())

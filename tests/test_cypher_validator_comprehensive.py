@@ -617,5 +617,194 @@ class TestCypherValidator:
         assert result.error_type == "potential_injection"
 
 
+class TestSuspiciousCommentDetection:
+    """Test suite for the new _contains_suspicious_comments method."""
+
+    @pytest.fixture
+    def validator(self):
+        """Create validator instance."""
+        return CypherValidator()
+
+    def test_legitimate_cypher_line_comments_allowed(self, validator):
+        """Test that legitimate Cypher line comments are allowed."""
+        queries = [
+            "MATCH (n) // Find all nodes\nRETURN n",
+            "MATCH (n) RETURN n // Simple query",
+            "// This is a normal comment\nMATCH (n) RETURN n",
+        ]
+
+        for query in queries:
+            result = validator.validate_query(query)
+            assert result.is_valid is True, f"Query should be valid: {query}"
+
+    def test_legitimate_short_block_comments_allowed(self, validator):
+        """Test that legitimate short block comments are allowed."""
+        queries = [
+            "MATCH (n) /* get nodes */ RETURN n",
+            "/* Query description */MATCH (n) RETURN n",
+            "MATCH (n) RETURN n /* end */",
+        ]
+
+        for query in queries:
+            result = validator.validate_query(query)
+            assert result.is_valid is True, f"Query should be valid: {query}"
+
+    def test_suspicious_block_comments_with_sql_keywords_blocked(self, validator):
+        """Test that block comments containing SQL keywords are blocked."""
+        suspicious_queries = [
+            "MATCH (n) /* CREATE TABLE users */ RETURN n",
+            "MATCH (n) /* DELETE FROM users */ RETURN n", 
+            "MATCH (n) /* DROP TABLE users */ RETURN n",
+            "MATCH (n) /* SET password = 'hacked' */ RETURN n",
+            "MATCH (n) /* EXEC sp_configure */ RETURN n",
+            "MATCH (n) /* UNION SELECT * FROM */ RETURN n",
+            "MATCH (n) /* INSERT INTO users */ RETURN n",
+        ]
+
+        for query in suspicious_queries:
+            result = validator.validate_query(query)
+            assert result.is_valid is False, f"Query should be blocked: {query}"
+            assert result.error_type == "potential_injection"
+
+    def test_suspicious_block_comments_with_cypher_keywords_blocked(self, validator):
+        """Test that block comments containing dangerous Cypher keywords are blocked."""
+        suspicious_queries = [
+            "MATCH (n) /* CREATE (x:User) */ RETURN n",
+            "MATCH (n) /* MERGE (x:Admin) */ RETURN n",
+            "MATCH (n) /* REMOVE n.sensitive */ RETURN n",
+            "MATCH (n) /* DETACH DELETE n */ RETURN n",
+            "MATCH (n) /* CALL db.schema() */ RETURN n",
+        ]
+
+        for query in suspicious_queries:
+            result = validator.validate_query(query)
+            assert result.is_valid is False, f"Query should be blocked: {query}"
+            assert result.error_type == "potential_injection"
+
+    def test_suspicious_query_termination_attempts_blocked(self, validator):
+        """Test that comments containing query termination attempts are blocked."""
+        suspicious_queries = [
+            "MATCH (n) /* ; DROP TABLE users */ RETURN n",
+            "MATCH (n) /* test; CREATE (x) */ RETURN n", 
+            "MATCH (n) /* ; SELECT * FROM admin */ RETURN n",
+        ]
+
+        for query in suspicious_queries:
+            result = validator.validate_query(query)
+            assert result.is_valid is False, f"Query should be blocked: {query}"
+            assert result.error_type == "potential_injection"
+
+    def test_very_long_comments_blocked(self, validator):
+        """Test that very long comments are blocked as suspicious."""
+        long_comment = "x" * 150
+        suspicious_query = f"MATCH (n) /* {long_comment} */ RETURN n"
+
+        result = validator.validate_query(suspicious_query)
+        assert result.is_valid is False
+        assert result.error_type == "potential_injection"
+
+    def test_hex_encoded_content_blocked(self, validator):
+        """Test that comments with hex-encoded content are blocked."""
+        hex_encoded = "414243444546" * 5  # Long hex string
+        suspicious_query = f"MATCH (n) /* {hex_encoded} */ RETURN n"
+
+        result = validator.validate_query(suspicious_query)
+        assert result.is_valid is False
+        assert result.error_type == "potential_injection"
+
+    def test_base64_encoded_content_blocked(self, validator):
+        """Test that comments with base64-encoded content are blocked."""
+        base64_encoded = "QWxhZGRpbjpvcGVuIHNlc2FtZQ==" * 3  # Long base64 string
+        suspicious_query = f"MATCH (n) /* {base64_encoded} */ RETURN n"
+
+        result = validator.validate_query(suspicious_query)
+        assert result.is_valid is False
+        assert result.error_type == "potential_injection"
+
+    def test_very_long_line_comments_blocked(self, validator):
+        """Test that very long line comments are blocked."""
+        long_comment = "x" * 250
+        suspicious_query = f"MATCH (n) RETURN n // {long_comment}"
+
+        result = validator.validate_query(suspicious_query)
+        assert result.is_valid is False
+        assert result.error_type == "potential_injection"
+
+    def test_line_comments_with_multiple_statements_blocked(self, validator):
+        """Test that line comments with multiple statements are blocked."""
+        suspicious_queries = [
+            "MATCH (n) RETURN n // test; CREATE; DROP;",
+            "MATCH (n) RETURN n // one; two; three; four",
+        ]
+
+        for query in suspicious_queries:
+            result = validator.validate_query(query)
+            assert result.is_valid is False, f"Query should be blocked: {query}"
+            assert result.error_type == "potential_injection"
+
+    def test_mixed_legitimate_and_suspicious_comments(self, validator):
+        """Test queries with both legitimate and suspicious comments."""
+        # Legitimate part should not override suspicious part
+        suspicious_query = (
+            "// This is fine\n"
+            "MATCH (n) /* DROP TABLE users */ RETURN n"
+        )
+
+        result = validator.validate_query(suspicious_query)
+        assert result.is_valid is False
+        assert result.error_type == "potential_injection"
+
+    def test_case_insensitive_keyword_detection(self, validator):
+        """Test that keyword detection in comments is case insensitive."""
+        suspicious_queries = [
+            "MATCH (n) /* create table */ RETURN n",
+            "MATCH (n) /* CREATE TABLE */ RETURN n",
+            "MATCH (n) /* Create Table */ RETURN n",
+            "MATCH (n) /* cReAtE tAbLe */ RETURN n",
+        ]
+
+        for query in suspicious_queries:
+            result = validator.validate_query(query)
+            assert result.is_valid is False, f"Query should be blocked: {query}"
+            assert result.error_type == "potential_injection"
+
+    def test_legitimate_technical_comments_allowed(self, validator):
+        """Test that legitimate technical comments are allowed."""
+        legitimate_queries = [
+            "MATCH (n) /* TODO: optimize this query */ RETURN n",
+            "MATCH (n) /* BUG: fix indexing issue */ RETURN n",
+            "MATCH (n) /* NOTE: performance testing needed */ RETURN n", 
+            "MATCH (n) /* FIXME: refactor later */ RETURN n",
+            "MATCH (n) /* Index: user_email_idx */ RETURN n",
+        ]
+
+        for query in legitimate_queries:
+            result = validator.validate_query(query)
+            assert result.is_valid is True, f"Query should be valid: {query}"
+
+    def test_nested_block_comments_handled_correctly(self, validator):
+        """Test handling of nested block comment patterns."""
+        # Nested comments aren't valid Cypher, but we should handle them safely
+        query_with_nested = "MATCH (n) /* outer /* inner */ outer */ RETURN n"
+        
+        result = validator.validate_query(query_with_nested)
+        # Should not crash and should be processed safely
+        assert isinstance(result.is_valid, bool)
+
+    def test_comment_boundary_edge_cases(self, validator):
+        """Test edge cases around comment boundaries."""
+        edge_cases = [
+            "MATCH (n) /**/ RETURN n",  # Empty block comment
+            "MATCH (n) /**//**/ RETURN n",  # Multiple empty comments
+            "MATCH (n) //\nRETURN n",  # Empty line comment
+            "MATCH (n) /* * */ RETURN n",  # Comment with asterisk
+        ]
+
+        for query in edge_cases:
+            result = validator.validate_query(query)
+            # Should not crash
+            assert isinstance(result.is_valid, bool)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
