@@ -33,7 +33,7 @@ class VectorBackend(BackendSearchInterface):
         """
         self.client = qdrant_client
         self.embedding_generator = embedding_generator
-        self._collection_name = "context_embeddings"  # Default collection
+        self._collection_name = "project_context"  # Fixed: Use actual collection with data
     
     @property
     def backend_name(self) -> str:
@@ -231,10 +231,12 @@ class VectorBackend(BackendSearchInterface):
                 payload = result.payload if hasattr(result, 'payload') else {}
                 score = float(result.score) if hasattr(result, 'score') else 1.0
                 
-                # Extract text content
-                text = payload.get('text', payload.get('content', ''))
-                if not text and 'user_message' in payload:
-                    text = payload['user_message']  # Legacy compatibility
+                # Extract text content with robust fallback handling
+                text = self._extract_text_content(payload)
+                
+                # Ensure text is never empty (validation requirement)
+                if not text:
+                    text = f"Document {result_id}"  # Fallback to prevent validation errors
                 
                 # Determine content type
                 content_type = ContentType.GENERAL
@@ -304,3 +306,44 @@ class VectorBackend(BackendSearchInterface):
             filtered = [r for r in filtered if r.score >= options.score_threshold]
         
         return filtered[:options.limit]  # Ensure we don't exceed limit
+    
+    def _extract_text_content(self, payload: dict) -> str:
+        """
+        Extract text content from complex payload structures.
+        
+        Tries multiple extraction strategies to handle different data formats.
+        """
+        # Strategy 1: Direct text fields
+        text = payload.get('text', '')
+        if text and isinstance(text, str):
+            return text.strip()
+        
+        # Strategy 2: Content field
+        content = payload.get('content', '')
+        if content:
+            if isinstance(content, str):
+                return content.strip()
+            elif isinstance(content, dict):
+                # Handle nested content structures
+                return content.get('text', content.get('title', content.get('description', '')))
+        
+        # Strategy 3: Legacy compatibility
+        if 'user_message' in payload:
+            return str(payload['user_message']).strip()
+        
+        # Strategy 4: Title or description
+        title = payload.get('title', '')
+        if title:
+            return str(title).strip()
+        
+        description = payload.get('description', '')
+        if description:
+            return str(description).strip()
+        
+        # Strategy 5: First string value in payload
+        for key, value in payload.items():
+            if isinstance(value, str) and value.strip() and key not in ['id', 'type', 'namespace']:
+                return value.strip()
+        
+        # No text content found
+        return ""

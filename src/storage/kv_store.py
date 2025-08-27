@@ -493,6 +493,28 @@ class RedisConnector(DatabaseComponent):
             finally:
                 self.redis_client = None
                 self.is_connected = False
+    
+    def get(self, key: str) -> Optional[str]:
+        """
+        Compatibility method for simple Redis get operations.
+        
+        This method provides compatibility with simple Redis client usage
+        by delegating to the appropriate cache method.
+        """
+        # For simple string keys, use cache operations
+        try:
+            value = self.get_cache(key)
+            if value is not None:
+                # If it's already a string, return it
+                if isinstance(value, str):
+                    return value
+                # Otherwise, serialize it as JSON
+                import json
+                return json.dumps(value) if value is not None else None
+            return None
+        except Exception as e:
+            self.log_error(f"Error in compatibility get method for key {key}", e)
+            return None
 
 
 class DuckDBAnalytics(DatabaseComponent):
