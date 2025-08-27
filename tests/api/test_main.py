@@ -10,7 +10,8 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
-from src.api.main import create_app, create_openapi_schema, get_query_dispatcher
+from src.api.main import create_app, create_openapi_schema
+from src.api.dependencies import get_query_dispatcher
 from src.api.models import ErrorResponse
 
 
@@ -130,20 +131,18 @@ class TestOpenAPISchema:
 class TestDependencyInjection:
     """Test dependency injection for shared components."""
     
-    @patch('src.api.main.query_dispatcher', None)
+    @patch('src.api.dependencies.query_dispatcher', None)
     def test_get_query_dispatcher_not_initialized(self):
         """Test error when query dispatcher is not initialized."""
         with pytest.raises(RuntimeError, match="Query dispatcher not initialized"):
             get_query_dispatcher()
     
-    @patch('src.api.main.query_dispatcher')
-    def test_get_query_dispatcher_initialized(self, mock_dispatcher):
+    def test_get_query_dispatcher_initialized(self):
         """Test getting initialized query dispatcher."""
         mock_instance = MagicMock()
-        mock_dispatcher.return_value = mock_instance
         
-        # Mock the global variable
-        with patch('src.api.main.query_dispatcher', mock_instance):
+        # Mock the global variable directly
+        with patch('src.api.dependencies.query_dispatcher', mock_instance):
             result = get_query_dispatcher()
             assert result is mock_instance
 
@@ -171,7 +170,7 @@ class TestRootEndpoint:
 class TestErrorHandling:
     """Test API-level error handling."""
     
-    @patch('src.api.main.get_query_dispatcher')
+    @patch('src.api.dependencies.get_query_dispatcher')
     def test_internal_error_handling(self, mock_get_dispatcher):
         """Test internal error handling and response format."""
         # Mock dispatcher to raise an error

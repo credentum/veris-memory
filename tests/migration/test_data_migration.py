@@ -12,14 +12,14 @@ import uuid
 from datetime import datetime, timedelta
 from unittest.mock import Mock, AsyncMock, patch
 
-from ...src.migration.data_migration import (
+from src.migration.data_migration import (
     DataMigrationEngine, MigrationJob, MigrationSource, MigrationStatus,
     MigrationResult, initialize_migration_engine, get_migration_engine
 )
-from ...src.backends.text_backend import TextSearchBackend
-from ...src.storage.qdrant_client import VectorDBInitializer
-from ...src.storage.neo4j_client import Neo4jInitializer
-from ...src.storage.kv_store import ContextKV
+from src.backends.text_backend import TextSearchBackend
+from src.storage.qdrant_client import VectorDBInitializer
+from src.storage.neo4j_client import Neo4jInitializer
+from src.storage.kv_store import ContextKV
 
 
 @pytest.fixture
