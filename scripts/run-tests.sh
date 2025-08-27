@@ -260,7 +260,7 @@ run_ci_tests() {
         --dist loadscope \
         --cov=src \
         --cov-report=term \
-        --cov-report=json \
+        --cov-report=json:coverage.json \
         -m "not integration and not e2e" \
         --tb=short \
         --maxfail=$MAX_FAILURES
