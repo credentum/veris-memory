@@ -1,0 +1,129 @@
+{
+  "name": "get_migration_status",
+  "description": "Check status of all storage backends and migration capabilities",
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the status check was successful"
+      },
+      "backends": {
+        "type": "object",
+        "properties": {
+          "qdrant": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["available", "error"],
+                "description": "Backend availability status"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["vector"],
+                "description": "Backend type"
+              },
+              "error": {
+                "type": "string",
+                "description": "Error message if status is error"
+              }
+            }
+          },
+          "neo4j": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["available", "error"],
+                "description": "Backend availability status"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["graph"],
+                "description": "Backend type"
+              },
+              "error": {
+                "type": "string",
+                "description": "Error message if status is error"
+              }
+            }
+          },
+          "redis": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["available", "error"],
+                "description": "Backend availability status"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["kv"],
+                "description": "Backend type"
+              },
+              "error": {
+                "type": "string",
+                "description": "Error message if status is error"
+              }
+            }
+          },
+          "text_search": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["available", "error"],
+                "description": "Backend availability status"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["text"],
+                "description": "Backend type"
+              },
+              "document_count": {
+                "type": "integer",
+                "description": "Number of indexed documents"
+              },
+              "vocabulary_size": {
+                "type": "integer",
+                "description": "Size of search vocabulary"
+              },
+              "total_tokens": {
+                "type": "integer",
+                "description": "Total number of tokens indexed"
+              },
+              "average_document_length": {
+                "type": "number",
+                "description": "Average length of indexed documents"
+              },
+              "error": {
+                "type": "string",
+                "description": "Error message if status is error"
+              }
+            }
+          }
+        },
+        "description": "Status of all storage backends"
+      },
+      "text_search_details": {
+        "type": "object",
+        "description": "Detailed statistics for text search backend"
+      },
+      "checked_at": {
+        "type": "number",
+        "description": "Unix timestamp when status was checked"
+      },
+      "error": {
+        "type": "string", 
+        "description": "Error message if status check failed"
+      }
+    },
+    "required": ["success"]
+  }
+}

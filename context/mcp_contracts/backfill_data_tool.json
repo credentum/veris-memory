@@ -1,0 +1,105 @@
+{
+  "name": "backfill_data",
+  "description": "Backfill existing data from vector/graph databases to text search backend",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "source": {
+        "type": "string",
+        "enum": ["qdrant", "neo4j", "redis", "all"],
+        "default": "all",
+        "description": "Source system to migrate from (qdrant, neo4j, redis, all)"
+      },
+      "target": {
+        "type": "string", 
+        "enum": ["text"],
+        "default": "text",
+        "description": "Target backend to migrate to (text)"
+      },
+      "batch_size": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000,
+        "default": 100,
+        "description": "Number of records per batch (1-10000)"
+      },
+      "max_concurrent": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 5,
+        "description": "Maximum concurrent operations (1-100)"
+      },
+      "dry_run": {
+        "type": "boolean",
+        "default": false,
+        "description": "Run without making changes"
+      },
+      "test_mode": {
+        "type": "boolean",
+        "default": false,
+        "description": "Run in test mode"
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the migration was successful"
+      },
+      "job_id": {
+        "type": "string",
+        "description": "Unique identifier for the migration job"
+      },
+      "status": {
+        "type": "string",
+        "enum": ["pending", "running", "completed", "failed", "cancelled", "partial"],
+        "description": "Final status of the migration job"
+      },
+      "processed_count": {
+        "type": "integer",
+        "description": "Total number of records processed"
+      },
+      "success_count": {
+        "type": "integer", 
+        "description": "Number of records successfully migrated"
+      },
+      "error_count": {
+        "type": "integer",
+        "description": "Number of records that failed migration"
+      },
+      "success_rate": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100,
+        "description": "Percentage of successful migrations"
+      },
+      "total_time_seconds": {
+        "type": "number",
+        "description": "Total time taken for migration in seconds"
+      },
+      "errors": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Recent error messages (last 5)"
+      },
+      "validation": {
+        "type": "object",
+        "description": "Migration validation results"
+      },
+      "dry_run": {
+        "type": "boolean",
+        "description": "Whether this was a dry run"
+      },
+      "error": {
+        "type": "string",
+        "description": "Error message if migration failed"
+      }
+    },
+    "required": ["success"]
+  }
+}
