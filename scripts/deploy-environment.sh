@@ -115,7 +115,7 @@ services:
 
   # Vector Database (Qdrant) - DEV
   qdrant:
-    image: qdrant/qdrant:v1.9.6
+    image: qdrant/qdrant:v1.15.1
     platform: linux/amd64
     container_name: veris-memory-prod-qdrant
     ports:
