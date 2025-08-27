@@ -202,15 +202,6 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 {"error_type": error_type}
             )
         
-        # Timeout errors (must come before backend errors to avoid being caught by "timeout" keyword)
-        if "timeout" in error_str.lower() or error_type in ["TimeoutError", "asyncio.TimeoutError"]:
-            return (
-                ErrorCode.TIMEOUT_ERROR,
-                status.HTTP_504_GATEWAY_TIMEOUT,
-                "Request timeout",
-                {"error_type": error_type}
-            )
-        
         # Backend errors
         if any(keyword in error_str.lower() for keyword in ["backend", "database", "connection"]):
             return (
