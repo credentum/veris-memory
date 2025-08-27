@@ -7,7 +7,7 @@ enabling the system to route fact queries to the deterministic fact store.
 
 import re
 from enum import Enum
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 from dataclasses import dataclass
 import logging
 
