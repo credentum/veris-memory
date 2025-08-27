@@ -32,30 +32,70 @@ MAX_JSON_SIZE_BYTES = 1024 * 1024  # 1MB default limit for JSON parsing
 MAX_TEXT_PARTS = 50  # Maximum number of text parts in concatenation
 MAX_PART_LENGTH = 1000  # Maximum length of each text part
 MAX_ERROR_MESSAGE_LENGTH = 200  # Maximum length of error messages
+MAX_CONCURRENT_JOBS = 10  # Maximum concurrent migration jobs
+MAX_CONNECTION_POOL_SIZE = 50  # Maximum database connection pool size
 
 
 def _sanitize_error_message(error_msg: str) -> str:
     """Sanitize error messages to prevent sensitive data exposure."""
-    # Remove potential sensitive patterns
-    patterns_to_remove = [
-        r"password[=:]\s*\S+",  # passwords
-        r"token[=:]\s*\S+",  # tokens
-        r"key[=:]\s*\S+",  # keys
-        r"secret[=:]\s*\S+",  # secrets
-        r"api[_-]?key[=:]\s*\S+",  # API keys
-        r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b",  # IP addresses
-        r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",  # email addresses
-    ]
-
     sanitized = error_msg
-    for pattern in patterns_to_remove:
-        sanitized = re.sub(pattern, "[REDACTED]", sanitized, flags=re.IGNORECASE)
+    
+    # Password patterns - keep the key, redact the value
+    sanitized = re.sub(r"(password\s*[=:]\s*)\S+", r"\1[REDACTED]", sanitized, flags=re.IGNORECASE)
+    
+    # Token patterns - keep the key, redact the value
+    sanitized = re.sub(r"(token\s*[=:]\s*)\S+", r"\1[REDACTED]", sanitized, flags=re.IGNORECASE)
+    
+    # API key patterns - keep the key, redact the value
+    sanitized = re.sub(r"(api[_-]?key\s*[=:]\s*)\S+", r"\1[REDACTED]", sanitized, flags=re.IGNORECASE)
+    
+    # Secret patterns - keep the key, redact the value
+    sanitized = re.sub(r"(secret\s*[=:]\s*)\S+", r"\1[REDACTED]", sanitized, flags=re.IGNORECASE)
+    
+    # IP addresses - redact completely
+    sanitized = re.sub(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", "[REDACTED]", sanitized)
+    
+    # Email addresses - redact completely
+    sanitized = re.sub(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[REDACTED]", sanitized)
 
     # Truncate very long error messages
     if len(sanitized) > MAX_ERROR_MESSAGE_LENGTH:
         sanitized = sanitized[:MAX_ERROR_MESSAGE_LENGTH - 3] + "..."
 
     return sanitized
+
+
+def _log_internal_error(error_msg: str, context: Optional[str] = None) -> str:
+    """
+    Log full error internally while returning generic message for external use.
+    
+    Args:
+        error_msg: Full error message with potentially sensitive information
+        context: Optional context for the error
+        
+    Returns:
+        Generic error message safe for external consumption
+    """
+    # Log full error internally for debugging
+    if context:
+        logger.error(f"Internal error in {context}: {error_msg}")
+    else:
+        logger.error(f"Internal error: {error_msg}")
+    
+    # Return generic message for external consumption
+    sanitized = _sanitize_error_message(error_msg)
+    
+    # Further genericize common error patterns
+    if "connection" in error_msg.lower():
+        return "Database connection error occurred"
+    elif "authentication" in error_msg.lower() or "auth" in error_msg.lower():
+        return "Authentication error occurred"
+    elif "permission" in error_msg.lower() or "access" in error_msg.lower():
+        return "Access permission error occurred"
+    elif "timeout" in error_msg.lower():
+        return "Operation timed out"
+    else:
+        return sanitized
 
 
 class MigrationStatus(str, Enum):
@@ -152,6 +192,10 @@ class DataMigrationEngine:
 
         self.active_jobs: Dict[str, MigrationJob] = {}
         self._semaphores: Dict[str, asyncio.Semaphore] = {}
+        
+        # Resource monitoring
+        self._resource_semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
+        self._connection_pools: Dict[str, int] = {}  # Track connection pool usage
 
     async def migrate_data(self, job: MigrationJob) -> MigrationJob:
         """
@@ -165,57 +209,65 @@ class DataMigrationEngine:
         """
         logger.info(f"Starting migration job {job.job_id}: {job.source} -> {job.target_backend}")
 
-        # Register job
-        self.active_jobs[job.job_id] = job
-        job.status = MigrationStatus.RUNNING
-        job.started_at = datetime.now()
-
-        # Set up timeout if specified
-        timeout = job.timeout_seconds
-
-        try:
-            # Create concurrency semaphore
-            self._semaphores[job.job_id] = asyncio.Semaphore(job.max_concurrent)
-
-            # Execute migration with timeout if specified
-            migration_coro = self._execute_migration(job)
-
-            if timeout:
-                try:
-                    await asyncio.wait_for(migration_coro, timeout=timeout)
-                except asyncio.TimeoutError:
-                    job.status = MigrationStatus.FAILED
-                    sanitized_error = _sanitize_error_message(
-                        f"Migration timed out after {timeout} seconds"
-                    )
-                    job.errors.append(f"Timeout: {sanitized_error}")
-                    logger.error(f"Migration job {job.job_id} timed out after {timeout} seconds")
-                    raise asyncio.TimeoutError(f"Migration job timed out after {timeout} seconds")
-            else:
-                await migration_coro
-
-            # Mark as completed
-            job.status = (
-                MigrationStatus.COMPLETED if job.error_count == 0 else MigrationStatus.PARTIAL
-            )
-            job.completed_at = datetime.now()
-
-            logger.info(
-                f"Migration job {job.job_id} completed: "
-                f"{job.success_count}/{job.processed_count} successful, "
-                f"{job.error_count} errors"
-            )
-
-        except Exception as e:
+        # Check resource limits before starting
+        if len(self.active_jobs) >= MAX_CONCURRENT_JOBS:
+            error_msg = "Maximum concurrent migration jobs limit reached"
             job.status = MigrationStatus.FAILED
-            sanitized_error = _sanitize_error_message(str(e))
-            job.errors.append(f"Job failed: {sanitized_error}")
-            logger.error(f"Migration job {job.job_id} failed: {sanitized_error}")
+            job.errors.append(error_msg)
+            return job
 
-        finally:
-            # Cleanup
-            if job.job_id in self._semaphores:
-                del self._semaphores[job.job_id]
+        # Acquire resource semaphore
+        async with self._resource_semaphore:
+            # Register job
+            self.active_jobs[job.job_id] = job
+            job.status = MigrationStatus.RUNNING
+            job.started_at = datetime.now()
+
+            # Set up timeout if specified
+            timeout = job.timeout_seconds
+
+            try:
+                # Create concurrency semaphore
+                self._semaphores[job.job_id] = asyncio.Semaphore(job.max_concurrent)
+
+                # Execute migration with timeout if specified
+                migration_coro = self._execute_migration(job)
+
+                if timeout:
+                    try:
+                        await asyncio.wait_for(migration_coro, timeout=timeout)
+                    except asyncio.TimeoutError:
+                        job.status = MigrationStatus.FAILED
+                        sanitized_error = _sanitize_error_message(
+                            f"Migration timed out after {timeout} seconds"
+                        )
+                        job.errors.append(f"Timeout: {sanitized_error}")
+                        logger.error(f"Migration job {job.job_id} timed out after {timeout} seconds")
+                        raise asyncio.TimeoutError(f"Migration job timed out after {timeout} seconds")
+                else:
+                    await migration_coro
+
+                # Mark as completed
+                job.status = (
+                    MigrationStatus.COMPLETED if job.error_count == 0 else MigrationStatus.PARTIAL
+                )
+                job.completed_at = datetime.now()
+
+                logger.info(
+                    f"Migration job {job.job_id} completed: "
+                    f"{job.success_count}/{job.processed_count} successful, "
+                    f"{job.error_count} errors"
+                )
+
+            except Exception as e:
+                job.status = MigrationStatus.FAILED
+                # Use internal error logging for security
+                external_error = _log_internal_error(str(e), f"migration job {job.job_id}")
+                job.errors.append(f"Job failed: {external_error}")
+            finally:
+                # Cleanup
+                if job.job_id in self._semaphores:
+                    del self._semaphores[job.job_id]
 
         return job
 
@@ -289,7 +341,7 @@ class DataMigrationEngine:
 
         except Exception as e:
             logger.error(f"Error migrating from Qdrant: {e}")
-            job.errors.append(f"Qdrant migration error: {str(e)}")
+            job.errors.append(f"Qdrant migration error: {_log_internal_error(str(e), 'Qdrant migration')}")
 
     async def _process_qdrant_batch(self, job: MigrationJob, points: List[Any]) -> None:
         """Process a batch of points from Qdrant."""
@@ -370,7 +422,7 @@ class DataMigrationEngine:
                     source_id=str(point.id) if hasattr(point, "id") else "unknown",
                     target_id=None,
                     success=False,
-                    error_message=f"Migration failed: {_sanitize_error_message(str(e))}",
+                    error_message=f"Migration failed: {_log_internal_error(str(e), 'point migration')}",
                     processing_time_ms=processing_time,
                 )
 
@@ -448,7 +500,7 @@ class DataMigrationEngine:
 
         except Exception as e:
             logger.error(f"Error migrating from Neo4j: {e}")
-            job.errors.append(f"Neo4j migration error: {str(e)}")
+            job.errors.append(f"Neo4j migration error: {_log_internal_error(str(e), 'Neo4j migration')}")
 
     async def _process_neo4j_batch(self, job: MigrationJob, nodes: List[Dict[str, Any]]) -> None:
         """Process a batch of nodes from Neo4j."""
@@ -539,7 +591,7 @@ class DataMigrationEngine:
                     source_id="unknown",
                     target_id=None,
                     success=False,
-                    error_message=f"Migration failed: {_sanitize_error_message(str(e))}",
+                    error_message=f"Migration failed: {_log_internal_error(str(e), 'node migration')}",
                     processing_time_ms=processing_time,
                 )
 
@@ -664,7 +716,9 @@ class DataMigrationEngine:
                     "average_doc_length": stats.get("average_document_length", 0),
                 }
             except Exception as e:
-                validation_results["validation_checks"]["text_backend"] = {"error": str(e)}
+                validation_results["validation_checks"]["text_backend"] = {
+                    "error": _log_internal_error(str(e), "text backend validation")
+                }
 
         return validation_results
 

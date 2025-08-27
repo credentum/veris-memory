@@ -7,7 +7,7 @@ to prevent information leakage in logs and error responses.
 """
 
 import pytest
-from ...src.migration.data_migration import _sanitize_error_message
+from src.migration.data_migration import _sanitize_error_message
 
 
 class TestErrorSanitization:

@@ -16,7 +16,8 @@ from ..migration.data_migration import (
     initialize_migration_engine, 
     MigrationJob,
     MigrationSource,
-    MigrationStatus
+    MigrationStatus,
+    _log_internal_error
 )
 from ..backends.text_backend import initialize_text_backend
 from ..storage.enhanced_storage import initialize_storage_orchestrator, StorageRequest
@@ -154,7 +155,7 @@ class MigrationTools:
             logger.error(f"Migration backfill failed: {e}")
             return {
                 "success": False,
-                "error": f"Migration failed: {str(e)}"
+                "error": f"Migration failed: {_log_internal_error(str(e), 'migration backfill')}"
             }
 
     async def get_migration_status(self) -> Dict[str, Any]:
@@ -172,21 +173,33 @@ class MigrationTools:
                 qdrant_client = VectorDBInitializer(config_path=self.config_path, test_mode=True)
                 backends["qdrant"] = {"status": "available", "type": "vector"}
             except Exception as e:
-                backends["qdrant"] = {"status": "error", "error": str(e), "type": "vector"}
+                backends["qdrant"] = {
+                    "status": "error", 
+                    "error": _log_internal_error(str(e), "Qdrant status check"), 
+                    "type": "vector"
+                }
 
             # Check Neo4j
             try:
                 neo4j_client = Neo4jInitializer(config_path=self.config_path, test_mode=True)
                 backends["neo4j"] = {"status": "available", "type": "graph"}
             except Exception as e:
-                backends["neo4j"] = {"status": "error", "error": str(e), "type": "graph"}
+                backends["neo4j"] = {
+                    "status": "error", 
+                    "error": _log_internal_error(str(e), "Neo4j status check"), 
+                    "type": "graph"
+                }
 
             # Check Redis KV
             try:
                 kv_store = ContextKV(config_path=self.config_path)
                 backends["redis"] = {"status": "available", "type": "kv"}
             except Exception as e:
-                backends["redis"] = {"status": "error", "error": str(e), "type": "kv"}
+                backends["redis"] = {
+                    "status": "error", 
+                    "error": _log_internal_error(str(e), "Redis status check"), 
+                    "type": "kv"
+                }
 
             # Check Text Backend
             text_stats = None
@@ -203,7 +216,11 @@ class MigrationTools:
                 }
                 text_stats = stats
             except Exception as e:
-                backends["text_search"] = {"status": "error", "error": str(e), "type": "text"}
+                backends["text_search"] = {
+                    "status": "error", 
+                    "error": _log_internal_error(str(e), "text search status check"), 
+                    "type": "text"
+                }
 
             return {
                 "success": True,
@@ -216,7 +233,7 @@ class MigrationTools:
             logger.error(f"Status check failed: {e}")
             return {
                 "success": False,
-                "error": f"Status check failed: {str(e)}"
+                "error": f"Status check failed: {_log_internal_error(str(e), 'status check')}"
             }
 
     async def test_search(
@@ -298,7 +315,7 @@ class MigrationTools:
             logger.error(f"Search test failed: {e}")
             return {
                 "success": False,
-                "error": f"Search test failed: {str(e)}"
+                "error": f"Search test failed: {_log_internal_error(str(e), 'search test')}"
             }
 
     async def test_storage(
@@ -400,7 +417,7 @@ class MigrationTools:
             logger.error(f"Storage test failed: {e}")
             return {
                 "success": False,
-                "error": f"Storage test failed: {str(e)}"
+                "error": f"Storage test failed: {_log_internal_error(str(e), 'storage test')}"
             }
 
 
