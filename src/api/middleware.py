@@ -116,7 +116,7 @@ class ValidationMiddleware(BaseHTTPMiddleware):
             
             return JSONResponse(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                content=error_response.dict()
+                content=error_response.model_dump()
             )
         
         except Exception:
@@ -159,7 +159,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             
             return JSONResponse(
                 status_code=status_code,
-                content=error_response.dict(),
+                content=error_response.model_dump(),
                 headers={"X-Trace-ID": trace_id}
             )
     
@@ -194,8 +194,17 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 {"error_type": error_type}
             )
         
+        # Timeout errors (must come before backend errors to avoid being caught by "timeout" keyword)
+        if "timeout" in error_str.lower() or error_type in ["TimeoutError", "asyncio.TimeoutError"]:
+            return (
+                ErrorCode.TIMEOUT_ERROR,
+                status.HTTP_504_GATEWAY_TIMEOUT,
+                "Request timeout",
+                {"error_type": error_type}
+            )
+        
         # Backend errors
-        if any(keyword in error_str.lower() for keyword in ["backend", "database", "connection", "timeout"]):
+        if any(keyword in error_str.lower() for keyword in ["backend", "database", "connection"]):
             return (
                 ErrorCode.BACKEND_ERROR,
                 status.HTTP_502_BAD_GATEWAY,
@@ -209,15 +218,6 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 ErrorCode.NOT_FOUND,
                 status.HTTP_404_NOT_FOUND,
                 "Resource not found",
-                {"error_type": error_type}
-            )
-        
-        # Timeout errors
-        if "timeout" in error_str.lower() or error_type in ["TimeoutError", "asyncio.TimeoutError"]:
-            return (
-                ErrorCode.TIMEOUT_ERROR,
-                status.HTTP_504_GATEWAY_TIMEOUT,
-                "Request timeout",
                 {"error_type": error_type}
             )
         
@@ -275,7 +275,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                content=error_response.dict(),
+                content=error_response.model_dump(),
                 headers={
                     "X-RateLimit-Limit": str(self.requests_per_minute),
                     "X-RateLimit-Remaining": "0",
