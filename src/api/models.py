@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..core.query_dispatcher import SearchMode, DispatchPolicy
 from ..filters.pre_filter import FilterOperator, TagFilterMode
@@ -49,23 +49,19 @@ class TimeWindow(BaseModel):
     hours_ago: Optional[int] = Field(None, ge=0, description="Relative hours from now")
     days_ago: Optional[int] = Field(None, ge=0, description="Relative days from now")
     
-    @validator('end_time')
-    def validate_time_range(cls, v, values):
+    @model_validator(mode='after')
+    def validate_time_range(self):
         """Validate that end_time is after start_time."""
-        start_time = values.get('start_time')
-        if start_time and v and v <= start_time:
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
             raise ValueError('end_time must be after start_time')
-        return v
+        return self
     
-    @validator('days_ago')
-    def validate_time_window_specified(cls, v, values):
+    @model_validator(mode='after')
+    def validate_time_window_exists(self):
         """Ensure at least one time specification method is used."""
-        start_time = values.get('start_time')
-        hours_ago = values.get('hours_ago')
-        
-        if not any([start_time, hours_ago, v]):
+        if not any([self.start_time, self.hours_ago, self.days_ago]):
             raise ValueError('At least one time specification must be provided')
-        return v
+        return self
     
     class Config:
         schema_extra = {
@@ -182,13 +178,12 @@ class SearchRequest(BaseModel):
         description="Filter by namespaces"
     )
     
-    @validator('max_score')
-    def validate_score_range(cls, v, values):
+    @model_validator(mode='after')
+    def validate_score_range(self):
         """Validate score range."""
-        min_score = values.get('min_score')
-        if min_score and v and v <= min_score:
+        if self.min_score and self.max_score and self.max_score <= self.min_score:
             raise ValueError('max_score must be greater than min_score')
-        return v
+        return self
     
     class Config:
         schema_extra = {
