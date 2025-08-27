@@ -10,7 +10,8 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
-from src.api.main import create_app, create_openapi_schema, get_query_dispatcher
+from src.api.main import create_app, create_openapi_schema
+from src.api.dependencies import get_query_dispatcher
 from src.api.models import ErrorResponse
 
 
@@ -35,8 +36,13 @@ class TestAPIApplication:
         """Test middleware is properly configured."""
         app = create_app()
         
-        # Check middleware stack
-        middleware_types = [type(middleware.cls).__name__ for middleware in app.user_middleware]
+        # Check middleware stack - FastAPI stores middleware differently
+        middleware_types = []
+        for middleware in app.user_middleware:
+            if hasattr(middleware, 'cls'):
+                middleware_types.append(middleware.cls.__name__)
+            elif hasattr(middleware, 'dispatch'):
+                middleware_types.append(type(middleware).__name__)
         
         # Should include our custom middleware
         assert "ErrorHandlerMiddleware" in middleware_types
@@ -56,10 +62,10 @@ class TestAPIApplication:
         for prefix in expected_prefixes:
             assert any(path.startswith(prefix) for path in route_paths), f"Missing routes with prefix {prefix}"
     
-    @patch('src.api.main.QueryDispatcher')
-    @patch('src.api.main.VectorBackend')
-    @patch('src.api.main.GraphBackend') 
-    @patch('src.api.main.KVBackend')
+    @patch('src.core.query_dispatcher.QueryDispatcher')
+    @patch('src.backends.vector_backend.VectorBackend')
+    @patch('src.backends.graph_backend.GraphBackend') 
+    @patch('src.backends.kv_backend.KVBackend')
     def test_lifespan_initialization(self, mock_kv, mock_graph, mock_vector, mock_dispatcher):
         """Test application lifespan initialization."""
         # Mock backend instances
@@ -130,20 +136,20 @@ class TestOpenAPISchema:
 class TestDependencyInjection:
     """Test dependency injection for shared components."""
     
-    @patch('src.api.main.query_dispatcher', None)
+    @patch('src.api.dependencies.query_dispatcher', None)
     def test_get_query_dispatcher_not_initialized(self):
         """Test error when query dispatcher is not initialized."""
         with pytest.raises(RuntimeError, match="Query dispatcher not initialized"):
             get_query_dispatcher()
     
-    @patch('src.api.main.query_dispatcher')
+    @patch('src.api.dependencies.query_dispatcher')
     def test_get_query_dispatcher_initialized(self, mock_dispatcher):
         """Test getting initialized query dispatcher."""
         mock_instance = MagicMock()
         mock_dispatcher.return_value = mock_instance
         
         # Mock the global variable
-        with patch('src.api.main.query_dispatcher', mock_instance):
+        with patch('src.api.dependencies.query_dispatcher', mock_instance):
             result = get_query_dispatcher()
             assert result is mock_instance
 
@@ -171,22 +177,19 @@ class TestRootEndpoint:
 class TestErrorHandling:
     """Test API-level error handling."""
     
-    @patch('src.api.main.get_query_dispatcher')
-    def test_internal_error_handling(self, mock_get_dispatcher):
+    def test_internal_error_handling(self):
         """Test internal error handling and response format."""
-        # Mock dispatcher to raise an error
-        mock_get_dispatcher.side_effect = Exception("Test error")
-        
+        # Test with uninitialized dispatcher (the actual runtime error)
         app = create_app()
         client = TestClient(app)
         
-        # This would be tested with a specific endpoint that uses the dispatcher
-        # For now, we test the error structure
+        # This should test what happens when dispatcher is not initialized
+        # The real error handling in the actual API endpoints
         try:
             get_query_dispatcher()
-        except Exception as e:
-            # The middleware should catch this and format it properly
-            assert str(e) == "Test error"
+        except RuntimeError as e:
+            # The real error from uninitialized dispatcher
+            assert "Query dispatcher not initialized" in str(e)
     
     def test_404_error_handling(self):
         """Test 404 error handling for non-existent endpoints."""

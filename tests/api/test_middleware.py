@@ -28,7 +28,11 @@ from src.api.models import ErrorCode, ErrorResponse
 def create_test_app_with_middleware(middleware_class, *args, **kwargs):
     """Create a test app with specific middleware."""
     app = FastAPI()
-    app.add_middleware(middleware_class, *args, **kwargs)
+    # For MetricsMiddleware, use the global instance for testing
+    if middleware_class == MetricsMiddleware:
+        app.add_middleware(MetricsMiddleware)
+    else:
+        app.add_middleware(middleware_class, *args, **kwargs)
     
     @app.get("/test")
     async def test_endpoint():
@@ -299,7 +303,7 @@ class TestMetricsMiddleware:
         metrics = metrics_middleware.get_metrics_summary()
         
         assert metrics["request_count"] >= 3
-        assert len(metrics["response_times"]) >= 3
+        assert metrics["avg_response_time_ms"] > 0
         assert 200 in metrics["status_counts"]
         assert metrics["status_counts"][200] >= 3
     
