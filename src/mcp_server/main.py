@@ -1234,7 +1234,7 @@ async def status() -> Dict[str, Any]:
         },
         "dependencies": {
             "qdrant": health_status["services"]["qdrant"],
-            "neo4j": health_status["services"]["neo4j"], 
+            "neo4j": health_status["services"]["neo4j"],
             "redis": health_status["services"]["redis"],
         },
         "tools": [
@@ -1243,7 +1243,234 @@ async def status() -> Dict[str, Any]:
             "query_graph",
             "update_scratchpad",
             "get_agent_state",
+            "delete_context",  # Sprint 13
+            "forget_context",  # Sprint 13
         ],
+    }
+
+
+# Sprint 13 Phase 4.3: Enhanced Tool Discovery Endpoint
+
+@app.get("/tools")
+async def list_tools() -> Dict[str, Any]:
+    """
+    Comprehensive tool discovery endpoint.
+    Sprint 13 Phase 4.3: Enhanced tool listing with schemas and examples.
+
+    Returns detailed information about all available tools including:
+    - Tool names and descriptions
+    - Input/output schemas
+    - Example requests
+    - Availability status
+    """
+    tools_info = {
+        "store_context": {
+            "name": "store_context",
+            "description": "Store context with embeddings and graph relationships",
+            "endpoint": "/tools/store_context",
+            "method": "POST",
+            "available": qdrant_client is not None or neo4j_client is not None,
+            "requires_auth": API_KEY_AUTH_AVAILABLE,
+            "capabilities": ["write", "store"],
+            "input_schema": {
+                "type": "object",
+                "required": ["content", "type"],
+                "properties": {
+                    "content": {"type": "object", "description": "Context content"},
+                    "type": {
+                        "type": "string",
+                        "enum": ["design", "decision", "trace", "sprint", "log"],
+                        "description": "Context type"
+                    },
+                    "metadata": {"type": "object", "description": "Optional metadata"},
+                    "author": {"type": "string", "description": "Author (auto-populated from API key)"},
+                    "author_type": {"type": "string", "enum": ["human", "agent"]}
+                }
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "id": {"type": "string"},
+                    "vector_id": {"type": ["string", "null"]},
+                    "graph_id": {"type": ["integer", "null"]},
+                    "embedding_status": {"type": "string", "enum": ["completed", "failed", "unavailable"]}
+                }
+            },
+            "example": {
+                "content": {"title": "API Design", "description": "RESTful API design decisions"},
+                "type": "design",
+                "metadata": {"priority": "high"}
+            }
+        },
+
+        "retrieve_context": {
+            "name": "retrieve_context",
+            "description": "Retrieve contexts using hybrid search (vector + graph)",
+            "endpoint": "/tools/retrieve_context",
+            "method": "POST",
+            "available": True,
+            "requires_auth": False,
+            "capabilities": ["read", "search"],
+            "input_schema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 100},
+                    "type": {"type": "string", "description": "Filter by context type"},
+                    "search_mode": {"type": "string", "enum": ["vector", "graph", "hybrid"], "default": "hybrid"}
+                }
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "results": {"type": "array"},
+                    "count": {"type": "integer"},
+                    "search_mode_used": {"type": "string"}
+                }
+            },
+            "example": {
+                "query": "API design decisions",
+                "limit": 5
+            }
+        },
+
+        "query_graph": {
+            "name": "query_graph",
+            "description": "Execute Cypher queries on Neo4j graph",
+            "endpoint": "/tools/query_graph",
+            "method": "POST",
+            "available": neo4j_client is not None,
+            "requires_auth": False,
+            "capabilities": ["read", "query", "graph"],
+            "input_schema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string", "description": "Cypher query"},
+                    "parameters": {"type": "object", "description": "Query parameters"},
+                    "limit": {"type": "integer", "default": 100}
+                }
+            },
+            "example": {
+                "query": "MATCH (n:Context) RETURN n LIMIT 10"
+            }
+        },
+
+        "update_scratchpad": {
+            "name": "update_scratchpad",
+            "description": "Update agent scratchpad with TTL support",
+            "endpoint": "/tools/update_scratchpad",
+            "method": "POST",
+            "available": simple_redis is not None,
+            "requires_auth": False,
+            "capabilities": ["write", "cache"],
+            "input_schema": {
+                "type": "object",
+                "required": ["agent_id", "key", "content"],
+                "properties": {
+                    "agent_id": {"type": "string"},
+                    "key": {"type": "string"},
+                    "content": {"type": "string"},
+                    "mode": {"type": "string", "enum": ["overwrite", "append"], "default": "overwrite"},
+                    "ttl": {"type": "integer", "default": 3600, "minimum": 60, "maximum": 86400}
+                }
+            },
+            "example": {
+                "agent_id": "agent_1",
+                "key": "working_memory",
+                "content": "Current task: analyzing data",
+                "ttl": 3600
+            }
+        },
+
+        "get_agent_state": {
+            "name": "get_agent_state",
+            "description": "Retrieve agent state from scratchpad",
+            "endpoint": "/tools/get_agent_state",
+            "method": "POST",
+            "available": simple_redis is not None,
+            "requires_auth": False,
+            "capabilities": ["read", "state"],
+            "input_schema": {
+                "type": "object",
+                "required": ["agent_id"],
+                "properties": {
+                    "agent_id": {"type": "string"},
+                    "key": {"type": ["string", "null"], "description": "Specific key to retrieve"},
+                    "prefix": {"type": "string", "default": "state"}
+                }
+            },
+            "example": {
+                "agent_id": "agent_1"
+            }
+        },
+
+        "delete_context": {
+            "name": "delete_context",
+            "description": "Delete context (human-only, with audit)",
+            "endpoint": "/tools/delete_context",
+            "method": "POST",
+            "available": API_KEY_AUTH_AVAILABLE,
+            "requires_auth": True,
+            "requires_human": True,
+            "capabilities": ["delete", "admin"],
+            "input_schema": {
+                "type": "object",
+                "required": ["context_id", "reason"],
+                "properties": {
+                    "context_id": {"type": "string"},
+                    "reason": {"type": "string", "minLength": 5},
+                    "hard_delete": {"type": "boolean", "default": False}
+                }
+            },
+            "example": {
+                "context_id": "abc-123",
+                "reason": "Outdated information, no longer relevant",
+                "hard_delete": False
+            }
+        },
+
+        "forget_context": {
+            "name": "forget_context",
+            "description": "Soft-delete context with retention period",
+            "endpoint": "/tools/forget_context",
+            "method": "POST",
+            "available": API_KEY_AUTH_AVAILABLE,
+            "requires_auth": True,
+            "requires_human": False,
+            "capabilities": ["delete", "forget"],
+            "input_schema": {
+                "type": "object",
+                "required": ["context_id", "reason"],
+                "properties": {
+                    "context_id": {"type": "string"},
+                    "reason": {"type": "string", "minLength": 5},
+                    "retention_days": {"type": "integer", "default": 30, "minimum": 1, "maximum": 90}
+                }
+            },
+            "example": {
+                "context_id": "abc-123",
+                "reason": "Temporary context no longer needed",
+                "retention_days": 30
+            }
+        }
+    }
+
+    return {
+        "tools": list(tools_info.values()),
+        "total_tools": len(tools_info),
+        "available_tools": len([t for t in tools_info.values() if t["available"]]),
+        "capabilities": list(set(cap for tool in tools_info.values() for cap in tool.get("capabilities", []))),
+        "version": "v0.9.0",
+        "sprint_13_enhancements": [
+            "delete_context - Human-only deletion with audit",
+            "forget_context - Soft delete with retention",
+            "Enhanced tool schemas and examples",
+            "Availability status per tool"
+        ]
     }
 
 
