@@ -48,10 +48,19 @@ except ImportError:
     )
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, Depends
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+# Sprint 13 Phase 2: API Key Authentication
+try:
+    from ..middleware.api_key_auth import verify_api_key, require_human, APIKeyInfo
+    API_KEY_AUTH_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"API key authentication not available: {e}")
+    API_KEY_AUTH_AVAILABLE = False
+    APIKeyInfo = None
 
 # Configure logging for import failures
 logger = logging.getLogger(__name__)
@@ -371,18 +380,30 @@ websocket_connections = set()  # Track WebSocket connections
 
 class StoreContextRequest(BaseModel):
     """Request model for store_context tool.
-    
+
     Attributes:
         content: Dictionary containing the context data to store
         type: Type of context (design, decision, trace, sprint, log)
         metadata: Optional metadata associated with the context
         relationships: Optional list of relationships to other contexts
+        author: Author of the context (Sprint 13: auto-populated from API key)
+        author_type: Type of author - 'human' or 'agent' (Sprint 13)
     """
 
     content: Dict[str, Any]
     type: str = Field(..., pattern="^(design|decision|trace|sprint|log)$")
     metadata: Optional[Dict[str, Any]] = None
     relationships: Optional[List[Dict[str, str]]] = None
+    # Sprint 13 Phase 2.2: Author attribution
+    author: Optional[str] = Field(
+        None,
+        description="Author of the context (user ID or agent name). Auto-populated from API key if not provided."
+    )
+    author_type: Optional[str] = Field(
+        None,
+        pattern="^(human|agent)$",
+        description="Type of author: 'human' or 'agent'. Auto-populated from API key if not provided."
+    )
 
 
 class RetrieveContextRequest(BaseModel):
@@ -447,7 +468,7 @@ class UpdateScratchpadRequest(BaseModel):
 
 class GetAgentStateRequest(BaseModel):
     """Request model for get_agent_state tool.
-    
+
     Attributes:
         agent_id: Unique identifier for the agent
         key: Optional specific state key to retrieve
@@ -456,6 +477,29 @@ class GetAgentStateRequest(BaseModel):
     agent_id: str = Field(..., description="Agent identifier")
     key: Optional[str] = Field(None, description="Specific state key")
     prefix: str = Field("state", description="State type prefix")
+
+
+# Sprint 13 Phase 2.3 & 3.2: Delete/Forget operations
+class DeleteContextRequest(BaseModel):
+    """Request model for delete_context tool (Sprint 13 Phase 2.3).
+
+    Human-only operation to delete contexts with audit logging.
+    """
+
+    context_id: str = Field(..., description="ID of the context to delete")
+    reason: str = Field(..., min_length=5, description="Reason for deletion (required for audit)")
+    hard_delete: bool = Field(False, description="If True, permanently delete. If False, soft delete (mark as deleted)")
+
+
+class ForgetContextRequest(BaseModel):
+    """Request model for forget_context tool (Sprint 13 Phase 3.2).
+
+    Soft-delete contexts with audit trail and 30-day retention.
+    """
+
+    context_id: str = Field(..., description="ID of the context to forget")
+    reason: str = Field(..., min_length=5, description="Reason for forgetting (audit trail)")
+    retention_days: int = Field(30, ge=1, le=90, description="Days to retain before permanent deletion (1-90)")
 
 
 def validate_and_get_credential(env_var_name: str, required: bool = True, min_length: int = 8) -> Optional[str]:
@@ -1339,9 +1383,14 @@ async def verify_readiness() -> Dict[str, Any]:
 
 
 @app.post("/tools/store_context")
-async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
+async def store_context(
+    request: StoreContextRequest,
+    api_key_info: Optional[APIKeyInfo] = Depends(verify_api_key) if API_KEY_AUTH_AVAILABLE else None
+) -> Dict[str, Any]:
     """
     Store context with embeddings and graph relationships.
+
+    Sprint 13: Now includes author attribution and API key authentication.
 
     This tool stores context data in both vector and graph databases,
     enabling hybrid retrieval capabilities.
@@ -1351,6 +1400,24 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
         import uuid
 
         context_id = str(uuid.uuid4())
+
+        # Sprint 13 Phase 2.2: Auto-populate author information from API key
+        author = request.author
+        author_type = request.author_type
+
+        if api_key_info and not author:
+            author = api_key_info.user_id
+            author_type = "agent" if api_key_info.is_agent else "human"
+            logger.info(f"Auto-populated author: {author} (type: {author_type})")
+
+        # Add author to metadata if not already present
+        if request.metadata is None:
+            request.metadata = {}
+
+        if author:
+            request.metadata["author"] = author
+            request.metadata["author_type"] = author_type
+            request.metadata["stored_at"] = datetime.now().isoformat()
 
         # Store in vector database
         vector_id = None
@@ -1390,8 +1457,15 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
             try:
                 logger.info("Storing context in Neo4j graph database...")
                 # Flatten nested objects for Neo4j compatibility
-                flattened_properties = {"id": context_id, "type": request.type}
-                
+                flattened_properties = {
+                    "id": context_id,
+                    "type": request.type,
+                    # Sprint 13 Phase 2.2: Add author attribution to graph
+                    "author": author or "unknown",
+                    "author_type": author_type or "unknown",
+                    "created_at": datetime.now().isoformat()
+                }
+
                 # Handle request.content safely - convert nested objects to JSON strings
                 for key, value in request.content.items():
                     if isinstance(value, (dict, list)):
