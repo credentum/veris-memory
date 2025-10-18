@@ -90,6 +90,7 @@ class RelationshipDetector:
         relationships = []
 
         if not self.neo4j_client:
+            logger.debug("Neo4j client not available, skipping temporal relationship detection")
             return relationships
 
         try:
@@ -116,9 +117,14 @@ class RelationshipDetector:
                         previous_id,
                         f"Temporal sequence in {context_type} contexts"
                     ))
+                    logger.debug(f"Detected temporal relationship: {context_id} PRECEDED_BY {previous_id}")
 
+        except ConnectionError as e:
+            logger.error(f"Neo4j connection error during temporal detection: {e}")
+        except KeyError as e:
+            logger.error(f"Missing required field in temporal detection: {e}")
         except Exception as e:
-            logger.error(f"Failed to detect temporal relationships: {e}")
+            logger.error(f"Unexpected error in temporal relationship detection: {e}", exc_info=True)
 
         return relationships
 
@@ -216,6 +222,7 @@ class RelationshipDetector:
             return relationships
 
         if not self.neo4j_client:
+            logger.debug("Neo4j client not available, skipping sprint relationship detection")
             return relationships
 
         try:
@@ -242,9 +249,16 @@ class RelationshipDetector:
                                 prev_sprint_id,
                                 f"Previous sprint (Sprint {sprint_num - 1})"
                             ))
+                            logger.debug(f"Detected sprint relationship: Sprint {sprint_num} PRECEDED_BY Sprint {sprint_num - 1}")
+                else:
+                    logger.debug(f"Sprint number {sprint_num} is not valid for sequential linking")
 
+        except ConnectionError as e:
+            logger.error(f"Neo4j connection error during sprint detection: {e}")
+        except (KeyError, ValueError, TypeError) as e:
+            logger.error(f"Invalid data in sprint relationship detection: {e}")
         except Exception as e:
-            logger.error(f"Failed to detect sprint relationships: {e}")
+            logger.error(f"Unexpected error in sprint relationship detection: {e}", exc_info=True)
 
         return relationships
 
@@ -307,11 +321,21 @@ class RelationshipDetector:
                 created += 1
                 logger.debug(f"Created {rel_type} relationship: {context_id} -> {target_id}")
 
+            except ConnectionError as e:
+                logger.error(f"Neo4j connection error creating {rel_type} relationship: {e}")
+                continue
+            except ValueError as e:
+                logger.error(f"Invalid relationship data for {rel_type}: {e}")
+                continue
             except Exception as e:
-                logger.error(f"Failed to create relationship {rel_type}: {e}")
+                logger.error(f"Unexpected error creating {rel_type} relationship: {e}", exc_info=True)
                 continue
 
-        logger.info(f"Created {created} relationships for context {context_id}")
+        if created > 0:
+            logger.info(f"Successfully created {created} relationships for context {context_id}")
+        else:
+            logger.debug(f"No relationships created for context {context_id}")
+
         return created
 
     def get_detection_stats(self) -> Dict[str, Any]:

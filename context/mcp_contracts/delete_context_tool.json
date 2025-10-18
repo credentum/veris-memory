@@ -1,0 +1,137 @@
+{
+  "schema_version": "1.0",
+  "name": "delete_context",
+  "version": "1.0.0",
+  "api_version": "1.0",
+  "min_client_version": "1.0.0",
+  "deprecated_fields": [],
+  "description": "Delete a context permanently from all storage backends (human-only operation). Sprint 13 Phase 2: Security & Attribution",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "context_id": {
+        "type": "string",
+        "description": "Unique identifier of the context to delete",
+        "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+      },
+      "reason": {
+        "type": "string",
+        "description": "Reason for deletion (required for audit log)",
+        "minLength": 5,
+        "maxLength": 500
+      },
+      "hard_delete": {
+        "type": "boolean",
+        "description": "If true, permanently delete. If false, mark as deleted but retain for audit",
+        "default": false
+      }
+    },
+    "required": ["context_id", "reason"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the deletion succeeded"
+      },
+      "context_id": {
+        "type": "string",
+        "description": "ID of the deleted context"
+      },
+      "deleted_from": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["qdrant", "neo4j", "redis"]
+        },
+        "description": "List of storage backends where context was deleted"
+      },
+      "audit_log_id": {
+        "type": "string",
+        "description": "ID of the audit log entry for this deletion"
+      },
+      "message": {
+        "type": "string",
+        "description": "Status message or error description"
+      },
+      "error": {
+        "type": "string",
+        "description": "Error message if operation failed"
+      }
+    },
+    "required": ["success", "context_id"]
+  },
+  "security": {
+    "authentication": {
+      "required": true,
+      "human_only": true,
+      "reason": "Deletion is a destructive operation that requires human authorization. AI agents cannot delete contexts."
+    },
+    "rate_limits": {
+      "requests_per_minute": 5,
+      "burst_limit": 2
+    },
+    "validation": {
+      "verify_context_exists": true,
+      "require_reason": true,
+      "audit_log_required": true,
+      "retention_days": 365
+    },
+    "permissions": {
+      "required_role": "admin",
+      "required_capability": "delete_context"
+    }
+  },
+  "audit": {
+    "enabled": true,
+    "retention_days": 365,
+    "fields_logged": [
+      "context_id",
+      "reason",
+      "hard_delete",
+      "user_id",
+      "timestamp",
+      "deleted_from",
+      "api_key_id"
+    ]
+  },
+  "warnings": [
+    "This operation is irreversible if hard_delete=true",
+    "Deleted contexts cannot be recovered",
+    "All related data (vectors, graph nodes, cache) will be removed",
+    "AI agents are blocked from this operation for safety"
+  ],
+  "examples": [
+    {
+      "description": "Soft delete with retention",
+      "input": {
+        "context_id": "abc123-def456-ghi789",
+        "reason": "Duplicate context, marked for cleanup",
+        "hard_delete": false
+      },
+      "output": {
+        "success": true,
+        "context_id": "abc123-def456-ghi789",
+        "deleted_from": ["neo4j", "redis"],
+        "audit_log_id": "audit_xyz789",
+        "message": "Context marked as deleted. Will be removed after retention period."
+      }
+    },
+    {
+      "description": "Hard delete (permanent)",
+      "input": {
+        "context_id": "abc123-def456-ghi789",
+        "reason": "Contains sensitive data, permanent removal required",
+        "hard_delete": true
+      },
+      "output": {
+        "success": true,
+        "context_id": "abc123-def456-ghi789",
+        "deleted_from": ["qdrant", "neo4j", "redis"],
+        "audit_log_id": "audit_xyz789",
+        "message": "Context permanently deleted from all storage backends"
+      }
+    }
+  ]
+}

@@ -9,7 +9,7 @@ Integrates with existing RBAC system for consistent authorization.
 import os
 import logging
 import hashlib
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Callable, Awaitable
 from dataclasses import dataclass
 from fastapi import Request, HTTPException, Header
 from functools import wraps
@@ -35,7 +35,7 @@ class APIKeyManager:
     Sprint 13: Simple API key auth with integration to existing RBAC.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize API key manager"""
         self.api_keys: Dict[str, APIKeyInfo] = self._load_api_keys()
         logger.info(f"API Key Manager initialized with {len(self.api_keys)} keys")
@@ -72,7 +72,10 @@ class APIKeyManager:
                 except Exception as e:
                     logger.error(f"Failed to parse API key {env_var}: {e}")
 
-        # Add default test key if no keys configured (for development)
+        # ⚠️ SECURITY WARNING: Default test key for development only
+        # This test key should NEVER be used in production environments.
+        # Set ENVIRONMENT=production to disable automatic test key creation.
+        # Generate secure, unique API keys for all production deployments.
         if not api_keys and os.getenv("ENVIRONMENT", "production") != "production":
             default_key = "vmk_test_a1b2c3d4e5f6789012345678901234567890"
             api_keys[default_key] = APIKeyInfo(
@@ -81,9 +84,9 @@ class APIKeyManager:
                 role="writer",
                 capabilities=["store_context", "retrieve_context", "query_graph", "update_scratchpad", "get_agent_state"],
                 is_agent=True,
-                metadata={"source": "default", "warning": "test_key_only"}
+                metadata={"source": "default", "warning": "TEST_KEY_ONLY_NEVER_USE_IN_PRODUCTION"}
             )
-            logger.warning("⚠️ Using default test API key - NOT FOR PRODUCTION")
+            logger.warning("⚠️ SECURITY: Using default test API key - NEVER USE IN PRODUCTION")
 
         return api_keys
 
@@ -121,7 +124,16 @@ class APIKeyManager:
         return None
 
     def has_capability(self, api_key: str, capability: str) -> bool:
-        """Check if API key has specific capability"""
+        """
+        Check if API key has specific capability.
+
+        Args:
+            api_key: The API key to check
+            capability: The capability to verify
+
+        Returns:
+            True if the key has the capability, False otherwise
+        """
         key_info = self.validate_key(api_key)
         if not key_info:
             return False
@@ -129,7 +141,15 @@ class APIKeyManager:
         return "*" in key_info.capabilities or capability in key_info.capabilities
 
     def is_human(self, api_key: str) -> bool:
-        """Check if API key belongs to a human (not an agent)"""
+        """
+        Check if API key belongs to a human (not an agent).
+
+        Args:
+            api_key: The API key to check
+
+        Returns:
+            True if the key belongs to a human, False if it's an agent or invalid
+        """
         key_info = self.validate_key(api_key)
         if not key_info:
             return False
@@ -216,10 +236,16 @@ async def verify_api_key(
     return key_info
 
 
-def require_capability(capability: str):
+def require_capability(capability: str) -> Callable:
     """
     Decorator to require specific capability for an endpoint.
     Sprint 13: Phase 2
+
+    Args:
+        capability: The required capability (e.g., "store_context")
+
+    Returns:
+        Decorator function
 
     Usage:
         @app.post("/protected")
@@ -227,9 +253,9 @@ def require_capability(capability: str):
         async def protected_endpoint():
             pass
     """
-    def decorator(func):
+    def decorator(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
         @wraps(func)
-        async def wrapper(*args, api_key_info: APIKeyInfo = None, **kwargs):
+        async def wrapper(*args, api_key_info: Optional[APIKeyInfo] = None, **kwargs) -> Any:
             if not api_key_info:
                 raise HTTPException(status_code=401, detail="Authentication required")
 
@@ -248,10 +274,13 @@ def require_capability(capability: str):
     return decorator
 
 
-def require_human():
+def require_human() -> Callable:
     """
     Decorator to require human user (not AI agent).
     Sprint 13: Phase 2.3 - Human-only operations
+
+    Returns:
+        Decorator function that enforces human-only access
 
     Usage:
         @app.delete("/context/{id}")
@@ -259,9 +288,9 @@ def require_human():
         async def delete_context(id: str, api_key_info: APIKeyInfo):
             pass
     """
-    def decorator(func):
+    def decorator(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
         @wraps(func)
-        async def wrapper(*args, api_key_info: APIKeyInfo = None, **kwargs):
+        async def wrapper(*args, api_key_info: Optional[APIKeyInfo] = None, **kwargs) -> Any:
             if not api_key_info:
                 raise HTTPException(status_code=401, detail="Authentication required")
 

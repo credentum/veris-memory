@@ -787,10 +787,61 @@ curl -X POST http://localhost:8000/tools/forget_context \
 
 ### Rate Limiting
 
-Currently not enforced, but recommended limits:
-- Anonymous: 10 requests/minute
-- Authenticated: 100 requests/minute
-- Admin: Unlimited
+**Current Status**: Not enforced in Sprint 13 (planned for future sprint)
+
+**Recommended Limits** (to be implemented):
+
+| User Type | Limit | Burst | Time Window |
+|-----------|-------|-------|-------------|
+| Anonymous (AUTH_REQUIRED=false) | 10 req/min | 20 req | 60 seconds |
+| Guest (reader role) | 30 req/min | 50 req | 60 seconds |
+| Reader | 60 req/min | 100 req | 60 seconds |
+| Writer | 100 req/min | 200 req | 60 seconds |
+| Admin | Unlimited | - | - |
+
+**Endpoint-Specific Limits** (recommended):
+
+| Endpoint | Limit | Reason |
+|----------|-------|--------|
+| POST /tools/store_context | 10 req/min | Expensive (embedding + graph) |
+| POST /tools/retrieve_context | 60 req/min | Moderate (vector search) |
+| POST /tools/query_graph | 30 req/min | Moderate (graph query) |
+| POST /tools/delete_context | 5 req/min | Destructive operation |
+| POST /tools/forget_context | 10 req/min | Destructive operation |
+| GET /tools | 120 req/min | Lightweight (metadata) |
+| GET /health/* | 300 req/min | Monitoring endpoint |
+
+**Rate Limit Headers** (to be implemented):
+```http
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1697654400
+Retry-After: 60
+```
+
+**Rate Limit Response** (HTTP 429):
+```json
+{
+  "error": "Rate limit exceeded",
+  "error_code": "RATE_LIMIT_EXCEEDED",
+  "limit": 100,
+  "remaining": 0,
+  "reset_at": "2025-10-18T13:00:00Z",
+  "retry_after": 60
+}
+```
+
+**Implementation Notes**:
+- Use Redis-based rate limiter for distributed systems
+- Per-API-key tracking (not IP-based to avoid proxy issues)
+- Separate limits for different endpoints
+- Burst allowance for bursty workloads
+- Admin keys exempt from rate limiting
+
+**Workaround Until Implementation**:
+- Use application-level rate limiting
+- Monitor via Prometheus metrics
+- Set up alerts for unusual request patterns
 
 ---
 
