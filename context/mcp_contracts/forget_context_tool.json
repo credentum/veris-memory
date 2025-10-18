@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0",
+  "name": "forget_context",
+  "version": "1.0.0",
+  "api_version": "1.0",
+  "min_client_version": "1.0.0",
+  "deprecated_fields": [],
+  "description": "Soft-delete a context with configurable retention period. Context is marked as deleted but retained for the specified number of days. Sprint 13 Phase 2/3: Security & Memory Management",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "context_id": {
+        "type": "string",
+        "description": "Unique identifier of the context to forget",
+        "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+      },
+      "reason": {
+        "type": "string",
+        "description": "Reason for forgetting this context (required for audit log)",
+        "minLength": 5,
+        "maxLength": 500
+      },
+      "retention_days": {
+        "type": "integer",
+        "description": "Number of days to retain the context before permanent deletion",
+        "minimum": 1,
+        "maximum": 90,
+        "default": 30
+      }
+    },
+    "required": ["context_id", "reason"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation succeeded"
+      },
+      "context_id": {
+        "type": "string",
+        "description": "ID of the forgotten context"
+      },
+      "status": {
+        "type": "string",
+        "enum": ["forgotten", "scheduled_for_deletion"],
+        "description": "Current status of the context"
+      },
+      "retention_until": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Timestamp when the context will be permanently deleted (ISO 8601)"
+      },
+      "audit_log_id": {
+        "type": "string",
+        "description": "ID of the audit log entry for this operation"
+      },
+      "message": {
+        "type": "string",
+        "description": "Status message or error description"
+      },
+      "error": {
+        "type": "string",
+        "description": "Error message if operation failed"
+      }
+    },
+    "required": ["success", "context_id", "status"]
+  },
+  "security": {
+    "authentication": {
+      "required": true,
+      "human_only": false,
+      "reason": "Soft deletion is less destructive than hard deletion. AI agents can use this for cleanup."
+    },
+    "rate_limits": {
+      "requests_per_minute": 10,
+      "burst_limit": 5
+    },
+    "validation": {
+      "verify_context_exists": true,
+      "require_reason": true,
+      "audit_log_required": true,
+      "retention_days_valid": true
+    },
+    "permissions": {
+      "required_role": "writer",
+      "required_capability": "forget_context"
+    }
+  },
+  "audit": {
+    "enabled": true,
+    "retention_days": 365,
+    "fields_logged": [
+      "context_id",
+      "reason",
+      "retention_days",
+      "user_id",
+      "timestamp",
+      "retention_until",
+      "api_key_id",
+      "is_agent"
+    ]
+  },
+  "behavior": {
+    "immediate_effects": [
+      "Context marked as 'forgotten' in metadata",
+      "Context excluded from search results",
+      "Context excluded from graph queries",
+      "Audit log entry created"
+    ],
+    "delayed_effects": [
+      "After retention period: Permanent deletion from all backends",
+      "After retention period: Audit log remains for compliance"
+    ],
+    "recovery": {
+      "possible": false,
+      "reason": "Once marked as forgotten, context cannot be un-forgotten. Use caution."
+    }
+  },
+  "use_cases": [
+    "Cleanup of test data with grace period",
+    "Removal of outdated contexts with audit trail",
+    "GDPR/privacy compliance (right to be forgotten)",
+    "Temporary removal with option to review before permanent deletion"
+  ],
+  "examples": [
+    {
+      "description": "Forget test data with 7-day retention",
+      "input": {
+        "context_id": "test-abc123-def456",
+        "reason": "Test data no longer needed, cleanup with short retention",
+        "retention_days": 7
+      },
+      "output": {
+        "success": true,
+        "context_id": "test-abc123-def456",
+        "status": "forgotten",
+        "retention_until": "2025-10-25T12:00:00Z",
+        "audit_log_id": "audit_forget_xyz789",
+        "message": "Context marked as forgotten. Will be permanently deleted on 2025-10-25."
+      }
+    },
+    {
+      "description": "Forget outdated design with default 30-day retention",
+      "input": {
+        "context_id": "design-abc123-def456",
+        "reason": "Design document superseded by newer version"
+      },
+      "output": {
+        "success": true,
+        "context_id": "design-abc123-def456",
+        "status": "forgotten",
+        "retention_until": "2025-11-17T12:00:00Z",
+        "audit_log_id": "audit_forget_xyz790",
+        "message": "Context marked as forgotten. Will be permanently deleted on 2025-11-17."
+      }
+    },
+    {
+      "description": "Error: Context not found",
+      "input": {
+        "context_id": "nonexistent-id",
+        "reason": "Attempting to forget non-existent context"
+      },
+      "output": {
+        "success": false,
+        "context_id": "nonexistent-id",
+        "status": "error",
+        "error": "Context not found",
+        "message": "Cannot forget context that does not exist"
+      }
+    }
+  ],
+  "comparison_to_delete": {
+    "forget_context": {
+      "immediate": "Mark as deleted",
+      "retention": "1-90 days configurable",
+      "recovery": "Not possible",
+      "agents_allowed": "Yes",
+      "use_case": "Cleanup with grace period"
+    },
+    "delete_context": {
+      "immediate": "Permanent deletion (hard_delete=true)",
+      "retention": "None or indefinite (hard_delete=false)",
+      "recovery": "Not possible",
+      "agents_allowed": "No (human-only)",
+      "use_case": "Immediate permanent removal"
+    }
+  }
+}
