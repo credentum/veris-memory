@@ -2364,16 +2364,16 @@ async def _stream_dashboard_updates(websocket: WebSocket):
 
 async def _broadcast_to_websockets(message: Dict[str, Any]) -> None:
     """Broadcast message to all connected WebSocket clients.
-    
+
     Args:
         message: Dictionary containing the message data to broadcast
     """
     if not websocket_connections:
         return
-    
+
     # Create list of connections to avoid modification during iteration
     connections = list(websocket_connections)
-    
+
     for websocket in connections:
         try:
             await websocket.send_json(message)
@@ -2381,6 +2381,101 @@ async def _broadcast_to_websockets(message: Dict[str, Any]) -> None:
             logger.warning(f"Failed to send WebSocket message: {e}")
             # Remove failed connection
             websocket_connections.discard(websocket)
+
+
+# Sprint 13 Phase 2.3 & 3.2: Delete and Forget Endpoints
+
+@app.post("/tools/delete_context")
+async def delete_context_endpoint(
+    request: DeleteContextRequest,
+    api_key_info: Optional[APIKeyInfo] = Depends(verify_api_key) if API_KEY_AUTH_AVAILABLE else None
+) -> Dict[str, Any]:
+    """
+    Delete a context (human-only operation).
+    Sprint 13 Phase 2.3: Human-only with audit logging.
+
+    Args:
+        request: Delete request with context_id, reason, and hard_delete flag
+        api_key_info: API key info for authorization
+
+    Returns:
+        Deletion result with audit information
+    """
+    if not API_KEY_AUTH_AVAILABLE or not api_key_info:
+        return {
+            "success": False,
+            "error": "Authentication required for delete operations"
+        }
+
+    try:
+        from ..tools.delete_operations import delete_context
+
+        result = await delete_context(
+            context_id=request.context_id,
+            reason=request.reason,
+            hard_delete=request.hard_delete,
+            api_key_info=api_key_info,
+            neo4j_client=neo4j_client,
+            qdrant_client=qdrant_client,
+            redis_client=simple_redis.redis_client if simple_redis else None
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Delete operation failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "operation": "delete",
+            "context_id": request.context_id
+        }
+
+
+@app.post("/tools/forget_context")
+async def forget_context_endpoint(
+    request: ForgetContextRequest,
+    api_key_info: Optional[APIKeyInfo] = Depends(verify_api_key) if API_KEY_AUTH_AVAILABLE else None
+) -> Dict[str, Any]:
+    """
+    Soft-delete context with retention period.
+    Sprint 13 Phase 3.2: Forget with audit trail.
+
+    Args:
+        request: Forget request with context_id, reason, and retention_days
+        api_key_info: API key info for authorization
+
+    Returns:
+        Forget operation result
+    """
+    if not API_KEY_AUTH_AVAILABLE or not api_key_info:
+        return {
+            "success": False,
+            "error": "Authentication required for forget operations"
+        }
+
+    try:
+        from ..tools.delete_operations import forget_context
+
+        result = await forget_context(
+            context_id=request.context_id,
+            reason=request.reason,
+            retention_days=request.retention_days,
+            api_key_info=api_key_info,
+            neo4j_client=neo4j_client,
+            redis_client=simple_redis.redis_client if simple_redis else None
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Forget operation failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "operation": "forget",
+            "context_id": request.context_id
+        }
 
 
 if __name__ == "__main__":
