@@ -351,6 +351,15 @@ qdrant_client = None
 kv_store = None
 simple_redis = None  # Direct Redis client for scratchpad operations
 
+# Embedding service initialization status (Sprint 13)
+_qdrant_init_status = {
+    "qdrant_connected": False,
+    "embedding_service_loaded": False,
+    "collection_created": False,
+    "test_embedding_successful": False,
+    "error": None
+}
+
 # PHASE 1: Global unified search infrastructure
 query_dispatcher = None
 retrieval_core = None
@@ -392,7 +401,12 @@ class RetrieveContextRequest(BaseModel):
     query: str
     type: Optional[str] = "all"
     search_mode: str = "hybrid"
-    limit: int = Field(10, ge=1, le=100)
+    limit: int = Field(
+        default=5,  # Sprint 13: Reduced from 10 to prevent excessive results
+        ge=1,
+        le=100,
+        description="Maximum number of results (default: 5, max: 100)"
+    )
     filters: Optional[Dict[str, Any]] = None
     include_relationships: bool = False
     sort_by: SortBy = Field(SortBy.TIMESTAMP)
@@ -554,25 +568,78 @@ async def startup_event() -> None:
             print("⚠️ NEO4J_PASSWORD not set - Neo4j will be unavailable")
             neo4j_client = None
 
-        # Initialize Qdrant (allow graceful degradation if unavailable)
+        # Initialize Qdrant with embedding service (CRITICAL for vector search)
+        qdrant_initialization_status = {
+            "qdrant_connected": False,
+            "embedding_service_loaded": False,
+            "collection_created": False,
+            "test_embedding_successful": False,
+            "error": None
+        }
+
         try:
+            logger.info("Initializing Qdrant vector database...")
             qdrant_initializer = VectorDBInitializer()
+
             if qdrant_initializer.connect():
+                qdrant_initialization_status["qdrant_connected"] = True
+                logger.info("✓ Qdrant connected")
+
                 # Auto-create collection if it doesn't exist
                 try:
                     qdrant_initializer.create_collection(force=False)
+                    qdrant_initialization_status["collection_created"] = True
                     print("✅ Qdrant collection verified/created")
                 except Exception as collection_error:
                     print(f"⚠️ Qdrant collection setup failed: {collection_error}")
-                
-                # Get the actual Qdrant client for operations
-                qdrant_client = qdrant_initializer
-                print("✅ Qdrant connected successfully")
+                    qdrant_initialization_status["error"] = f"Collection setup failed: {collection_error}"
+
+                # Test embedding generation to ensure the whole pipeline works
+                try:
+                    logger.info("Testing embedding generation pipeline...")
+                    from ..embedding import get_embedding_service
+
+                    # Initialize embedding service
+                    embedding_service = await get_embedding_service()
+                    qdrant_initialization_status["embedding_service_loaded"] = True
+                    logger.info("✓ Embedding service initialized")
+
+                    # Test embedding generation
+                    test_text = "test embedding verification"
+                    test_embedding = await embedding_service.generate_embedding({"text": test_text})
+
+                    if len(test_embedding) > 0:
+                        qdrant_initialization_status["test_embedding_successful"] = True
+                        logger.info(f"✓ Embedding generation test successful ({len(test_embedding)} dimensions)")
+                        qdrant_client = qdrant_initializer
+                        print(f"✅ Qdrant + Embeddings: FULLY OPERATIONAL ({len(test_embedding)}D vectors)")
+                    else:
+                        raise Exception("Embedding generation returned empty vector")
+
+                except Exception as embedding_error:
+                    if qdrant_initialization_status["error"] is None:
+                        qdrant_initialization_status["error"] = str(embedding_error)
+                    logger.error(f"❌ Embedding pipeline failed: {embedding_error}")
+                    print(f"❌ CRITICAL: Embeddings unavailable - {embedding_error}")
+                    print("   → New contexts will NOT be searchable via semantic similarity")
+                    print("   → System will degrade to graph-only search")
+                    qdrant_client = None
             else:
+                qdrant_initialization_status["error"] = "Qdrant connection failed"
+                logger.error("❌ Qdrant connection failed")
+                print("❌ CRITICAL: Qdrant unavailable - vector search disabled")
                 qdrant_client = None
+
         except Exception as qdrant_error:
-            print(f"⚠️ Qdrant unavailable: {qdrant_error}")
+            if qdrant_initialization_status["error"] is None:
+                qdrant_initialization_status["error"] = str(qdrant_error)
+            logger.error(f"❌ Qdrant initialization error: {qdrant_error}")
+            print(f"❌ CRITICAL: Qdrant error - {qdrant_error}")
             qdrant_client = None
+
+        # Store initialization status globally for health checks
+        global _qdrant_init_status
+        _qdrant_init_status = qdrant_initialization_status
 
         # Initialize KV Store (Redis - required for core functionality)
         kv_store = KVStore()
@@ -973,10 +1040,16 @@ async def health_detailed() -> Dict[str, Any]:
 
     health_status = {
         "status": "healthy",
-        "services": {"neo4j": "unknown", "qdrant": "unknown", "redis": "unknown"},
+        "services": {
+            "neo4j": "unknown",
+            "qdrant": "unknown",
+            "redis": "unknown",
+            "embeddings": "unknown"  # Sprint 13: Add embedding status
+        },
         "startup_time": _server_startup_time,
         "uptime_seconds": int(startup_elapsed),
         "grace_period_active": in_grace_period,
+        "embedding_pipeline": _qdrant_init_status.copy()  # Sprint 13: Detailed embedding status
     }
 
     # During grace period, services might still be initializing
@@ -1053,6 +1126,19 @@ async def health_detailed() -> Dict[str, Any]:
             health_status["services"]["redis"] = "unhealthy"
             health_status["status"] = "degraded"
             logger.error(f"Redis health check exception: {e}")
+
+    # Sprint 13: Check embedding service health
+    if _qdrant_init_status["test_embedding_successful"]:
+        health_status["services"]["embeddings"] = "healthy"
+    elif _qdrant_init_status["embedding_service_loaded"]:
+        health_status["services"]["embeddings"] = "degraded"
+        health_status["embedding_warning"] = "Service loaded but test failed"
+    elif _qdrant_init_status["error"]:
+        health_status["services"]["embeddings"] = "unhealthy"
+        health_status["status"] = "degraded"
+        health_status["embedding_error"] = _qdrant_init_status["error"]
+    else:
+        health_status["services"]["embeddings"] = "unknown"
 
     # Final status determination
     all_services = list(health_status["services"].values())
@@ -1331,13 +1417,31 @@ async def store_context(request: StoreContextRequest) -> Dict[str, Any]:
                 # Continue even if graph storage fails
                 graph_id = None
 
-        return {
+        # Determine embedding status for user feedback (Sprint 13)
+        embedding_status = "completed" if vector_id else "failed"
+        embedding_message = None
+
+        if not vector_id:
+            if not qdrant_client:
+                embedding_status = "unavailable"
+                embedding_message = "Embedding service not initialized - content not searchable via semantic similarity"
+            else:
+                embedding_status = "failed"
+                embedding_message = "Embedding generation failed - check logs"
+
+        response = {
             "success": True,
             "id": context_id,
             "vector_id": vector_id,
             "graph_id": graph_id,
             "message": "Context stored successfully",
+            "embedding_status": embedding_status,  # Sprint 13: Add embedding feedback
         }
+
+        if embedding_message:
+            response["embedding_message"] = embedding_message
+
+        return response
 
     except Exception as e:
         import traceback
