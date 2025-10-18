@@ -34,33 +34,31 @@ class MemoryClient:
         """
         Store a fact about a user
         Uses namespace pattern: voicebot_{user_id}
+        Type: 'log' is used for fact storage (allowed types: design, decision, trace, sprint, log)
         """
         namespace = f"voicebot_{user_id}"
 
+        # Use correct MCP endpoint format (not wrapped in call_tool)
         payload = {
-            "method": "call_tool",
-            "params": {
-                "name": "store_context",
-                "arguments": {
-                    "type": "fact",
-                    "content": {
-                        "namespace": namespace,
-                        "user_id": user_id,
-                        "key": key,
-                        "value": value,
-                        "timestamp": datetime.utcnow().isoformat()
-                    },
-                    "metadata": {
-                        "source": "voice_input",
-                        "fact_key": f"{namespace}:{key}"
-                    }
-                }
+            "type": "log",  # Changed from 'fact' to allowed type 'log'
+            "content": {
+                "namespace": namespace,
+                "user_id": user_id,
+                "key": key,
+                "value": value,
+                "timestamp": datetime.utcnow().isoformat()
+            },
+            "metadata": {
+                "source": "voice_input",
+                "fact_key": f"{namespace}:{key}",
+                "fact_type": "user_attribute"
             }
         }
 
         try:
+            # Use direct tool endpoint (fixed from /mcp/v1/call_tool)
             response = await self.client.post(
-                f"{self.mcp_url}/mcp/v1/call_tool",
+                f"{self.mcp_url}/tools/store_context",
                 json=payload
             )
 
@@ -101,26 +99,25 @@ class MemoryClient:
 
     async def _get_fact_by_key(self, namespace: str, user_id: str, key: str) -> Optional[Any]:
         """Direct key lookup using retrieve_context"""
-        fact_key = f"facts:{namespace}:{user_id}:{key}"
+        fact_key = f"{namespace}:{key}"
 
+        # Use correct MCP endpoint format (not wrapped in call_tool)
         payload = {
-            "method": "call_tool",
-            "params": {
-                "name": "retrieve_context",
-                "arguments": {
-                    "query": fact_key,
-                    "namespaces": [namespace],
-                    "limit": 1,
-                    "filters": {
-                        "metadata.fact_key": fact_key
-                    }
-                }
+            "query": fact_key,
+            "type": "log",  # Search for log type (where we store facts)
+            "search_mode": "hybrid",
+            "limit": 1,
+            "filters": {
+                "metadata.fact_key": f"voicebot_{user_id}:{key}",
+                "content.user_id": user_id,
+                "content.key": key
             }
         }
 
         try:
+            # Use direct tool endpoint (fixed from /mcp/v1/call_tool)
             response = await self.client.post(
-                f"{self.mcp_url}/mcp/v1/call_tool",
+                f"{self.mcp_url}/tools/retrieve_context",
                 json=payload
             )
 
@@ -136,26 +133,23 @@ class MemoryClient:
 
     async def _semantic_fact_search(self, namespace: str, user_id: str, limit: int = 5) -> Dict[str, Any]:
         """Semantic search fallback for facts"""
+        # Use correct MCP endpoint format (not wrapped in call_tool)
         payload = {
-            "method": "call_tool",
-            "params": {
-                "name": "retrieve_context",
-                "arguments": {
-                    "query": f"user facts for {user_id}",
-                    "namespaces": [namespace],
-                    "limit": limit,
-                    "filters": {
-                        "type": "fact",
-                        "content.user_id": user_id
-                    }
-                }
+            "query": f"user facts for {user_id}",
+            "type": "log",  # Search for log type (where we store facts)
+            "search_mode": "hybrid",
+            "limit": limit,
+            "filters": {
+                "content.user_id": user_id,
+                "metadata.fact_type": "user_attribute"
             }
         }
 
         facts = {}
         try:
+            # Use direct tool endpoint (fixed from /mcp/v1/call_tool)
             response = await self.client.post(
-                f"{self.mcp_url}/mcp/v1/call_tool",
+                f"{self.mcp_url}/tools/retrieve_context",
                 json=payload
             )
 
@@ -175,29 +169,25 @@ class MemoryClient:
         """Store conversation history for analysis (not for fact retrieval)"""
         namespace = f"voicebot_{user_id}"
 
+        # Use correct MCP endpoint format (not wrapped in call_tool)
         payload = {
-            "method": "call_tool",
-            "params": {
-                "name": "store_context",
-                "arguments": {
-                    "type": "trace",
-                    "content": {
-                        "namespace": namespace,
-                        "user_id": user_id,
-                        "messages": messages,
-                        "timestamp": datetime.utcnow().isoformat()
-                    },
-                    "metadata": {
-                        "source": "voice_conversation",
-                        "message_count": len(messages)
-                    }
-                }
+            "type": "trace",  # Correct type for conversation traces
+            "content": {
+                "namespace": namespace,
+                "user_id": user_id,
+                "messages": messages,
+                "timestamp": datetime.utcnow().isoformat()
+            },
+            "metadata": {
+                "source": "voice_conversation",
+                "message_count": len(messages)
             }
         }
 
         try:
+            # Use direct tool endpoint (fixed from /mcp/v1/call_tool)
             response = await self.client.post(
-                f"{self.mcp_url}/mcp/v1/call_tool",
+                f"{self.mcp_url}/tools/store_context",
                 json=payload
             )
             return response.status_code == 200
