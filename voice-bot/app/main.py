@@ -45,10 +45,16 @@ async def startup_event():
 
     logger.info(f"Starting {settings.SERVICE_NAME}...")
 
-    # Initialize memory client
+    # Initialize memory client (Sprint 13: with retry and author config)
     try:
         from .memory_client import MemoryClient
-        memory_client = MemoryClient(settings.MCP_SERVER_URL, settings.MCP_API_KEY)
+        memory_client = MemoryClient(
+            mcp_url=settings.MCP_SERVER_URL,
+            api_key=settings.MCP_API_KEY,
+            author_prefix=settings.VOICE_BOT_AUTHOR_PREFIX,
+            enable_retry=settings.ENABLE_MCP_RETRY,
+            retry_attempts=settings.MCP_RETRY_ATTEMPTS
+        )
         await memory_client.initialize()
         logger.info("✅ Memory client initialized")
     except Exception as e:
@@ -125,6 +131,53 @@ async def health_check():
         },
         status_code=status_code
     )
+
+
+@app.get("/health/detailed")
+async def detailed_health_check():
+    """
+    Detailed health check including Sprint 13 embedding pipeline status
+    Shows full MCP server health including embedding service
+    """
+    checks = {
+        "service": "voice-bot",
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "mcp_server": None,
+        "livekit": None
+    }
+
+    # Get detailed MCP health (Sprint 13: includes embedding pipeline)
+    if memory_client:
+        try:
+            mcp_health = await memory_client.get_detailed_health()
+            checks["mcp_server"] = mcp_health
+
+            # Check embedding pipeline specifically
+            embedding_status = mcp_health.get("services", {}).get("embeddings", "unknown")
+            if embedding_status in ["unhealthy", "degraded"]:
+                checks["status"] = "degraded"
+                checks["warnings"] = [
+                    f"Embedding pipeline is {embedding_status}",
+                    "Semantic search may not work properly"
+                ]
+        except Exception as e:
+            checks["mcp_server"] = {"status": "error", "error": str(e)}
+            checks["status"] = "degraded"
+    else:
+        checks["mcp_server"] = {"status": "not_initialized"}
+        checks["status"] = "degraded"
+
+    # Check LiveKit
+    if voice_handler:
+        checks["livekit"] = await voice_handler.check_health()
+    else:
+        checks["livekit"] = False
+        checks["status"] = "degraded"
+
+    status_code = 200 if checks["status"] == "healthy" else 503
+
+    return JSONResponse(content=checks, status_code=status_code)
 
 
 @app.post("/api/v1/voice/session")

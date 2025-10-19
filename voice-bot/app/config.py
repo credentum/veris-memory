@@ -19,7 +19,21 @@ class Settings(BaseSettings):
 
     # MCP Server Config (uses existing context-store)
     MCP_SERVER_URL: str = "http://context-store:8000"
+
+    # Sprint 13: API Key Authentication
+    # Required if veris-memory has AUTH_REQUIRED=true
+    # Format: vmk_voicebot_key (any string starting with vmk_)
+    # Must be configured on MCP server as: API_KEY_VOICEBOT=vmk_voicebot_key:voice_bot:writer:true
     MCP_API_KEY: Optional[str] = None
+
+    # Sprint 13: Author Attribution
+    # Prefix for author field in stored contexts (author will be: {prefix}_{user_id})
+    VOICE_BOT_AUTHOR_PREFIX: str = "voice_bot"
+
+    # Sprint 13: Retry Logic
+    # Enable retry with exponential backoff (learned from veris-memory PR #3)
+    ENABLE_MCP_RETRY: bool = True
+    MCP_RETRY_ATTEMPTS: int = 3  # Number of retry attempts for transient failures
 
     # Redis Config (for session state)
     REDIS_URL: str = "redis://redis:6379"
