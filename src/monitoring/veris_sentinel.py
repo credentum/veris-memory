@@ -1431,11 +1431,14 @@ class SentinelAPI:
     def __init__(self, sentinel: SentinelRunner, port: int = 9090) -> None:
         self.sentinel: SentinelRunner = sentinel
         self.port: int = port
-        
+
+        # Storage for host-based check results
+        self.host_check_results: Dict[str, CheckResult] = {}
+
         # Create app with rate limiting middleware
         middlewares = [sentinel_rate_limit_middleware]
         self.app: web.Application = web.Application(middlewares=middlewares)
-        
+
         self._setup_routes()
         logger.info("✅ Sentinel API rate limiting enabled")
     
@@ -1447,6 +1450,7 @@ class SentinelAPI:
         self.app.router.add_get('/metrics', self.metrics_handler)
         self.app.router.add_get('/report', self.report_handler)
         self.app.router.add_get('/rate-limit-status', self.rate_limit_status_handler)
+        self.app.router.add_post('/host-checks/firewall', self.host_firewall_check_handler)
         
         # Enable CORS
         cors = aiohttp_cors.setup(self.app, defaults={
@@ -1560,7 +1564,133 @@ class SentinelAPI:
                 "error": str(e),
                 "timestamp": datetime.utcnow().isoformat()
             }, status=500)
-    
+
+    async def host_firewall_check_handler(self, request: Request) -> Response:
+        """
+        Handle /host-checks/firewall endpoint - receive firewall status from host.
+
+        This endpoint receives firewall check results from the host-based monitoring script
+        since Docker containers cannot directly check the host's UFW firewall status.
+
+        Request body should be a CheckResult JSON from the host script.
+        Requires X-Host-Secret header for authentication.
+        """
+        try:
+            # Authenticate the request with shared secret
+            expected_secret = os.getenv('HOST_CHECK_SECRET', 'veris_host_check_default_secret_change_me')
+            provided_secret = request.headers.get('X-Host-Secret')
+
+            if not provided_secret:
+                logger.warning("Host check request missing X-Host-Secret header")
+                return web.json_response({
+                    "success": False,
+                    "error": "Authentication required: X-Host-Secret header missing"
+                }, status=401)
+
+            if provided_secret != expected_secret:
+                logger.warning(f"Host check request with invalid secret from {request.remote}")
+                return web.json_response({
+                    "success": False,
+                    "error": "Invalid authentication credentials"
+                }, status=403)
+
+            # Parse the incoming check result
+            data = await request.json()
+
+            # Validate required fields
+            required_fields = ['check_id', 'timestamp', 'status', 'latency_ms', 'message']
+            missing_fields = [f for f in required_fields if f not in data]
+
+            if missing_fields:
+                return web.json_response({
+                    "success": False,
+                    "error": f"Missing required fields: {', '.join(missing_fields)}"
+                }, status=400)
+
+            # Convert timestamp string to datetime if needed with proper validation
+            if isinstance(data.get('timestamp'), str):
+                try:
+                    # Handle various timestamp formats
+                    timestamp_str = data['timestamp']
+
+                    # Remove 'Z' suffix and replace with UTC timezone
+                    if timestamp_str.endswith('Z'):
+                        timestamp_str = timestamp_str.replace('Z', '+00:00')
+
+                    # Parse ISO format timestamp
+                    data['timestamp'] = datetime.fromisoformat(timestamp_str)
+
+                    # Ensure we have a timezone-aware datetime
+                    if data['timestamp'].tzinfo is None:
+                        # If naive, assume UTC
+                        from datetime import timezone
+                        data['timestamp'] = data['timestamp'].replace(tzinfo=timezone.utc)
+
+                    # Validate timestamp is not too far in the future or past
+                    now = datetime.now(data['timestamp'].tzinfo)
+                    time_diff = abs((data['timestamp'] - now).total_seconds())
+                    if time_diff > 3600:  # More than 1 hour difference
+                        logger.warning(f"Host check timestamp differs from server time by {time_diff}s")
+
+                except (ValueError, AttributeError) as e:
+                    return web.json_response({
+                        "success": False,
+                        "error": f"Invalid timestamp format: {data.get('timestamp')}. Expected ISO format (e.g., '2025-11-06T12:34:56Z' or '2025-11-06T12:34:56+00:00')"
+                    }, status=400)
+
+            # Create CheckResult object
+            check_result = CheckResult(
+                check_id=data['check_id'],
+                timestamp=data['timestamp'],
+                status=data['status'],
+                latency_ms=data['latency_ms'],
+                message=data['message'],
+                details=data.get('details', {})
+            )
+
+            # Store the result
+            self.host_check_results[check_result.check_id] = check_result
+
+            # Log the result
+            logger.info(f"Received host check: {check_result.check_id} [{check_result.status}] - {check_result.message}")
+
+            # If status is fail or warn, also add to sentinel failures for alerting
+            if check_result.status in ["fail", "warn"]:
+                self.sentinel.failures.append(check_result)
+
+            return web.json_response({
+                "success": True,
+                "message": "Host check result received and stored",
+                "check_id": check_result.check_id,
+                "status": check_result.status,
+                "timestamp": check_result.timestamp.isoformat()
+            })
+
+        except json.JSONDecodeError:
+            return web.json_response({
+                "success": False,
+                "error": "Invalid JSON in request body"
+            }, status=400)
+        except Exception as e:
+            logger.error(f"Failed to process host firewall check: {e}")
+            return web.json_response({
+                "success": False,
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }, status=500)
+
+    def get_host_check_result(self, check_id: str) -> Optional['CheckResult']:
+        """
+        Get the most recent result for a host-based check.
+
+        Args:
+            check_id: The check identifier (e.g., "S11-firewall-status")
+
+        Returns:
+            The most recent CheckResult for this check, or None if not found
+        """
+        return self.host_check_results.get(check_id)
+
     async def start_server(self) -> None:
         """Start the HTTP API server."""
         runner = web.AppRunner(self.app)

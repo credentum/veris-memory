@@ -12,17 +12,24 @@ services:
       - ALL
     read_only: true
     networks:
-      - veris-memory-dev_default  # Connect to main Veris network
+      - context-store-network  # Connect to main Veris network
     depends_on:
-      - veris-memory-dev-context-store-1
+      context-store:
+        condition: service_healthy
     environment:
-      # Target configuration
-      - TARGET_BASE_URL=http://veris-memory-dev-context-store-1:8000
-      - REDIS_URL=redis://veris-memory-dev-redis-1:6379
-      - QDRANT_URL=http://veris-memory-dev-qdrant-1:6333
-      - NEO4J_BOLT=bolt://veris-memory-dev-neo4j-1:7687
+      # Target configuration (use actual Docker service names, not container names)
+      - TARGET_BASE_URL=http://context-store:8000
+      - REDIS_URL=redis://redis:6379
+      - QDRANT_URL=http://qdrant:6333
+      - NEO4J_BOLT=bolt://neo4j:7687
       - NEO4J_USER=veris_ro
-      
+
+      # Sprint 13 API Authentication
+      - API_KEY_MCP=${API_KEY_MCP}
+
+      # Host Check Authentication (shared secret for host monitoring script)
+      - HOST_CHECK_SECRET=${HOST_CHECK_SECRET:-veris_host_check_default_secret_change_me}
+
       # Scheduling configuration
       - SCHEDULE_CADENCE_SEC=60
       - MAX_JITTER_PCT=20
@@ -88,8 +95,9 @@ services:
 
 # Use external network to connect to existing Veris Memory services
 networks:
-  veris-memory-dev_default:
+  context-store-network:
     external: true
+    name: veris-memory-dev_default  # Use the actual network name from docker-compose.yml
 
 volumes:
   sentinel-state:
