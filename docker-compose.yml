@@ -17,6 +17,9 @@ services:
       - REDIS_URL=redis://redis:6379
       - MCP_SERVER_PORT=8000
       - LOG_LEVEL=info
+      - API_KEY_MCP=${API_KEY_MCP}
+      - AUTH_REQUIRED=${AUTH_REQUIRED:-true}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
     command: ["python", "-m", "uvicorn", "src.mcp_server.main:app", "--host", "0.0.0.0", "--port", "8000"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
