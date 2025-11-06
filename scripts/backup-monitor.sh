@@ -1,8 +1,28 @@
 #!/bin/bash
 # Backup monitoring script - alerts on disk usage and backup failures
 # Add to crontab: 0 6 * * * /opt/scripts/backup-monitor.sh
+#
+# SECURE CREDENTIAL SETUP:
+# 1. For Telegram alerts, set environment variables:
+#    export TELEGRAM_BOT_TOKEN="your_bot_token"
+#    export TELEGRAM_CHAT_ID="your_chat_id"
+#
+# 2. For production, add to /etc/environment or use systemd EnvironmentFile:
+#    echo "TELEGRAM_BOT_TOKEN=your_token" | sudo tee -a /etc/backup/telegram.conf
+#    echo "TELEGRAM_CHAT_ID=your_chat_id" | sudo tee -a /etc/backup/telegram.conf
+#    chmod 600 /etc/backup/telegram.conf
+#
+# 3. For restic password, create /etc/backup/restic.conf:
+#    echo "RESTIC_PASSWORD=your_secure_password" | sudo tee /etc/backup/restic.conf
+#    chmod 600 /etc/backup/restic.conf
 
 set -euo pipefail
+
+# Load Telegram credentials from secure config if available
+if [[ -f "/etc/backup/telegram.conf" ]] && [[ -z "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+    # shellcheck disable=SC1091
+    source /etc/backup/telegram.conf
+fi
 
 # Configuration
 DISK_USAGE_THRESHOLD=90
@@ -188,9 +208,23 @@ generate_daily_summary() {
     # Repository size (if using restic)
     if command -v restic &>/dev/null && [[ -d "/backup/restic-repo" ]]; then
         export RESTIC_REPOSITORY='/backup/restic-repo'
-        export RESTIC_PASSWORD='backup-secure-password-2024'
-        local repo_size=$(restic stats --mode restore-size --quiet 2>/dev/null | tail -1 || echo "unknown")
-        summary+="**Backup Repository Size:** ${repo_size}\n\n"
+
+        # SECURITY FIX: Load password from environment or config file
+        if [[ -z "${RESTIC_PASSWORD:-}" ]]; then
+            if [[ -f "/etc/backup/restic.conf" ]]; then
+                # shellcheck disable=SC1091
+                source /etc/backup/restic.conf
+            else
+                log "Skipping restic stats - RESTIC_PASSWORD not configured"
+                summary+="**Backup Repository Size:** Not available (password not configured)\n\n"
+            fi
+        fi
+
+        if [[ -n "${RESTIC_PASSWORD:-}" ]]; then
+            export RESTIC_PASSWORD
+            local repo_size=$(restic stats --mode restore-size --quiet 2>/dev/null | tail -1 || echo "unknown")
+            summary+="**Backup Repository Size:** ${repo_size}\n\n"
+        fi
     fi
 
     echo -e "$summary"

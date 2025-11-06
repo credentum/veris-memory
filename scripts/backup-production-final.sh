@@ -12,6 +12,47 @@ log() {
     echo "[$(date +%Y-%m-%d\ %H:%M:%S)] [$1] $2" | tee -a "$BACKUP_LOG"
 }
 
+# Check if container exists and is running
+get_container_id() {
+    local container_name_pattern="$1"
+    local container_id
+
+    container_id=$(docker ps --filter "name=${container_name_pattern}" -q | head -1)
+
+    if [[ -z "$container_id" ]]; then
+        log "WARN" "No running container found matching: ${container_name_pattern}"
+        return 1
+    fi
+
+    echo "$container_id"
+    return 0
+}
+
+# Validate backup directory before rm -rf
+validate_backup_dir() {
+    local dir="$1"
+
+    # Safety checks before allowing deletion
+    if [[ -z "$dir" ]]; then
+        log "ERROR" "Empty directory path provided to validate_backup_dir"
+        return 1
+    fi
+
+    # Must be under BACKUP_ROOT
+    if [[ ! "$dir" =~ ^${BACKUP_ROOT}/ ]]; then
+        log "ERROR" "Directory $dir is not under BACKUP_ROOT ($BACKUP_ROOT)"
+        return 1
+    fi
+
+    # Must contain "backup-" in the name
+    if [[ ! "$dir" =~ backup- ]]; then
+        log "ERROR" "Directory $dir does not contain 'backup-' pattern"
+        return 1
+    fi
+
+    return 0
+}
+
 perform_backup() {
     local backup_type="${1:-daily}"
     local timestamp=$(date +%Y%m%d_%H%M%S)
@@ -24,20 +65,47 @@ perform_backup() {
     log "INFO" "Phase 1: Backing up databases..."
     mkdir -p "$backup_dir"/{neo4j,qdrant,redis}
 
-    # Neo4j
-    docker exec $(docker ps --filter "name=neo4j" -q | head -1) tar czf /tmp/neo4j-backup.tar.gz /data 2>/dev/null && \
-        docker cp $(docker ps --filter "name=neo4j" -q | head -1):/tmp/neo4j-backup.tar.gz "$backup_dir/neo4j/" 2>/dev/null || \
-        log "WARN" "Neo4j backup failed"
+    # Neo4j - with container existence check
+    if neo4j_container=$(get_container_id "neo4j"); then
+        if docker exec "$neo4j_container" tar czf /tmp/neo4j-backup.tar.gz /data 2>&1 | tee -a "$BACKUP_LOG"; then
+            if docker cp "${neo4j_container}:/tmp/neo4j-backup.tar.gz" "$backup_dir/neo4j/" 2>&1 | tee -a "$BACKUP_LOG"; then
+                log "INFO" "Neo4j backup completed"
+            else
+                log "WARN" "Failed to copy Neo4j backup from container"
+            fi
+        else
+            log "WARN" "Neo4j backup tar command failed"
+        fi
+    else
+        log "WARN" "Neo4j container not found or not running"
+    fi
 
-    # Qdrant
-    docker cp $(docker ps --filter "name=qdrant" -q | head -1):/qdrant/storage "$backup_dir/qdrant/" 2>/dev/null || \
-        log "WARN" "Qdrant backup failed"
+    # Qdrant - with container existence check
+    if qdrant_container=$(get_container_id "qdrant"); then
+        if docker cp "${qdrant_container}:/qdrant/storage" "$backup_dir/qdrant/" 2>&1 | tee -a "$BACKUP_LOG"; then
+            log "INFO" "Qdrant backup completed"
+        else
+            log "WARN" "Qdrant backup failed"
+        fi
+    else
+        log "WARN" "Qdrant container not found or not running"
+    fi
 
-    # Redis
-    docker exec $(docker ps --filter "name=redis" -q | head -1) redis-cli BGSAVE 2>/dev/null
-    sleep 2
-    docker cp $(docker ps --filter "name=redis" -q | head -1):/data/dump.rdb "$backup_dir/redis/" 2>/dev/null || \
-        log "WARN" "Redis backup failed"
+    # Redis - with container existence check
+    if redis_container=$(get_container_id "redis"); then
+        if docker exec "$redis_container" redis-cli BGSAVE 2>&1 | tee -a "$BACKUP_LOG"; then
+            sleep 2
+            if docker cp "${redis_container}:/data/dump.rdb" "$backup_dir/redis/" 2>&1 | tee -a "$BACKUP_LOG"; then
+                log "INFO" "Redis backup completed"
+            else
+                log "WARN" "Failed to copy Redis dump from container"
+            fi
+        else
+            log "WARN" "Redis BGSAVE command failed"
+        fi
+    else
+        log "WARN" "Redis container not found or not running"
+    fi
 
     # 2. Backup Docker Volumes (skip large ones for speed)
     log "INFO" "Phase 2: Backing up Docker volumes..."
@@ -74,12 +142,46 @@ MANIFEST
 
     log "INFO" "Backup completed: $(du -sh $backup_dir | cut -f1)"
 
-    # 4. Cleanup old backups
+    # 4. Cleanup old backups with safeguards
+    log "INFO" "Phase 4: Cleaning up old backups..."
+
+    local retention_days
     case "$backup_type" in
-        daily)   find "${BACKUP_ROOT}/daily" -maxdepth 1 -type d -name "backup-*" -mtime +7 -exec rm -rf {} \; ;;
-        weekly)  find "${BACKUP_ROOT}/weekly" -maxdepth 1 -type d -name "backup-*" -mtime +28 -exec rm -rf {} \; ;;
-        monthly) find "${BACKUP_ROOT}/monthly" -maxdepth 1 -type d -name "backup-*" -mtime +90 -exec rm -rf {} \; ;;
+        daily)   retention_days=7 ;;
+        weekly)  retention_days=28 ;;
+        monthly) retention_days=90 ;;
+        *) retention_days=7 ;;
     esac
+
+    local cleanup_dir="${BACKUP_ROOT}/${backup_type}"
+
+    # Safety check: ensure cleanup directory is valid
+    if [[ ! -d "$cleanup_dir" ]]; then
+        log "WARN" "Cleanup directory does not exist: $cleanup_dir"
+        return 0
+    fi
+
+    # Find and safely delete old backups
+    local deleted_count=0
+    while IFS= read -r -d '' old_backup; do
+        # Validate each directory before deletion
+        if validate_backup_dir "$old_backup"; then
+            log "INFO" "Removing old backup: $(basename "$old_backup")"
+            if rm -rf "$old_backup"; then
+                ((deleted_count++))
+            else
+                log "WARN" "Failed to remove: $old_backup"
+            fi
+        else
+            log "WARN" "Skipping invalid backup directory: $old_backup"
+        fi
+    done < <(find "$cleanup_dir" -maxdepth 1 -type d -name "backup-*" -mtime +"$retention_days" -print0)
+
+    if [[ $deleted_count -gt 0 ]]; then
+        log "INFO" "Cleaned up $deleted_count old backups (retention: ${retention_days} days)"
+    else
+        log "INFO" "No old backups to clean up"
+    fi
 }
 
 # Run backup
