@@ -1679,8 +1679,16 @@ class SentinelAPI:
                 "timestamp": datetime.utcnow().isoformat()
             }, status=500)
 
-    def get_host_check_result(self, check_id: str) -> Optional[CheckResult]:
-        """Get the most recent result for a host-based check."""
+    def get_host_check_result(self, check_id: str) -> Optional['CheckResult']:
+        """
+        Get the most recent result for a host-based check.
+
+        Args:
+            check_id: The check identifier (e.g., "S11-firewall-status")
+
+        Returns:
+            The most recent CheckResult for this check, or None if not found
+        """
         return self.host_check_results.get(check_id)
 
     async def start_server(self) -> None:

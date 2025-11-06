@@ -23,6 +23,31 @@ CHECK_ID="S11-firewall-status"
 LOG_FILE="${LOG_FILE:-/var/log/sentinel-host-checks.log}"
 HOST_CHECK_SECRET="${HOST_CHECK_SECRET:-veris_host_check_default_secret_change_me}"
 
+# Validate HOST_CHECK_SECRET doesn't contain shell metacharacters
+validate_secret() {
+    local secret="$1"
+
+    # Check if secret contains dangerous characters
+    if echo "$secret" | grep -q '[;&|`$(){}[\]\\]'; then
+        echo "ERROR: HOST_CHECK_SECRET contains dangerous shell metacharacters" >&2
+        echo "Allowed characters: alphanumeric, dash, underscore, dot" >&2
+        return $EXIT_FAILURE
+    fi
+
+    # Check minimum length
+    if [ ${#secret} -lt 16 ]; then
+        echo "WARNING: HOST_CHECK_SECRET is shorter than recommended 16 characters" >&2
+    fi
+
+    return $EXIT_SUCCESS
+}
+
+# Validate secret on startup
+if ! validate_secret "$HOST_CHECK_SECRET"; then
+    echo "FATAL: Invalid HOST_CHECK_SECRET configuration" >&2
+    exit $EXIT_FAILURE
+fi
+
 # Ensure log directory exists
 mkdir -p "$(dirname "$LOG_FILE")"
 

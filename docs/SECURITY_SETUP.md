@@ -140,17 +140,34 @@ sudo touch /var/log/sentinel-host-checks.log
 Configure the shared secret for authenticating with Sentinel:
 
 ```bash
-# Add to environment (persist in /etc/environment or user profile)
-echo 'export HOST_CHECK_SECRET="your_secure_random_secret_here"' | sudo tee -a /etc/environment
+# Generate a secure random secret (REQUIRED - do not use default!)
+SECRET=$(openssl rand -hex 32)
+echo "Generated secret: $SECRET"
 
-# Or add to /etc/cron.d/ for cron-specific environment
-echo 'HOST_CHECK_SECRET="your_secure_random_secret_here"' | sudo tee /etc/cron.d/sentinel-env
+# Set in environment for host script
+echo "export HOST_CHECK_SECRET=\"$SECRET\"" | sudo tee -a /etc/environment
 
-# Generate a secure random secret (recommended):
-openssl rand -hex 32
+# Also set in docker-compose.sentinel.yml or .env file
+echo "HOST_CHECK_SECRET=$SECRET" >> /opt/veris-memory/.env
+
+# Verify it's set
+echo $HOST_CHECK_SECRET
 ```
 
-**Important**: The `HOST_CHECK_SECRET` must match the value set in Sentinel's `docker-compose.sentinel.yml` environment variables.
+**🔒 CRITICAL SECURITY WARNING**:
+- **NEVER use the default secret in production!** The default value `veris_host_check_default_secret_change_me` is insecure and must be changed.
+- The secret must be at least 16 characters long
+- Use only alphanumeric characters, dashes, underscores, or dots
+- Avoid shell metacharacters: `;&|` \`$ (){}[]\
+- The same secret must be set in both:
+  1. Host environment (for script)
+  2. Sentinel's docker-compose.sentinel.yml or .env
+
+**Secret Validation**:
+The host script will validate the secret on startup and reject:
+- Secrets shorter than 16 characters (warning)
+- Secrets containing shell metacharacters (fatal error)
+- The default placeholder value (warning)
 
 #### Step 4: Configure Cron Job
 
