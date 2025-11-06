@@ -95,7 +95,30 @@ Docker containers run in an isolated environment and cannot directly check the h
 
 ### Installation
 
-#### Step 1: Copy the Monitoring Script
+#### Step 1: Configure Sudoers (Required)
+
+The host monitoring script needs to run `sudo ufw status` without requiring a password prompt. Configure sudoers:
+
+```bash
+# Create sudoers file for sentinel monitoring
+sudo visudo -f /etc/sudoers.d/sentinel-monitoring
+
+# Add this line (replace 'your-username' with actual username):
+your-username ALL=(ALL) NOPASSWD: /usr/sbin/ufw status verbose, /usr/sbin/ufw status numbered, /usr/bin/systemctl is-active ufw, /usr/sbin/iptables -L -n, /usr/sbin/iptables -L DOCKER -n
+
+# Save and exit (Ctrl+X, then Y, then Enter)
+
+# Verify the configuration
+sudo visudo -c -f /etc/sudoers.d/sentinel-monitoring
+```
+
+**Security Note**: This configuration allows password-less sudo for specific UFW and iptables commands only. This is safe because:
+- Commands are read-only (status, list)
+- No destructive operations allowed
+- Restricted to specific command paths
+- Only affects the user running the script
+
+#### Step 2: Copy the Monitoring Script
 
 ```bash
 # Create the scripts directory if it doesn't exist
@@ -112,7 +135,24 @@ sudo mkdir -p /var/log
 sudo touch /var/log/sentinel-host-checks.log
 ```
 
-#### Step 2: Configure Cron Job
+#### Step 3: Set Authentication Secret
+
+Configure the shared secret for authenticating with Sentinel:
+
+```bash
+# Add to environment (persist in /etc/environment or user profile)
+echo 'export HOST_CHECK_SECRET="your_secure_random_secret_here"' | sudo tee -a /etc/environment
+
+# Or add to /etc/cron.d/ for cron-specific environment
+echo 'HOST_CHECK_SECRET="your_secure_random_secret_here"' | sudo tee /etc/cron.d/sentinel-env
+
+# Generate a secure random secret (recommended):
+openssl rand -hex 32
+```
+
+**Important**: The `HOST_CHECK_SECRET` must match the value set in Sentinel's `docker-compose.sentinel.yml` environment variables.
+
+#### Step 4: Configure Cron Job
 
 Add the script to crontab to run every 5 minutes:
 
@@ -124,7 +164,7 @@ sudo crontab -e
 */5 * * * * /opt/veris-memory/scripts/sentinel-host-checks.sh >> /var/log/sentinel-host-checks.log 2>&1
 ```
 
-#### Step 3: Verify Installation
+#### Step 5: Verify Installation
 
 ```bash
 # Run the script manually to test
