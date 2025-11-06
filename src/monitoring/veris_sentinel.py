@@ -1573,8 +1573,27 @@ class SentinelAPI:
         since Docker containers cannot directly check the host's UFW firewall status.
 
         Request body should be a CheckResult JSON from the host script.
+        Requires X-Host-Secret header for authentication.
         """
         try:
+            # Authenticate the request with shared secret
+            expected_secret = os.getenv('HOST_CHECK_SECRET', 'veris_host_check_default_secret_change_me')
+            provided_secret = request.headers.get('X-Host-Secret')
+
+            if not provided_secret:
+                logger.warning("Host check request missing X-Host-Secret header")
+                return web.json_response({
+                    "success": False,
+                    "error": "Authentication required: X-Host-Secret header missing"
+                }, status=401)
+
+            if provided_secret != expected_secret:
+                logger.warning(f"Host check request with invalid secret from {request.remote}")
+                return web.json_response({
+                    "success": False,
+                    "error": "Invalid authentication credentials"
+                }, status=403)
+
             # Parse the incoming check result
             data = await request.json()
 
@@ -1588,9 +1607,36 @@ class SentinelAPI:
                     "error": f"Missing required fields: {', '.join(missing_fields)}"
                 }, status=400)
 
-            # Convert timestamp string to datetime if needed
+            # Convert timestamp string to datetime if needed with proper validation
             if isinstance(data.get('timestamp'), str):
-                data['timestamp'] = datetime.fromisoformat(data['timestamp'].replace('Z', '+00:00'))
+                try:
+                    # Handle various timestamp formats
+                    timestamp_str = data['timestamp']
+
+                    # Remove 'Z' suffix and replace with UTC timezone
+                    if timestamp_str.endswith('Z'):
+                        timestamp_str = timestamp_str.replace('Z', '+00:00')
+
+                    # Parse ISO format timestamp
+                    data['timestamp'] = datetime.fromisoformat(timestamp_str)
+
+                    # Ensure we have a timezone-aware datetime
+                    if data['timestamp'].tzinfo is None:
+                        # If naive, assume UTC
+                        from datetime import timezone
+                        data['timestamp'] = data['timestamp'].replace(tzinfo=timezone.utc)
+
+                    # Validate timestamp is not too far in the future or past
+                    now = datetime.now(data['timestamp'].tzinfo)
+                    time_diff = abs((data['timestamp'] - now).total_seconds())
+                    if time_diff > 3600:  # More than 1 hour difference
+                        logger.warning(f"Host check timestamp differs from server time by {time_diff}s")
+
+                except (ValueError, AttributeError) as e:
+                    return web.json_response({
+                        "success": False,
+                        "error": f"Invalid timestamp format: {data.get('timestamp')}. Expected ISO format (e.g., '2025-11-06T12:34:56Z' or '2025-11-06T12:34:56+00:00')"
+                    }, status=400)
 
             # Create CheckResult object
             check_result = CheckResult(

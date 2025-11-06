@@ -182,7 +182,7 @@ Veris Memory uses API key authentication for all MCP server endpoints.
 
 ```bash
 # In your .env file
-API_KEY_MCP=vmk_mcp_903e1bcb70d704da4fbf207722c471ba
+API_KEY_MCP=your_actual_api_key_here
 ```
 
 2. **Sentinel Configuration**:
@@ -199,13 +199,13 @@ environment:
 
 ```bash
 # Health check with authentication
-curl -H "X-API-Key: vmk_mcp_903e1bcb70d704da4fbf207722c471ba" \
+curl -H "X-API-Key: your_actual_api_key_here" \
   http://localhost:8000/health
 
 # Store context with authentication
 curl -X POST http://localhost:8000/tools/store_context \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: vmk_mcp_903e1bcb70d704da4fbf207722c471ba" \
+  -H "X-API-Key: your_actual_api_key_here" \
   -d '{"type":"log","content":{"title":"Test"},"author":"me","author_type":"agent"}'
 ```
 

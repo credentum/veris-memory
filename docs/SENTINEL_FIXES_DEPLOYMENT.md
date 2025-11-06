@@ -65,8 +65,8 @@ git pull origin feature/sentinel-fixes
 # Check that .env file has required variables
 grep -E 'API_KEY_MCP|NEO4J_PASSWORD' .env
 
-# If API_KEY_MCP is missing, add it:
-echo "API_KEY_MCP=vmk_mcp_903e1bcb70d704da4fbf207722c471ba" >> .env
+# If API_KEY_MCP is missing, add it (replace with your actual key):
+echo "API_KEY_MCP=your_actual_api_key_here" >> .env
 
 # Verify docker-compose.yml has correct service names
 docker-compose config | grep -A 5 "services:"
@@ -211,7 +211,7 @@ docker logs veris-sentinel 2>&1 | grep -i telegram
 
 ```bash
 # Test health endpoint with API key
-curl -s -H "X-API-Key: vmk_mcp_903e1bcb70d704da4fbf207722c471ba" \
+curl -s -H "X-API-Key: your_actual_api_key_here" \
   http://localhost:8000/health | jq '.'
 
 # Should return healthy status
@@ -339,7 +339,7 @@ curl -v http://context-store:8000/health  # From inside Docker network
 docker ps --format "table {{.Names}}\t{{.Networks}}"
 
 # Verify API key
-curl -H "X-API-Key: vmk_mcp_903e1bcb70d704da4fbf207722c471ba" \
+curl -H "X-API-Key: your_actual_api_key_here" \
   http://localhost:8000/health
 ```
 

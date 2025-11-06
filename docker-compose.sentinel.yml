@@ -27,6 +27,9 @@ services:
       # Sprint 13 API Authentication
       - API_KEY_MCP=${API_KEY_MCP}
 
+      # Host Check Authentication (shared secret for host monitoring script)
+      - HOST_CHECK_SECRET=${HOST_CHECK_SECRET:-veris_host_check_default_secret_change_me}
+
       # Scheduling configuration
       - SCHEDULE_CADENCE_SEC=60
       - MAX_JITTER_PCT=20
