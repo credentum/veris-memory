@@ -126,6 +126,15 @@ except ImportError as e:
     QdrantClientLib = None
 from ..validators.config_validator import validate_all_configs
 
+# Import health check endpoints
+try:
+    from ..health.endpoints import create_health_routes
+    HEALTH_ENDPOINTS_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Health endpoints module not available: {e}")
+    HEALTH_ENDPOINTS_AVAILABLE = False
+    create_health_routes = None
+
 # PHASE 1: Import unified backend architecture
 try:
     from ..core.query_dispatcher import QueryDispatcher
@@ -320,6 +329,12 @@ app.add_middleware(
 if REQUEST_METRICS_AVAILABLE:
     app.add_middleware(RequestMetricsMiddleware, metrics_collector=get_metrics_collector())
 
+# Register health check endpoints (liveness/readiness probes)
+if HEALTH_ENDPOINTS_AVAILABLE:
+    create_health_routes(app)
+    logger.info("Health check endpoints registered: /health/live, /health/ready")
+else:
+    logger.warning("Health check endpoints not registered (module not available)")
 
 # Global exception handler for production security with request tracking
 @app.exception_handler(Exception)
