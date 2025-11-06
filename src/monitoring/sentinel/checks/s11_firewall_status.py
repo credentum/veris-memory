@@ -4,98 +4,121 @@ S11: Firewall Status Check
 
 Monitors UFW firewall status to ensure security is maintained.
 Alerts if firewall is disabled or critical rules are missing.
+
+NOTE: This check relies on host-based monitoring since Docker containers
+cannot check the host's UFW firewall status. The host must run the
+sentinel-host-checks.sh script which sends results to the Sentinel API.
 """
 
 import asyncio
 import subprocess
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..base_check import BaseCheck
 from ..models import CheckResult, SentinelConfig
 
 
 class S11FirewallStatus(BaseCheck):
-    """Check firewall status and configuration."""
-    
+    """
+    Check firewall status and configuration using host-based monitoring.
+
+    This check retrieves results from the Sentinel API that were submitted
+    by the host-based monitoring script (sentinel-host-checks.sh).
+    """
+
     CHECK_ID = "S11-firewall-status"
-    
-    def __init__(self, config: SentinelConfig):
-        """Initialize firewall status check."""
-        super().__init__(config, self.CHECK_ID, "Firewall status and security monitoring")
-        self.required_ports = [
-            22,     # SSH
-            2222,   # Claude container
-            8000,   # MCP Server
-            8001,   # REST API
-            8080,   # Dashboard
-            9090,   # Sentinel
-        ]
-        self.required_udp_ranges = [
-            (60000, 61000),  # Mosh
-        ]
-    
+
+    def __init__(self, config: SentinelConfig, api_instance=None):
+        """
+        Initialize firewall status check.
+
+        Args:
+            config: Sentinel configuration
+            api_instance: SentinelAPI instance to retrieve host check results from
+        """
+        super().__init__(config, self.CHECK_ID, "Firewall status and security monitoring (host-based)")
+        self.api_instance = api_instance
+        self.max_age_minutes = 10  # Alert if no update in 10 minutes
+
     async def run_check(self) -> CheckResult:
         """
-        Perform firewall status check.
-        
+        Perform firewall status check by retrieving host-based results.
+
         Returns:
             CheckResult with firewall status
         """
         start_time = datetime.now()
-        
+
         try:
-            # Check if UFW is active
-            ufw_status = await self._check_ufw_status()
-            
-            if not ufw_status['active']:
-                return CheckResult(
-                    check_id=self.CHECK_ID,
-                    timestamp=datetime.now(),
-                    status="fail",
-                    latency_ms=self._calculate_latency(start_time),
-                    message="❌ CRITICAL: Firewall is DISABLED!",
-                    details={
-                        "ufw_active": False,
-                        "security_risk": "HIGH",
-                        "recommendation": "Run: sudo ufw --force enable"
-                    }
-                )
-            
-            # Check required rules
-            missing_rules = await self._check_required_rules()
-            
-            if missing_rules:
+            # Check if we have an API instance to retrieve results from
+            if not self.api_instance:
                 return CheckResult(
                     check_id=self.CHECK_ID,
                     timestamp=datetime.now(),
                     status="warn",
                     latency_ms=self._calculate_latency(start_time),
-                    message=f"⚠️ Firewall active but missing {len(missing_rules)} rules",
+                    message="⚠️ Host-based monitoring not configured",
                     details={
-                        "ufw_active": True,
-                        "missing_rules": missing_rules,
-                        "configured_rules": ufw_status.get('rules', 0)
+                        "error": "No API instance provided to S11 check",
+                        "setup_required": "Install and configure sentinel-host-checks.sh on the host",
+                        "documentation": "See docs/SECURITY_SETUP.md"
                     }
                 )
-            
-            # Check if Docker iptables rules exist
-            docker_rules = await self._check_docker_rules()
-            
+
+            # Get the most recent host check result
+            host_result = self.api_instance.get_host_check_result(self.CHECK_ID)
+
+            if not host_result:
+                # No results received yet from host script
+                return CheckResult(
+                    check_id=self.CHECK_ID,
+                    timestamp=datetime.now(),
+                    status="warn",
+                    latency_ms=self._calculate_latency(start_time),
+                    message="⚠️ No firewall status data from host",
+                    details={
+                        "error": "Host monitoring script not reporting",
+                        "action_required": "Verify sentinel-host-checks.sh is running on the host",
+                        "setup_command": "crontab -e and add: */5 * * * * /opt/veris-memory/scripts/sentinel-host-checks.sh",
+                        "documentation": "See docs/SECURITY_SETUP.md"
+                    }
+                )
+
+            # Check if the result is too old
+            age = datetime.now() - host_result.timestamp
+            if age > timedelta(minutes=self.max_age_minutes):
+                return CheckResult(
+                    check_id=self.CHECK_ID,
+                    timestamp=datetime.now(),
+                    status="warn",
+                    latency_ms=self._calculate_latency(start_time),
+                    message=f"⚠️ Firewall status data is stale ({int(age.total_seconds() / 60)} minutes old)",
+                    details={
+                        "last_update": host_result.timestamp.isoformat(),
+                        "age_minutes": int(age.total_seconds() / 60),
+                        "max_age_minutes": self.max_age_minutes,
+                        "last_status": host_result.status,
+                        "last_message": host_result.message,
+                        "action_required": "Check if host monitoring script is still running"
+                    }
+                )
+
+            # Return the host-based result with freshness validation
             return CheckResult(
                 check_id=self.CHECK_ID,
                 timestamp=datetime.now(),
-                status="pass",
+                status=host_result.status,
                 latency_ms=self._calculate_latency(start_time),
-                message="✅ Firewall active with all required rules",
+                message=f"{host_result.message} (host-based check)",
                 details={
-                    "ufw_active": True,
-                    "configured_rules": ufw_status.get('rules', 0),
-                    "docker_integration": docker_rules,
-                    "protected_ports": self.required_ports
+                    **host_result.details,
+                    "host_check_timestamp": host_result.timestamp.isoformat(),
+                    "age_seconds": int(age.total_seconds()),
+                    "check_method": "host-based"
                 }
             )
-            
+
         except Exception as e:
             return CheckResult(
                 check_id=self.CHECK_ID,
@@ -103,7 +126,7 @@ class S11FirewallStatus(BaseCheck):
                 status="fail",
                 latency_ms=self._calculate_latency(start_time),
                 message=f"❌ Firewall check failed: {str(e)}",
-                details={"error": str(e)}
+                details={"error": str(e), "check_method": "host-based"}
             )
     
     async def _check_ufw_status(self) -> Dict[str, Any]:

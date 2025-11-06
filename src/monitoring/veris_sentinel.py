@@ -1431,11 +1431,14 @@ class SentinelAPI:
     def __init__(self, sentinel: SentinelRunner, port: int = 9090) -> None:
         self.sentinel: SentinelRunner = sentinel
         self.port: int = port
-        
+
+        # Storage for host-based check results
+        self.host_check_results: Dict[str, CheckResult] = {}
+
         # Create app with rate limiting middleware
         middlewares = [sentinel_rate_limit_middleware]
         self.app: web.Application = web.Application(middlewares=middlewares)
-        
+
         self._setup_routes()
         logger.info("✅ Sentinel API rate limiting enabled")
     
@@ -1447,6 +1450,7 @@ class SentinelAPI:
         self.app.router.add_get('/metrics', self.metrics_handler)
         self.app.router.add_get('/report', self.report_handler)
         self.app.router.add_get('/rate-limit-status', self.rate_limit_status_handler)
+        self.app.router.add_post('/host-checks/firewall', self.host_firewall_check_handler)
         
         # Enable CORS
         cors = aiohttp_cors.setup(self.app, defaults={
@@ -1560,7 +1564,79 @@ class SentinelAPI:
                 "error": str(e),
                 "timestamp": datetime.utcnow().isoformat()
             }, status=500)
-    
+
+    async def host_firewall_check_handler(self, request: Request) -> Response:
+        """
+        Handle /host-checks/firewall endpoint - receive firewall status from host.
+
+        This endpoint receives firewall check results from the host-based monitoring script
+        since Docker containers cannot directly check the host's UFW firewall status.
+
+        Request body should be a CheckResult JSON from the host script.
+        """
+        try:
+            # Parse the incoming check result
+            data = await request.json()
+
+            # Validate required fields
+            required_fields = ['check_id', 'timestamp', 'status', 'latency_ms', 'message']
+            missing_fields = [f for f in required_fields if f not in data]
+
+            if missing_fields:
+                return web.json_response({
+                    "success": False,
+                    "error": f"Missing required fields: {', '.join(missing_fields)}"
+                }, status=400)
+
+            # Convert timestamp string to datetime if needed
+            if isinstance(data.get('timestamp'), str):
+                data['timestamp'] = datetime.fromisoformat(data['timestamp'].replace('Z', '+00:00'))
+
+            # Create CheckResult object
+            check_result = CheckResult(
+                check_id=data['check_id'],
+                timestamp=data['timestamp'],
+                status=data['status'],
+                latency_ms=data['latency_ms'],
+                message=data['message'],
+                details=data.get('details', {})
+            )
+
+            # Store the result
+            self.host_check_results[check_result.check_id] = check_result
+
+            # Log the result
+            logger.info(f"Received host check: {check_result.check_id} [{check_result.status}] - {check_result.message}")
+
+            # If status is fail or warn, also add to sentinel failures for alerting
+            if check_result.status in ["fail", "warn"]:
+                self.sentinel.failures.append(check_result)
+
+            return web.json_response({
+                "success": True,
+                "message": "Host check result received and stored",
+                "check_id": check_result.check_id,
+                "status": check_result.status,
+                "timestamp": check_result.timestamp.isoformat()
+            })
+
+        except json.JSONDecodeError:
+            return web.json_response({
+                "success": False,
+                "error": "Invalid JSON in request body"
+            }, status=400)
+        except Exception as e:
+            logger.error(f"Failed to process host firewall check: {e}")
+            return web.json_response({
+                "success": False,
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }, status=500)
+
+    def get_host_check_result(self, check_id: str) -> Optional[CheckResult]:
+        """Get the most recent result for a host-based check."""
+        return self.host_check_results.get(check_id)
+
     async def start_server(self) -> None:
         """Start the HTTP API server."""
         runner = web.AppRunner(self.app)

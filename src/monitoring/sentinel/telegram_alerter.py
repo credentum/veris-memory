@@ -182,10 +182,10 @@ class TelegramAlerter:
         """Format an alert message for Telegram."""
         severity_emoji = self.SEVERITY_EMOJIS.get(severity, "")
         status_emoji = self.STATUS_EMOJIS.get(status, "❓")
-        
+
         # Build header
         header = f"<b>{severity_emoji} {severity.value.upper()}: Veris Memory Alert</b>"
-        
+
         # Build body
         lines = [
             header,
@@ -194,29 +194,31 @@ class TelegramAlerter:
             f"<b>Status:</b> {status.upper()} {status_emoji}",
             f"<b>Time:</b> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         ]
-        
+
         if latency_ms:
             lines.append(f"<b>Latency:</b> {latency_ms:.1f}ms")
-        
+
         lines.append("")
         lines.append(f"<b>Message:</b>\n{self._escape_html(message)}")
-        
+
         # Add details if provided
         if details:
             lines.append("")
             lines.append("<b>Details:</b>")
             for key, value in details.items():
                 if isinstance(value, (list, dict)):
+                    # Recursively escape HTML BEFORE JSON dumping to prevent Telegram parse errors
+                    value = self._escape_nested_html(value)
                     value = json.dumps(value, indent=2)
                 lines.append(f"• {self._escape_html(str(key))}: {self._escape_html(str(value))}")
-        
+
         # Add action required for critical/high severity
         if severity in [AlertSeverity.CRITICAL, AlertSeverity.HIGH]:
             lines.append("")
             lines.append("<b>Action Required:</b> Immediate investigation")
-        
+
         lines.append("━━━━━━━━━━━━━━━━━━━━━")
-        
+
         return "\n".join(lines)
     
     def _format_summary(
@@ -346,7 +348,7 @@ class TelegramAlerter:
         """Escape HTML special characters."""
         if not text:
             return ""
-        
+
         return (
             str(text)
             .replace("&", "&amp;")
@@ -355,7 +357,32 @@ class TelegramAlerter:
             .replace('"', "&quot;")
             .replace("'", "&#x27;")
         )
-    
+
+    def _escape_nested_html(self, obj: Any) -> Any:
+        """
+        Recursively escape HTML in nested data structures.
+
+        This prevents Telegram HTML parsing errors when alert details
+        contain angle brackets (< >) that would be interpreted as HTML tags.
+
+        Args:
+            obj: Any object (dict, list, str, or other)
+
+        Returns:
+            The same structure with all strings HTML-escaped
+        """
+        if isinstance(obj, dict):
+            return {self._escape_html(str(k)): self._escape_nested_html(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._escape_nested_html(item) for item in obj]
+        elif isinstance(obj, str):
+            return self._escape_html(obj)
+        elif obj is None:
+            return None
+        else:
+            # For numbers, booleans, etc., convert to string and escape
+            return self._escape_html(str(obj))
+
     async def test_connection(self) -> bool:
         """
         Test Telegram bot connection.
