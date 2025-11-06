@@ -372,11 +372,10 @@ def create_health_routes(app):
             status_code=http_code,
             media_type="application/json"
         )
-    
-    @app.get("/health")
-    async def health():
-        """Combined health endpoint (for backward compatibility)."""
-        return await readiness()
+
+    # NOTE: Do NOT override /health endpoint
+    # The main.py already has a lightweight /health endpoint for Docker health checks
+    # that doesn't query backends. Overriding it breaks container health checks during startup.
 
 
 # Flask integration
