@@ -71,11 +71,16 @@ class HealthChecker:
     def __init__(self, config: Optional[Dict] = None):
         self.config = config or {}
         self.startup_time = time.time()
-        
-        # Component URLs
-        self.qdrant_url = self.config.get("qdrant_url", "http://localhost:6333")
-        self.neo4j_url = self.config.get("neo4j_url", "http://localhost:7474")
-        self.api_url = self.config.get("api_url", "http://localhost:8000")
+
+        # Component URLs - Use Docker service names by default, allow override via config
+        # Read from environment variables first (set in docker-compose.yml)
+        import os
+        self.qdrant_url = self.config.get("qdrant_url",
+                                          os.getenv("QDRANT_URL", "http://qdrant:6333"))
+        self.neo4j_url = self.config.get("neo4j_url",
+                                         os.getenv("NEO4J_HTTP_URL", "http://neo4j:7474"))
+        self.api_url = self.config.get("api_url",
+                                       os.getenv("API_BASE_URL", "http://context-store:8000"))
         
         # Timeouts
         self.liveness_timeout = self.config.get("liveness_timeout", 5)
