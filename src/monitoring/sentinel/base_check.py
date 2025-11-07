@@ -8,6 +8,7 @@ Provides the common interface and utilities that all check classes implement.
 import asyncio
 import logging
 import os
+import re
 import time
 import aiohttp
 from abc import ABC, abstractmethod
@@ -223,13 +224,23 @@ class APITestMixin:
                 api_key = api_key.strip()
                 if not api_key:
                     logger.warning("API_KEY_MCP is empty after stripping whitespace.")
-                elif not all(c.isalnum() or c in '_-:' for c in api_key):
-                    logger.warning(
-                        "API_KEY_MCP contains invalid characters. "
-                        "Expected format: alphanumeric with underscores, hyphens, and colons."
-                    )
                 else:
-                    headers["X-API-Key"] = api_key
+                    # Validate format: should start with vmk_ and follow expected pattern
+                    # Pattern: vmk_{prefix}_{hash}:user_id:role:is_agent
+                    api_key_pattern = re.compile(r'^vmk_[a-zA-Z0-9]+_[a-zA-Z0-9]+:[^:]+:[^:]+:(true|false)$')
+
+                    if not api_key_pattern.match(api_key):
+                        # Redact key for security - show only prefix for debugging
+                        redacted_key = api_key[:8] + "..." if len(api_key) > 8 else "***"
+                        logger.warning(
+                            f"API_KEY_MCP format invalid. Expected format: vmk_{{prefix}}_{{hash}}:user_id:role:is_agent. "
+                            f"Got: {redacted_key}"
+                        )
+                    else:
+                        headers["X-API-Key"] = api_key
+                        # Log success with redacted key
+                        redacted_key = api_key[:12] + "..." if len(api_key) > 12 else "***"
+                        logger.debug(f"Using API key: {redacted_key}")
             else:
                 logger.warning(
                     "API_KEY_MCP not found in environment. API calls may fail with authentication errors. "
