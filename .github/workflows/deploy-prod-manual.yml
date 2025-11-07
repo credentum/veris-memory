@@ -183,17 +183,15 @@ jobs:
             if [ -n "$NEO4J_CONTAINER" ]; then
               echo "Found Neo4j container: $NEO4J_CONTAINER"
 
-              # Extract Neo4j password from .env file (same password the container is using)
-              NEO4J_PASS=$(grep "^NEO4J_PASSWORD=" .env | cut -d'=' -f2-)
-
-              if [ -z "$NEO4J_PASS" ]; then
-                echo "⚠️  Could not extract Neo4j password from .env, skipping index creation"
+              # Use the NEO4J_PASSWORD environment variable that was exported earlier
+              if [ -z "$NEO4J_PASSWORD" ]; then
+                echo "⚠️  NEO4J_PASSWORD not set in environment, skipping index creation"
               else
                 # Create context_id_index for 2-5x faster relationship validation
                 echo "Creating context_id_index for relationship performance..."
                 docker exec "$NEO4J_CONTAINER" cypher-shell \
                   -u neo4j \
-                  -p "$NEO4J_PASS" \
+                  -p "$NEO4J_PASSWORD" \
                   -d neo4j \
                   "CREATE INDEX context_id_index IF NOT EXISTS FOR (n:Context) ON (n.id);" 2>&1 | grep -v "password" || {
                   echo "⚠️  Index creation failed, may already exist or Neo4j not ready"
@@ -204,7 +202,7 @@ jobs:
                 echo "Verifying index status..."
                 docker exec "$NEO4J_CONTAINER" cypher-shell \
                   -u neo4j \
-                  -p "$NEO4J_PASS" \
+                  -p "$NEO4J_PASSWORD" \
                   -d neo4j \
                   "SHOW INDEXES;" 2>&1 | grep -E "context_id_index|name.*type.*state" | head -5 || true
 
