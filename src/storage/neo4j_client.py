@@ -10,12 +10,14 @@ This module:
 """
 
 import sys
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import click
 import yaml
 from neo4j import Driver, GraphDatabase
 from neo4j.exceptions import AuthError, ServiceUnavailable
+from neo4j.time import DateTime, Date, Time, Duration
 
 # Import types for protocol compliance
 try:
@@ -30,6 +32,44 @@ try:
 except ImportError:
     from core.config_error import ConfigFileNotFoundError, ConfigParseError
     from core.test_config import get_test_config
+
+
+def serialize_neo4j_value(value: Any) -> Any:
+    """Convert Neo4j-specific types to JSON-serializable Python types.
+
+    Args:
+        value: Value from Neo4j query result
+
+    Returns:
+        JSON-serializable version of the value
+    """
+    # Handle Neo4j temporal types
+    if isinstance(value, (DateTime, Date, Time)):
+        return value.iso_format()
+    elif isinstance(value, Duration):
+        # Convert duration to total seconds for simplicity
+        return {
+            "months": value.months,
+            "days": value.days,
+            "seconds": value.seconds,
+            "nanoseconds": value.nanoseconds
+        }
+    # Handle lists (may contain temporal types)
+    elif isinstance(value, list):
+        return [serialize_neo4j_value(item) for item in value]
+    # Handle dictionaries (may contain temporal types)
+    elif isinstance(value, dict):
+        return {k: serialize_neo4j_value(v) for k, v in value.items()}
+    # Handle objects with __dict__ (Neo4j nodes/relationships)
+    elif hasattr(value, "__dict__") and not isinstance(value, (str, int, float, bool)):
+        try:
+            return {k: serialize_neo4j_value(v) for k, v in dict(value).items()}
+        except (TypeError, AttributeError):
+            # If conversion fails, return string representation
+            return str(value)
+    # Return primitive types as-is
+    else:
+        return value
 
 
 class Neo4jInitializer:
@@ -465,16 +505,12 @@ class Neo4jInitializer:
                 result = session.run(cypher, parameters or {})
                 records = []
                 for record in result:
-                    # Convert neo4j record to dictionary
+                    # Convert neo4j record to dictionary with proper serialization
                     record_dict = {}
                     for key in record.keys():
                         value = record[key]
-                        # Handle Neo4j types that need conversion
-                        if hasattr(value, "__dict__"):
-                            # Convert neo4j objects to dictionaries
-                            record_dict[key] = dict(value)
-                        else:
-                            record_dict[key] = value
+                        # Use serialization helper to handle all Neo4j types
+                        record_dict[key] = serialize_neo4j_value(value)
                     records.append(record_dict)
                 return records
 
