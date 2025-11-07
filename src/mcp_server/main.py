@@ -92,7 +92,53 @@ from ..core.config import Config
 HEALTH_CHECK_GRACE_PERIOD_DEFAULT = 60
 HEALTH_CHECK_MAX_RETRIES_DEFAULT = 3
 HEALTH_CHECK_RETRY_DELAY_DEFAULT = 5.0
+
+# Metadata field names that should be separated from content fields
+METADATA_FIELD_NAMES = [
+    "golden_fact", "category", "priority", "sprint", "component",
+    "compliance", "pr_number", "milestone", "sentinel", "test",
+    "phase", "initialization", "author", "author_type", "stored_at"
+]
+
 from ..core.query_validator import validate_cypher_query
+
+def is_json_serializable(value: Any) -> bool:
+    """
+    Check if a value is JSON serializable.
+
+    Args:
+        value: The value to check
+
+    Returns:
+        True if the value can be JSON serialized, False otherwise
+    """
+    try:
+        json.dumps(value)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+def make_json_serializable(value: Any) -> Any:
+    """
+    Convert a value to a JSON-serializable format.
+
+    Args:
+        value: The value to convert
+
+    Returns:
+        JSON-serializable version of the value
+    """
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+    elif isinstance(value, (list, tuple)):
+        return [make_json_serializable(v) for v in value]
+    elif isinstance(value, dict):
+        return {k: make_json_serializable(v) for k, v in value.items()}
+    elif isinstance(value, datetime):
+        return value.isoformat()
+    else:
+        # For non-serializable objects, convert to string representation
+        return str(value)
 
 # Import storage components
 # Import storage components - using simplified interface for MCP server
@@ -1710,10 +1756,23 @@ async def store_context(
 
                 # Handle request.content safely - convert nested objects to JSON strings
                 for key, value in request.content.items():
-                    if isinstance(value, (dict, list)):
-                        flattened_properties[f"{key}_json"] = json.dumps(value)
+                    # Ensure value is JSON-serializable before attempting to serialize
+                    safe_value = make_json_serializable(value)
+                    if isinstance(safe_value, (dict, list)):
+                        flattened_properties[f"{key}_json"] = json.dumps(safe_value)
                     else:
-                        flattened_properties[key] = value
+                        flattened_properties[key] = safe_value
+
+                # Also store metadata fields at the top level for easy retrieval
+                if request.metadata:
+                    for key, value in request.metadata.items():
+                        if key not in ["author", "author_type", "stored_at"]:  # These are already added
+                            # Ensure value is JSON-serializable
+                            safe_value = make_json_serializable(value)
+                            if isinstance(safe_value, (dict, list)):
+                                flattened_properties[key] = json.dumps(safe_value)
+                            else:
+                                flattened_properties[key] = safe_value
                 
                 graph_id = neo4j_client.create_node(
                     labels=["Context"],
@@ -1796,9 +1855,22 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                 # Convert SearchResultResponse to MCP format
                 results = []
                 for memory_result in search_response.results:
+                    # Extract content and metadata separately
+                    content = {}
+                    metadata = {}
+
+                    # The memory_result.metadata contains all the fields
+                    for key, value in memory_result.metadata.items():
+                        # Separate metadata fields from content fields
+                        if key in METADATA_FIELD_NAMES:
+                            metadata[key] = value
+                        else:
+                            content[key] = value
+
                     results.append({
                         "id": memory_result.id,
-                        "content": memory_result.metadata,  # Full metadata
+                        "content": content,  # Content fields
+                        "metadata": metadata,  # Metadata fields separated
                         "score": memory_result.score,
                         "source": memory_result.source.value,  # Convert enum to string
                         "text": memory_result.text,
@@ -1846,10 +1918,15 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
 
                 # Convert results to proper format
                 for result in vector_results:
+                    # Extract metadata from payload if present
+                    payload = result.payload
+                    metadata = payload.get("metadata", {}) if isinstance(payload, dict) else {}
+
                     results.append(
                         {
                             "id": result.id,
-                            "content": result.payload,
+                            "content": payload.get("content", payload) if isinstance(payload, dict) else payload,
+                            "metadata": metadata,  # Include metadata separately
                             "score": result.score,
                             "source": "vector",
                         }
@@ -1883,12 +1960,23 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                         node_data = raw_result
                     
                     # Convert to consistent format matching vector results
+                    # Extract metadata if present in the node
+                    metadata = {}
+                    content = {}
+
+                    for key, value in node_data.items():
+                        if key == "id":
+                            continue  # Don't duplicate id
+                        # Check if this looks like metadata fields
+                        if key in METADATA_FIELD_NAMES:
+                            metadata[key] = value
+                        else:
+                            content[key] = value
+
                     normalized_result = {
                         "id": node_data.get("id", "unknown"),
-                        "content": {
-                            key: value for key, value in node_data.items() 
-                            if key != "id"  # Don't duplicate id in content
-                        },
+                        "content": content,
+                        "metadata": metadata,  # Include metadata separately
                         "score": 1.0,  # Graph results don't have similarity scores
                         "source": "graph",
                     }
