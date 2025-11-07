@@ -6,6 +6,7 @@ Provides the common interface and utilities that all check classes implement.
 """
 
 import asyncio
+import os
 import time
 import aiohttp
 from abc import ABC, abstractmethod
@@ -211,13 +212,20 @@ class APITestMixin:
         start_time = time.time()
         
         try:
+            # Include API key authentication header
+            headers = {}
+            api_key = os.getenv("API_KEY_MCP")
+            if api_key:
+                headers["X-API-Key"] = api_key
+
             request_kwargs = {
-                "timeout": aiohttp.ClientTimeout(total=timeout)
+                "timeout": aiohttp.ClientTimeout(total=timeout),
+                "headers": headers
             }
-            
+
             if data and method.upper() in ['POST', 'PUT', 'PATCH']:
                 request_kwargs["json"] = data
-            
+
             async with getattr(session, method.lower())(endpoint, **request_kwargs) as resp:
                 latency_ms = (time.time() - start_time) * 1000
                 
