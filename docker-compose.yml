@@ -279,8 +279,8 @@ services:
       dockerfile: Dockerfile
     container_name: voice-bot
     environment:
-      # LiveKit Configuration
-      - LIVEKIT_URL=ws://livekit:7880
+      # LiveKit Configuration (Cloud or Self-Hosted)
+      - LIVEKIT_URL=${LIVEKIT_API_WEBSOCKET:-ws://livekit:7880}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
 
@@ -300,11 +300,12 @@ services:
       - PORT=8002
       - LOG_LEVEL=${LOG_LEVEL:-info}
 
-      # Voice Configuration
-      - STT_PROVIDER=${STT_PROVIDER:-deepgram}
-      - TTS_PROVIDER=${TTS_PROVIDER:-elevenlabs}
+      # Voice Configuration (OpenAI Whisper + TTS)
+      - STT_PROVIDER=${STT_PROVIDER:-whisper}
+      - TTS_PROVIDER=${TTS_PROVIDER:-openai}
       - STT_API_KEY=${STT_API_KEY:-}
       - TTS_API_KEY=${TTS_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
 
       # Feature Flags
       - ENABLE_VOICE_COMMANDS=${ENABLE_VOICE_COMMANDS:-true}

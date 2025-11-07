@@ -38,6 +38,10 @@ jobs:
           echo "::add-mask::${{ secrets.NEO4J_PASSWORD }}"
           echo "::add-mask::${{ secrets.TELEGRAM_BOT_TOKEN }}"
           echo "::add-mask::${{ secrets.TELEGRAM_CHAT_ID }}"
+          echo "::add-mask::${{ secrets.LIVEKIT_API_KEY }}"
+          echo "::add-mask::${{ secrets.LIVEKIT_API_SECRET }}"
+          echo "::add-mask::${{ secrets.API_KEY_VOICEBOT }}"
+          echo "::add-mask::${{ secrets.OPENAI_API_KEY }}"
           
           # Create SSH key with secure permissions
           # Use printf to preserve newlines in the key
@@ -238,13 +242,21 @@ jobs:
               # Remove ALL managed variables to ensure clean state (no duplicates)
               echo "🗑️  Removing managed variables from .env to prevent duplicates..."
               if [ -f .env ]; then
-                # Remove NEO4J, TELEGRAM, and PR #170 variables
+                # Remove NEO4J, TELEGRAM, PR #170, and Voice Platform variables
                 grep -v "^NEO4J" .env > .env.tmp || true
                 grep -v "^TELEGRAM" .env.tmp > .env.tmp2 || true
                 grep -v "^VERIS_CACHE_TTL" .env.tmp2 > .env.tmp3 || true
                 grep -v "^STRICT_EMBEDDINGS" .env.tmp3 > .env.tmp4 || true
-                grep -v "^EMBEDDING_DIM" .env.tmp4 > .env || true
-                rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4
+                grep -v "^EMBEDDING_DIM" .env.tmp4 > .env.tmp5 || true
+                grep -v "^LIVEKIT" .env.tmp5 > .env.tmp6 || true
+                grep -v "^API_KEY_VOICEBOT" .env.tmp6 > .env.tmp7 || true
+                grep -v "^VOICE_BOT" .env.tmp7 > .env.tmp8 || true
+                grep -v "^STT_" .env.tmp8 > .env.tmp9 || true
+                grep -v "^TTS_" .env.tmp9 > .env.tmp10 || true
+                grep -v "^OPENAI_API_KEY" .env.tmp10 > .env.tmp11 || true
+                grep -v "^ENABLE_MCP_RETRY" .env.tmp11 > .env.tmp12 || true
+                grep -v "^MCP_RETRY_ATTEMPTS" .env.tmp12 > .env || true
+                rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12
               fi
               
               # Write secrets to .env without echoing them
@@ -265,6 +277,40 @@ jobs:
                 printf "VERIS_CACHE_TTL_SECONDS=300\n"
                 printf "STRICT_EMBEDDINGS=false\n"
                 printf "EMBEDDING_DIM=384\n"
+
+                # Voice Platform Configuration
+                printf "\n# TeamAI Voice Platform Configuration\n"
+                if [ -n "${{ secrets.LIVEKIT_API_KEY }}" ]; then
+                  printf "LIVEKIT_API_KEY=%s\n" "${{ secrets.LIVEKIT_API_KEY }}"
+                fi
+                if [ -n "${{ secrets.LIVEKIT_API_SECRET }}" ]; then
+                  printf "LIVEKIT_API_SECRET=%s\n" "${{ secrets.LIVEKIT_API_SECRET }}"
+                fi
+                if [ -n "${{ secrets.LIVEKIT_API_WEBSOCKET }}" ]; then
+                  printf "LIVEKIT_API_WEBSOCKET=%s\n" "${{ secrets.LIVEKIT_API_WEBSOCKET }}"
+                fi
+                if [ -n "${{ secrets.API_KEY_VOICEBOT }}" ]; then
+                  printf "API_KEY_VOICEBOT=%s\n" "${{ secrets.API_KEY_VOICEBOT }}"
+                fi
+
+                # Voice Bot Sprint 13 Configuration
+                printf "VOICE_BOT_AUTHOR_PREFIX=voice_bot\n"
+                printf "ENABLE_MCP_RETRY=true\n"
+                printf "MCP_RETRY_ATTEMPTS=3\n"
+
+                # OpenAI for STT/TTS (Whisper + TTS)
+                if [ -n "${{ secrets.OPENAI_API_KEY }}" ]; then
+                  printf "OPENAI_API_KEY=%s\n" "${{ secrets.OPENAI_API_KEY }}"
+                  printf "STT_PROVIDER=whisper\n"
+                  printf "STT_API_KEY=%s\n" "${{ secrets.OPENAI_API_KEY }}"
+                  printf "TTS_PROVIDER=openai\n"
+                  printf "TTS_API_KEY=%s\n" "${{ secrets.OPENAI_API_KEY }}"
+                fi
+
+                # Voice Bot Feature Flags
+                printf "ENABLE_VOICE_COMMANDS=true\n"
+                printf "ENABLE_FACT_STORAGE=true\n"
+                printf "ENABLE_CONVERSATION_TRACE=true\n"
               } >> .env 2>/dev/null
               
               # Verify configuration was written correctly
