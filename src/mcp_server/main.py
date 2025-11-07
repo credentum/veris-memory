@@ -25,46 +25,39 @@ from .models import SortBy
 # Import secure error handling and MCP validation
 try:
     from ..core.error_handler import (
-        create_error_response, 
-        handle_storage_error, 
-        handle_validation_error, 
-        handle_generic_error
+        create_error_response,
+        handle_generic_error,
+        handle_storage_error,
+        handle_validation_error,
     )
-    from ..core.mcp_validation import (
-        validate_mcp_request,
-        validate_mcp_response,
-        get_mcp_validator
-    )
+    from ..core.mcp_validation import get_mcp_validator, validate_mcp_request, validate_mcp_response
 except ImportError:
     from core.error_handler import (
-        create_error_response, 
-        handle_storage_error, 
-        handle_validation_error, 
-        handle_generic_error
+        create_error_response,
+        handle_storage_error,
+        handle_validation_error,
+        handle_generic_error,
     )
-    from core.mcp_validation import (
-        validate_mcp_request,
-        validate_mcp_response,
-        get_mcp_validator
-    )
+    from core.mcp_validation import validate_mcp_request, validate_mcp_response, get_mcp_validator
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, Depends
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
+
+# Configure logging for import failures
+logger = logging.getLogger(__name__)
 
 # Sprint 13 Phase 2: API Key Authentication
 try:
-    from ..middleware.api_key_auth import verify_api_key, require_human, APIKeyInfo
+    from ..middleware.api_key_auth import APIKeyInfo, require_human, verify_api_key
+
     API_KEY_AUTH_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"API key authentication not available: {e}")
     API_KEY_AUTH_AVAILABLE = False
     APIKeyInfo = None
-
-# Configure logging for import failures
-logger = logging.getLogger(__name__)
 
 # Import sentence-transformers with fallback
 try:
@@ -96,12 +89,25 @@ HEALTH_CHECK_RETRY_DELAY_DEFAULT = 5.0
 
 # Metadata field names that should be separated from content fields
 METADATA_FIELD_NAMES = [
-    "golden_fact", "category", "priority", "sprint", "component",
-    "compliance", "pr_number", "milestone", "sentinel", "test",
-    "phase", "initialization", "author", "author_type", "stored_at"
+    "golden_fact",
+    "category",
+    "priority",
+    "sprint",
+    "component",
+    "compliance",
+    "pr_number",
+    "milestone",
+    "sentinel",
+    "test",
+    "phase",
+    "initialization",
+    "author",
+    "author_type",
+    "stored_at",
 ]
 
 from ..core.query_validator import validate_cypher_query
+
 
 def is_json_serializable(value: Any) -> bool:
     """
@@ -118,6 +124,7 @@ def is_json_serializable(value: Any) -> bool:
         return True
     except (TypeError, ValueError):
         return False
+
 
 def make_json_serializable(value: Any) -> Any:
     """
@@ -140,6 +147,7 @@ def make_json_serializable(value: Any) -> Any:
     else:
         # For non-serializable objects, convert to string representation
         return str(value)
+
 
 # Import storage components
 # Import storage components - using simplified interface for MCP server
@@ -176,84 +184,92 @@ from ..validators.config_validator import validate_all_configs
 # Import health check endpoints
 try:
     from ..health.endpoints import create_health_routes
+
     HEALTH_ENDPOINTS_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Health endpoints module not available: {e}")
     HEALTH_ENDPOINTS_AVAILABLE = False
     create_health_routes = None
 
+
 # PHASE 1: Import unified backend architecture with granular error handling
+def _try_import_backend_component(
+    module_path: str, component_name: str, components_dict: dict, errors_list: list
+):
+    """
+    Helper function to import a backend component with proper error handling.
+
+    Args:
+        module_path: Full import path (e.g., "..core.query_dispatcher")
+        component_name: Name of the component to import (e.g., "QueryDispatcher")
+        components_dict: Dictionary to store successfully imported components
+        errors_list: List to append error messages to
+
+    Returns:
+        The imported component or None if import failed
+    """
+    try:
+        module = __import__(module_path, fromlist=[component_name], level=0)
+        component = getattr(module, component_name)
+        components_dict[component_name] = component
+        logger.info(f"✓ {component_name} loaded")
+        return component
+    except (ImportError, AttributeError) as e:
+        logger.warning(f"✗ {component_name} not available: {e}")
+        errors_list.append(f"{component_name}: {e}")
+        return None
+
+
 unified_backend_components = {}
 unified_backend_errors = []
 
-# Import QueryDispatcher
-try:
-    from ..core.query_dispatcher import QueryDispatcher
-    unified_backend_components['QueryDispatcher'] = QueryDispatcher
-    logger.info("✓ QueryDispatcher loaded")
-except ImportError as e:
-    logger.warning(f"✗ QueryDispatcher not available: {e}")
-    unified_backend_errors.append(f"QueryDispatcher: {e}")
-    QueryDispatcher = None
+# Import all backend components using helper function
+QueryDispatcher = _try_import_backend_component(
+    "src.core.query_dispatcher",
+    "QueryDispatcher",
+    unified_backend_components,
+    unified_backend_errors,
+)
 
-# Import RetrievalCore
-try:
-    from ..core.retrieval_core import initialize_retrieval_core
-    unified_backend_components['initialize_retrieval_core'] = initialize_retrieval_core
-    logger.info("✓ RetrievalCore loaded")
-except ImportError as e:
-    logger.warning(f"✗ RetrievalCore not available: {e}")
-    unified_backend_errors.append(f"RetrievalCore: {e}")
-    initialize_retrieval_core = None
+initialize_retrieval_core = _try_import_backend_component(
+    "src.core.retrieval_core",
+    "initialize_retrieval_core",
+    unified_backend_components,
+    unified_backend_errors,
+)
 
-# Import VectorBackend
-try:
-    from ..backends.vector_backend import VectorBackend
-    unified_backend_components['VectorBackend'] = VectorBackend
-    logger.info("✓ VectorBackend loaded")
-except ImportError as e:
-    logger.warning(f"✗ VectorBackend not available: {e}")
-    unified_backend_errors.append(f"VectorBackend: {e}")
-    VectorBackend = None
+VectorBackend = _try_import_backend_component(
+    "src.backends.vector_backend",
+    "VectorBackend",
+    unified_backend_components,
+    unified_backend_errors,
+)
 
-# Import GraphBackend
-try:
-    from ..backends.graph_backend import GraphBackend
-    unified_backend_components['GraphBackend'] = GraphBackend
-    logger.info("✓ GraphBackend loaded")
-except ImportError as e:
-    logger.warning(f"✗ GraphBackend not available: {e}")
-    unified_backend_errors.append(f"GraphBackend: {e}")
-    GraphBackend = None
+GraphBackend = _try_import_backend_component(
+    "src.backends.graph_backend", "GraphBackend", unified_backend_components, unified_backend_errors
+)
 
-# Import KVBackend
-try:
-    from ..backends.kv_backend import KVBackend
-    unified_backend_components['KVBackend'] = KVBackend
-    logger.info("✓ KVBackend loaded")
-except ImportError as e:
-    logger.warning(f"✗ KVBackend not available: {e}")
-    unified_backend_errors.append(f"KVBackend: {e}")
-    KVBackend = None
+KVBackend = _try_import_backend_component(
+    "src.backends.kv_backend", "KVBackend", unified_backend_components, unified_backend_errors
+)
 
-# Import EmbeddingConfig
-try:
-    from ..core.embedding_config import create_embedding_generator
-    unified_backend_components['create_embedding_generator'] = create_embedding_generator
-    logger.info("✓ EmbeddingConfig loaded")
-except ImportError as e:
-    logger.warning(f"✗ EmbeddingConfig not available: {e}")
-    unified_backend_errors.append(f"EmbeddingConfig: {e}")
-    create_embedding_generator = None
+create_embedding_generator = _try_import_backend_component(
+    "src.core.embedding_config",
+    "create_embedding_generator",
+    unified_backend_components,
+    unified_backend_errors,
+)
 
 # Determine if unified backend is available (requires core components)
 UNIFIED_BACKEND_AVAILABLE = (
-    'QueryDispatcher' in unified_backend_components and
-    'initialize_retrieval_core' in unified_backend_components
+    "QueryDispatcher" in unified_backend_components
+    and "initialize_retrieval_core" in unified_backend_components
 )
 
 if UNIFIED_BACKEND_AVAILABLE:
-    logger.info(f"✅ Unified backend architecture available with {len(unified_backend_components)}/6 components")
+    logger.info(
+        f"✅ Unified backend architecture available with {len(unified_backend_components)}/6 components"
+    )
 else:
     logger.error(
         f"❌ Unified backend architecture unavailable. Missing components: {len(unified_backend_errors)}\n"
@@ -264,8 +280,9 @@ else:
 # Import monitoring dashboard components
 try:
     from ..monitoring.dashboard import UnifiedDashboard
+    from ..monitoring.request_metrics import RequestMetricsMiddleware, get_metrics_collector
     from ..monitoring.streaming import MetricsStreamer
-    from ..monitoring.request_metrics import get_metrics_collector, RequestMetricsMiddleware
+
     DASHBOARD_AVAILABLE = True
     REQUEST_METRICS_AVAILABLE = True
     logger.info("Dashboard monitoring components available")
@@ -334,6 +351,7 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
     try:
         # Use the robust embedding service which has better fallback handling
         from ..embedding import generate_embedding
+
         embedding = await generate_embedding(content, adjust_dimensions=True)
 
         if not embedding or len(embedding) == 0:
@@ -347,9 +365,7 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
 
         # For MCP protocol compliance, fail rather than provide meaningless embeddings
         if os.getenv("STRICT_EMBEDDINGS", "false").lower() == "true":
-            raise ValueError(
-                f"Semantic embeddings unavailable and STRICT_EMBEDDINGS=true: {e}"
-            )
+            raise ValueError(f"Semantic embeddings unavailable and STRICT_EMBEDDINGS=true: {e}")
 
         # Log error prominently but allow system to continue
         logger.critical(
@@ -360,7 +376,6 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
 
         # Return None to signal embedding failure (handled by caller)
         raise ValueError(f"Embedding generation failed: {e}")
-
 
 
 app = FastAPI(
@@ -389,6 +404,7 @@ if HEALTH_ENDPOINTS_AVAILABLE:
     logger.info("Health check endpoints registered: /health/live, /health/ready")
 else:
     logger.warning("Health check endpoints not registered (module not available)")
+
 
 # Global exception handler for production security with request tracking
 @app.exception_handler(Exception)
@@ -435,7 +451,7 @@ _qdrant_init_status = {
     "embedding_service_loaded": False,
     "collection_created": False,
     "test_embedding_successful": False,
-    "error": None
+    "error": None,
 }
 
 # PHASE 1: Global unified search infrastructure
@@ -466,18 +482,18 @@ class StoreContextRequest(BaseModel):
     # Sprint 13 Phase 2.2: Author attribution
     author: Optional[str] = Field(
         None,
-        description="Author of the context (user ID or agent name). Auto-populated from API key if not provided."
+        description="Author of the context (user ID or agent name). Auto-populated from API key if not provided.",
     )
     author_type: Optional[str] = Field(
         None,
         pattern="^(human|agent)$",
-        description="Type of author: 'human' or 'agent'. Auto-populated from API key if not provided."
+        description="Type of author: 'human' or 'agent'. Auto-populated from API key if not provided.",
     )
 
 
 class RetrieveContextRequest(BaseModel):
     """Request model for retrieve_context tool.
-    
+
     Attributes:
         query: Search query string
         type: Context type filter, defaults to "all"
@@ -495,7 +511,7 @@ class RetrieveContextRequest(BaseModel):
         default=5,  # Sprint 13: Reduced from 10 to prevent excessive results
         ge=1,
         le=100,
-        description="Maximum number of results (default: 5, max: 100)"
+        description="Maximum number of results (default: 5, max: 100)",
     )
     filters: Optional[Dict[str, Any]] = None
     include_relationships: bool = False
@@ -504,7 +520,7 @@ class RetrieveContextRequest(BaseModel):
 
 class QueryGraphRequest(BaseModel):
     """Request model for query_graph tool.
-    
+
     Attributes:
         query: Cypher query string to execute
         parameters: Optional query parameters
@@ -520,7 +536,7 @@ class QueryGraphRequest(BaseModel):
 
 class UpdateScratchpadRequest(BaseModel):
     """Request model for update_scratchpad tool.
-    
+
     Attributes:
         agent_id: Unique identifier for the agent (alphanumeric, underscore, hyphen)
         key: Key for the scratchpad entry (alphanumeric, underscore, dot, hyphen)
@@ -528,10 +544,15 @@ class UpdateScratchpadRequest(BaseModel):
         mode: Update mode - "overwrite" or "append"
         ttl: Time to live in seconds (60-86400)
     """
+
     agent_id: str = Field(..., description="Agent identifier", pattern=r"^[a-zA-Z0-9_-]{1,64}$")
     key: str = Field(..., description="Scratchpad key", pattern=r"^[a-zA-Z0-9_.-]{1,128}$")
-    content: str = Field(..., description="Content to store in the scratchpad", min_length=1, max_length=100000)
-    mode: str = Field("overwrite", description="Update mode for the content", pattern=r"^(overwrite|append)$")
+    content: str = Field(
+        ..., description="Content to store in the scratchpad", min_length=1, max_length=100000
+    )
+    mode: str = Field(
+        "overwrite", description="Update mode for the content", pattern=r"^(overwrite|append)$"
+    )
     ttl: int = Field(3600, ge=60, le=86400, description="Time to live in seconds")
 
 
@@ -543,6 +564,7 @@ class GetAgentStateRequest(BaseModel):
         key: Optional specific state key to retrieve
         prefix: State type prefix for namespacing
     """
+
     agent_id: str = Field(..., description="Agent identifier")
     key: Optional[str] = Field(None, description="Specific state key")
     prefix: str = Field("state", description="State type prefix")
@@ -557,7 +579,9 @@ class DeleteContextRequest(BaseModel):
 
     context_id: str = Field(..., description="ID of the context to delete")
     reason: str = Field(..., min_length=5, description="Reason for deletion (required for audit)")
-    hard_delete: bool = Field(False, description="If True, permanently delete. If False, soft delete (mark as deleted)")
+    hard_delete: bool = Field(
+        False, description="If True, permanently delete. If False, soft delete (mark as deleted)"
+    )
 
 
 class ForgetContextRequest(BaseModel):
@@ -568,73 +592,85 @@ class ForgetContextRequest(BaseModel):
 
     context_id: str = Field(..., description="ID of the context to forget")
     reason: str = Field(..., min_length=5, description="Reason for forgetting (audit trail)")
-    retention_days: int = Field(30, ge=1, le=90, description="Days to retain before permanent deletion (1-90)")
+    retention_days: int = Field(
+        30, ge=1, le=90, description="Days to retain before permanent deletion (1-90)"
+    )
 
 
-def validate_and_get_credential(env_var_name: str, required: bool = True, min_length: int = 8) -> Optional[str]:
+def validate_and_get_credential(
+    env_var_name: str, required: bool = True, min_length: int = 8
+) -> Optional[str]:
     """
     Securely retrieve and validate credentials from environment variables.
-    
+
     Args:
         env_var_name: Name of the environment variable
         required: Whether the credential is required for operation
         min_length: Minimum length for password validation
-        
+
     Returns:
         The credential value if valid, None if optional and missing
-        
+
     Raises:
         RuntimeError: If required credential is missing or invalid
     """
     credential = os.getenv(env_var_name)
-    
+
     if not credential:
         if required:
             raise RuntimeError(f"Required credential {env_var_name} is not set")
         return None
-    
+
     # Basic validation
     if len(credential) < min_length:
-        raise RuntimeError(f"Credential {env_var_name} is too short (minimum {min_length} characters)")
-    
+        raise RuntimeError(
+            f"Credential {env_var_name} is too short (minimum {min_length} characters)"
+        )
+
     # Check for common insecure defaults
     insecure_defaults = ["password", "123456", "admin", "default", "changeme", "secret"]
     if credential.lower() in insecure_defaults:
         raise RuntimeError(f"Credential {env_var_name} uses an insecure default value")
-    
+
     return credential
 
 
 def validate_startup_credentials() -> Dict[str, Optional[str]]:
     """
     Validate all required credentials at startup with fail-fast behavior.
-    
+
     Returns:
         Dictionary of validated credentials
-        
+
     Raises:
         RuntimeError: If any required credential validation fails
     """
     try:
         credentials = {
-            'neo4j_password': validate_and_get_credential("NEO4J_PASSWORD", required=False),
-            'qdrant_api_key': validate_and_get_credential("QDRANT_API_KEY", required=False, min_length=1),
-            'redis_password': validate_and_get_credential("REDIS_PASSWORD", required=False, min_length=1)
+            "neo4j_password": validate_and_get_credential("NEO4J_PASSWORD", required=False),
+            "qdrant_api_key": validate_and_get_credential(
+                "QDRANT_API_KEY", required=False, min_length=1
+            ),
+            "redis_password": validate_and_get_credential(
+                "REDIS_PASSWORD", required=False, min_length=1
+            ),
         }
-        
+
         # Log secure startup status
         available_services = []
-        if credentials['neo4j_password']:
+        if credentials["neo4j_password"]:
             available_services.append("Neo4j")
-        if credentials['qdrant_api_key']:
+        if credentials["qdrant_api_key"]:
             available_services.append("Qdrant")
-        if credentials['redis_password']:
+        if credentials["redis_password"]:
             available_services.append("Redis")
-            
-        logger.info(f"Credential validation complete. Available services: {', '.join(available_services) if available_services else 'Core only'}")
-        
+
+        logger.info(
+            f"Credential validation complete. Available services: {', '.join(available_services) if available_services else 'Core only'}"
+        )
+
         return credentials
-        
+
     except Exception as e:
         logger.error(f"Credential validation failed: {e}")
         raise RuntimeError(f"Startup credential validation failed: {e}")
@@ -644,17 +680,18 @@ def validate_startup_credentials() -> Dict[str, Optional[str]]:
 async def startup_event() -> None:
     """Initialize storage clients and MCP validation on startup."""
     global neo4j_client, qdrant_client, kv_store, dashboard, query_dispatcher, retrieval_core
-    
+
     # Initialize MCP contract validator
     try:
         validator = get_mcp_validator()
         summary = validator.get_validation_summary()
-        print(f"✅ MCP Contract Validation initialized: {summary['contracts_loaded']} contracts loaded")
+        print(
+            f"✅ MCP Contract Validation initialized: {summary['contracts_loaded']} contracts loaded"
+        )
         print(f"📋 Available MCP tools: {', '.join(summary['available_tools'])}")
     except Exception as e:
         print(f"⚠️ MCP validation initialization warning: {e}")
         logger.warning(f"MCP validation setup warning: {e}")
-    
 
     # Validate configuration
     config_result = validate_all_configs()
@@ -666,12 +703,12 @@ async def startup_event() -> None:
 
     try:
         # Initialize Neo4j (allow graceful degradation if unavailable)
-        if credentials['neo4j_password']:
+        if credentials["neo4j_password"]:
             try:
                 neo4j_client = Neo4jClient()
                 neo4j_client.connect(
-                    username=os.getenv("NEO4J_USER", "neo4j"), 
-                    password=credentials['neo4j_password']
+                    username=os.getenv("NEO4J_USER", "neo4j"),
+                    password=credentials["neo4j_password"],
                 )
                 print("✅ Neo4j connected successfully")
             except Exception as neo4j_error:
@@ -687,7 +724,7 @@ async def startup_event() -> None:
             "embedding_service_loaded": False,
             "collection_created": False,
             "test_embedding_successful": False,
-            "error": None
+            "error": None,
         }
 
         try:
@@ -705,7 +742,9 @@ async def startup_event() -> None:
                     print("✅ Qdrant collection verified/created")
                 except Exception as collection_error:
                     print(f"⚠️ Qdrant collection setup failed: {collection_error}")
-                    qdrant_initialization_status["error"] = f"Collection setup failed: {collection_error}"
+                    qdrant_initialization_status["error"] = (
+                        f"Collection setup failed: {collection_error}"
+                    )
 
                 # Test embedding generation to ensure the whole pipeline works
                 try:
@@ -723,9 +762,13 @@ async def startup_event() -> None:
 
                     if len(test_embedding) > 0:
                         qdrant_initialization_status["test_embedding_successful"] = True
-                        logger.info(f"✓ Embedding generation test successful ({len(test_embedding)} dimensions)")
+                        logger.info(
+                            f"✓ Embedding generation test successful ({len(test_embedding)} dimensions)"
+                        )
                         qdrant_client = qdrant_initializer
-                        print(f"✅ Qdrant + Embeddings: FULLY OPERATIONAL ({len(test_embedding)}D vectors)")
+                        print(
+                            f"✅ Qdrant + Embeddings: FULLY OPERATIONAL ({len(test_embedding)}D vectors)"
+                        )
                     else:
                         raise Exception("Embedding generation returned empty vector")
 
@@ -759,7 +802,7 @@ async def startup_event() -> None:
         redis_password = os.getenv("REDIS_PASSWORD")
         kv_store.connect(redis_password=redis_password)
         print("✅ Redis connected successfully")
-        
+
         # Initialize SimpleRedisClient as a direct bypass for scratchpad operations
         global simple_redis
         simple_redis = SimpleRedisClient()
@@ -769,15 +812,15 @@ async def startup_event() -> None:
             print("⚠️ SimpleRedisClient connection failed, scratchpad operations may fail")
 
         print("✅ Storage initialization completed (services may be degraded)")
-        
+
         # PHASE 1: Initialize unified backend architecture
         if UNIFIED_BACKEND_AVAILABLE:
             try:
                 logger.info("🔧 Initializing unified backend architecture...")
-                
+
                 # Initialize QueryDispatcher
                 query_dispatcher = QueryDispatcher()
-                
+
                 # Initialize embedding generator (needed for VectorBackend)
                 embedding_generator = None
                 try:
@@ -785,6 +828,7 @@ async def startup_event() -> None:
                     config_path = ".ctxrc.yaml"
                     if os.path.exists(config_path):
                         import yaml
+
                         with open(config_path, "r") as f:
                             base_config = yaml.safe_load(f)
                         embedding_generator = await create_embedding_generator(base_config)
@@ -793,7 +837,7 @@ async def startup_event() -> None:
                         logger.warning("⚠️ Config file not found, using fallback embedding")
                 except Exception as e:
                     logger.warning(f"⚠️ Embedding generator initialization failed: {e}")
-                
+
                 # Initialize Vector Backend (if Qdrant available)
                 if qdrant_client and embedding_generator:
                     try:
@@ -802,8 +846,8 @@ async def startup_event() -> None:
                         logger.info("✅ Vector backend registered with MCP dispatcher")
                     except Exception as e:
                         logger.warning(f"⚠️ Vector backend initialization failed: {e}")
-                
-                # Initialize Graph Backend (if Neo4j available) 
+
+                # Initialize Graph Backend (if Neo4j available)
                 if neo4j_client:
                     try:
                         graph_backend = GraphBackend(neo4j_client)
@@ -811,7 +855,7 @@ async def startup_event() -> None:
                         logger.info("✅ Graph backend registered with MCP dispatcher")
                     except Exception as e:
                         logger.warning(f"⚠️ Graph backend initialization failed: {e}")
-                
+
                 # Initialize KV Backend (if Redis available)
                 if kv_store:
                     try:
@@ -820,30 +864,32 @@ async def startup_event() -> None:
                         logger.info("✅ KV backend registered with MCP dispatcher")
                     except Exception as e:
                         logger.warning(f"⚠️ KV backend initialization failed: {e}")
-                
+
                 # Initialize unified RetrievalCore
                 retrieval_core = initialize_retrieval_core(query_dispatcher)
-                logger.info("✅ Unified RetrievalCore initialized - MCP now uses same search path as API")
-                
+                logger.info(
+                    "✅ Unified RetrievalCore initialized - MCP now uses same search path as API"
+                )
+
             except Exception as e:
                 logger.error(f"⚠️ Unified backend architecture initialization failed: {e}")
                 query_dispatcher = None
                 retrieval_core = None
         else:
             logger.warning("⚠️ Unified backend architecture not available, using legacy search")
-        
+
         # Initialize dashboard monitoring if available
         if DASHBOARD_AVAILABLE:
             try:
                 dashboard = UnifiedDashboard()
-                
+
                 # Set service clients for real health checks
                 dashboard.set_service_clients(
                     neo4j_client=neo4j_client,
                     qdrant_client=qdrant_client,
-                    redis_client=simple_redis
+                    redis_client=simple_redis,
                 )
-                
+
                 # Start background collection loop
                 await dashboard.start_collection_loop()
                 print("✅ Dashboard monitoring initialized with background collection")
@@ -852,7 +898,7 @@ async def startup_event() -> None:
                 dashboard = None
         else:
             print("⚠️ Dashboard monitoring not available")
-        
+
         # Start metrics queue processor for request metrics
         if REQUEST_METRICS_AVAILABLE:
             try:
@@ -862,7 +908,7 @@ async def startup_event() -> None:
             except Exception as e:
                 print(f"⚠️ Failed to start metrics queue processor: {e}")
                 logger.warning(f"Metrics queue processor startup failed: {e}")
-            
+
     except Exception as e:
         print(f"❌ Critical failure in storage initialization: {e}")
         raise
@@ -878,7 +924,7 @@ async def shutdown_event() -> None:
     if dashboard:
         await dashboard.stop_collection_loop()
         await dashboard.shutdown()
-    
+
     # Stop metrics queue processor
     if REQUEST_METRICS_AVAILABLE:
         try:
@@ -1057,10 +1103,10 @@ async def check_embeddings():
     """Detailed health check for embedding service."""
     try:
         from ..embedding import get_embedding_service
-        
+
         service = await get_embedding_service()
         health_status = service.get_health_status()
-        
+
         # Test embedding generation
         test_start = time.time()
         try:
@@ -1069,32 +1115,36 @@ async def check_embeddings():
             embedding_test = {
                 "success": True,
                 "dimensions": len(test_embedding),
-                "generation_time_ms": round(test_time * 1000, 2)
+                "generation_time_ms": round(test_time * 1000, 2),
             }
         except Exception as e:
             embedding_test = {
                 "success": False,
                 "error": str(e),
-                "generation_time_ms": round((time.time() - test_start) * 1000, 2)
+                "generation_time_ms": round((time.time() - test_start) * 1000, 2),
             }
-        
+
         # Check dimension compatibility
         model_dims = health_status["model_dimensions"]
         target_dims = health_status["target_dimensions"]
         dimensions_compatible = model_dims > 0 and target_dims > 0
-        
+
         # Determine overall status using enhanced health status
         service_status = health_status.get("status", "unhealthy")
         overall_healthy = (
-            health_status["model_loaded"] and 
-            embedding_test["success"] and
-            dimensions_compatible and
-            service_status in ["healthy", "warning"]  # Warning is still operational
+            health_status["model_loaded"]
+            and embedding_test["success"]
+            and dimensions_compatible
+            and service_status in ["healthy", "warning"]  # Warning is still operational
         )
-        
+
         # Use service status if it's more specific than binary healthy/unhealthy
-        final_status = service_status if service_status in ["critical", "warning"] else ("healthy" if overall_healthy else "unhealthy")
-        
+        final_status = (
+            service_status
+            if service_status in ["critical", "warning"]
+            else ("healthy" if overall_healthy else "unhealthy")
+        )
+
         return {
             "status": final_status,
             "timestamp": time.time(),
@@ -1103,39 +1153,40 @@ async def check_embeddings():
             "compatibility": {
                 "dimensions_compatible": dimensions_compatible,
                 "padding_required": model_dims < target_dims if model_dims > 0 else False,
-                "truncation_required": model_dims > target_dims if model_dims > 0 else False
+                "truncation_required": model_dims > target_dims if model_dims > 0 else False,
             },
             "alerts": health_status.get("alerts", []),
             "recommendations": [
                 "Monitor error rate and latency trends",
                 "Ensure sentence-transformers dependency is installed",
-                "Check model loading performance during startup"
-            ]
+                "Check model loading performance during startup",
+            ],
         }
-        
+
     except Exception as e:
         return {
             "status": "unhealthy",
             "timestamp": time.time(),
             "error": str(e),
-            "service": {"model_loaded": False}
+            "service": {"model_loaded": False},
         }
+
 
 @app.get("/health")
 async def health() -> Dict[str, Any]:
     """
     Lightweight health check endpoint for Docker health checks.
-    
+
     Returns basic server status without expensive backend queries.
     For detailed backend status, use /health/detailed endpoint.
     """
     startup_elapsed = time.time() - _server_startup_time
-    
+
     return {
         "status": "healthy",
         "uptime_seconds": int(startup_elapsed),
         "timestamp": time.time(),
-        "message": "Server is running - use /health/detailed for backend status"
+        "message": "Server is running - use /health/detailed for backend status",
     }
 
 
@@ -1157,12 +1208,12 @@ async def health_detailed() -> Dict[str, Any]:
             "neo4j": "unknown",
             "qdrant": "unknown",
             "redis": "unknown",
-            "embeddings": "unknown"  # Sprint 13: Add embedding status
+            "embeddings": "unknown",  # Sprint 13: Add embedding status
         },
         "startup_time": _server_startup_time,
         "uptime_seconds": int(startup_elapsed),
         "grace_period_active": in_grace_period,
-        "embedding_pipeline": _qdrant_init_status.copy()  # Sprint 13: Detailed embedding status
+        "embedding_pipeline": _qdrant_init_status.copy(),  # Sprint 13: Detailed embedding status
     }
 
     # During grace period, services might still be initializing
@@ -1281,14 +1332,17 @@ async def status() -> Dict[str, Any]:
 
     # Determine agent readiness based on core functionality
     agent_ready = (
-        health_status["services"]["redis"] == "healthy" and  # Core KV storage required
-        len([
-            "store_context",
-            "retrieve_context", 
-            "query_graph",
-            "update_scratchpad",
-            "get_agent_state",
-        ]) == 5  # All tools available
+        health_status["services"]["redis"] == "healthy"  # Core KV storage required
+        and len(
+            [
+                "store_context",
+                "retrieve_context",
+                "query_graph",
+                "update_scratchpad",
+                "get_agent_state",
+            ]
+        )
+        == 5  # All tools available
     )
 
     return {
@@ -1320,6 +1374,7 @@ async def status() -> Dict[str, Any]:
 
 # Sprint 13 Phase 4.3: Enhanced Tool Discovery Endpoint
 
+
 @app.get("/tools")
 async def list_tools() -> Dict[str, Any]:
     """
@@ -1349,12 +1404,15 @@ async def list_tools() -> Dict[str, Any]:
                     "type": {
                         "type": "string",
                         "enum": ["design", "decision", "trace", "sprint", "log"],
-                        "description": "Context type"
+                        "description": "Context type",
                     },
                     "metadata": {"type": "object", "description": "Optional metadata"},
-                    "author": {"type": "string", "description": "Author (auto-populated from API key)"},
-                    "author_type": {"type": "string", "enum": ["human", "agent"]}
-                }
+                    "author": {
+                        "type": "string",
+                        "description": "Author (auto-populated from API key)",
+                    },
+                    "author_type": {"type": "string", "enum": ["human", "agent"]},
+                },
             },
             "output_schema": {
                 "type": "object",
@@ -1363,16 +1421,18 @@ async def list_tools() -> Dict[str, Any]:
                     "id": {"type": "string"},
                     "vector_id": {"type": ["string", "null"]},
                     "graph_id": {"type": ["integer", "null"]},
-                    "embedding_status": {"type": "string", "enum": ["completed", "failed", "unavailable"]}
-                }
+                    "embedding_status": {
+                        "type": "string",
+                        "enum": ["completed", "failed", "unavailable"],
+                    },
+                },
             },
             "example": {
                 "content": {"title": "API Design", "description": "RESTful API design decisions"},
                 "type": "design",
-                "metadata": {"priority": "high"}
-            }
+                "metadata": {"priority": "high"},
+            },
         },
-
         "retrieve_context": {
             "name": "retrieve_context",
             "description": "Retrieve contexts using hybrid search (vector + graph)",
@@ -1388,8 +1448,12 @@ async def list_tools() -> Dict[str, Any]:
                     "query": {"type": "string", "description": "Search query"},
                     "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 100},
                     "type": {"type": "string", "description": "Filter by context type"},
-                    "search_mode": {"type": "string", "enum": ["vector", "graph", "hybrid"], "default": "hybrid"}
-                }
+                    "search_mode": {
+                        "type": "string",
+                        "enum": ["vector", "graph", "hybrid"],
+                        "default": "hybrid",
+                    },
+                },
             },
             "output_schema": {
                 "type": "object",
@@ -1397,15 +1461,11 @@ async def list_tools() -> Dict[str, Any]:
                     "success": {"type": "boolean"},
                     "results": {"type": "array"},
                     "count": {"type": "integer"},
-                    "search_mode_used": {"type": "string"}
-                }
+                    "search_mode_used": {"type": "string"},
+                },
             },
-            "example": {
-                "query": "API design decisions",
-                "limit": 5
-            }
+            "example": {"query": "API design decisions", "limit": 5},
         },
-
         "query_graph": {
             "name": "query_graph",
             "description": "Execute Cypher queries on Neo4j graph",
@@ -1420,14 +1480,11 @@ async def list_tools() -> Dict[str, Any]:
                 "properties": {
                     "query": {"type": "string", "description": "Cypher query"},
                     "parameters": {"type": "object", "description": "Query parameters"},
-                    "limit": {"type": "integer", "default": 100}
-                }
+                    "limit": {"type": "integer", "default": 100},
+                },
             },
-            "example": {
-                "query": "MATCH (n:Context) RETURN n LIMIT 10"
-            }
+            "example": {"query": "MATCH (n:Context) RETURN n LIMIT 10"},
         },
-
         "update_scratchpad": {
             "name": "update_scratchpad",
             "description": "Update agent scratchpad with TTL support",
@@ -1443,18 +1500,21 @@ async def list_tools() -> Dict[str, Any]:
                     "agent_id": {"type": "string"},
                     "key": {"type": "string"},
                     "content": {"type": "string"},
-                    "mode": {"type": "string", "enum": ["overwrite", "append"], "default": "overwrite"},
-                    "ttl": {"type": "integer", "default": 3600, "minimum": 60, "maximum": 86400}
-                }
+                    "mode": {
+                        "type": "string",
+                        "enum": ["overwrite", "append"],
+                        "default": "overwrite",
+                    },
+                    "ttl": {"type": "integer", "default": 3600, "minimum": 60, "maximum": 86400},
+                },
             },
             "example": {
                 "agent_id": "agent_1",
                 "key": "working_memory",
                 "content": "Current task: analyzing data",
-                "ttl": 3600
-            }
+                "ttl": 3600,
+            },
         },
-
         "get_agent_state": {
             "name": "get_agent_state",
             "description": "Retrieve agent state from scratchpad",
@@ -1469,14 +1529,11 @@ async def list_tools() -> Dict[str, Any]:
                 "properties": {
                     "agent_id": {"type": "string"},
                     "key": {"type": ["string", "null"], "description": "Specific key to retrieve"},
-                    "prefix": {"type": "string", "default": "state"}
-                }
+                    "prefix": {"type": "string", "default": "state"},
+                },
             },
-            "example": {
-                "agent_id": "agent_1"
-            }
+            "example": {"agent_id": "agent_1"},
         },
-
         "delete_context": {
             "name": "delete_context",
             "description": "Delete context (human-only, with audit)",
@@ -1492,16 +1549,15 @@ async def list_tools() -> Dict[str, Any]:
                 "properties": {
                     "context_id": {"type": "string"},
                     "reason": {"type": "string", "minLength": 5},
-                    "hard_delete": {"type": "boolean", "default": False}
-                }
+                    "hard_delete": {"type": "boolean", "default": False},
+                },
             },
             "example": {
                 "context_id": "abc-123",
                 "reason": "Outdated information, no longer relevant",
-                "hard_delete": False
-            }
+                "hard_delete": False,
+            },
         },
-
         "forget_context": {
             "name": "forget_context",
             "description": "Soft-delete context with retention period",
@@ -1517,29 +1573,36 @@ async def list_tools() -> Dict[str, Any]:
                 "properties": {
                     "context_id": {"type": "string"},
                     "reason": {"type": "string", "minLength": 5},
-                    "retention_days": {"type": "integer", "default": 30, "minimum": 1, "maximum": 90}
-                }
+                    "retention_days": {
+                        "type": "integer",
+                        "default": 30,
+                        "minimum": 1,
+                        "maximum": 90,
+                    },
+                },
             },
             "example": {
                 "context_id": "abc-123",
                 "reason": "Temporary context no longer needed",
-                "retention_days": 30
-            }
-        }
+                "retention_days": 30,
+            },
+        },
     }
 
     return {
         "tools": list(tools_info.values()),
         "total_tools": len(tools_info),
         "available_tools": len([t for t in tools_info.values() if t["available"]]),
-        "capabilities": list(set(cap for tool in tools_info.values() for cap in tool.get("capabilities", []))),
+        "capabilities": list(
+            set(cap for tool in tools_info.values() for cap in tool.get("capabilities", []))
+        ),
         "version": "v0.9.0",
         "sprint_13_enhancements": [
             "delete_context - Human-only deletion with audit",
             "forget_context - Soft delete with retention",
             "Enhanced tool schemas and examples",
-            "Availability status per tool"
-        ]
+            "Availability status per tool",
+        ],
     }
 
 
@@ -1589,51 +1652,55 @@ async def verify_readiness() -> Dict[str, Any]:
         # Determine readiness level and score
         readiness_score = 0
         readiness_level = "BASIC"
-        
+
         # Core functionality check (Redis + Tools)
         core_ready = status_info["agent_ready"]
         if core_ready:
             readiness_score += 40  # Base readiness
             readiness_level = "STANDARD"
-        
+
         # All tools available
         if tools_available == 5:
             readiness_score += 30  # All tools available
-            
+
         # Enhanced features (vector/graph search)
         enhanced_ready = (
-            status_info["dependencies"]["qdrant"] == "healthy" and 
-            status_info["dependencies"]["neo4j"] == "healthy"
+            status_info["dependencies"]["qdrant"] == "healthy"
+            and status_info["dependencies"]["neo4j"] == "healthy"
         )
         if enhanced_ready:
             readiness_score += 20  # Enhanced search available
             readiness_level = "FULL"
-            
+
         # Indexes accessible
         if index_info:
             readiness_score += 10  # Indexes accessible
-            
+
         # Generate clear, actionable recommendations
         recommendations = []
         if not core_ready:
-            recommendations.extend([
-                "CRITICAL: Redis connection required for core operations",
-                "Check Redis configuration and network connectivity"
-            ])
+            recommendations.extend(
+                [
+                    "CRITICAL: Redis connection required for core operations",
+                    "Check Redis configuration and network connectivity",
+                ]
+            )
         elif tools_available < 5:
             recommendations.append(f"WARNING: Only {tools_available}/5 tools available")
         else:
             recommendations.append("✓ Core functionality operational")
-            
+
         if not enhanced_ready:
             missing_services = []
             if status_info["dependencies"]["qdrant"] != "healthy":
                 missing_services.append("Qdrant (vector search)")
             if status_info["dependencies"]["neo4j"] != "healthy":
                 missing_services.append("Neo4j (graph queries)")
-            
+
             if missing_services:
-                recommendations.append(f"INFO: Enhanced features unavailable - {', '.join(missing_services)} not ready")
+                recommendations.append(
+                    f"INFO: Enhanced features unavailable - {', '.join(missing_services)} not ready"
+                )
                 recommendations.append("System can operate with basic functionality")
 
         return {
@@ -1649,17 +1716,17 @@ async def verify_readiness() -> Dict[str, Any]:
             "service_status": {  # NEW: Clear service breakdown
                 "core_services": {
                     "redis": status_info["dependencies"]["redis"],
-                    "status": "healthy" if core_ready else "degraded"
+                    "status": "healthy" if core_ready else "degraded",
                 },
                 "enhanced_services": {
                     "qdrant": status_info["dependencies"]["qdrant"],
                     "neo4j": status_info["dependencies"]["neo4j"],
-                    "status": "healthy" if enhanced_ready else "degraded"
-                }
+                    "status": "healthy" if enhanced_ready else "degraded",
+                },
             },
             "usage_quotas": {
                 "vector_operations": "unlimited" if enhanced_ready else "unavailable",
-                "graph_queries": "unlimited" if enhanced_ready else "unavailable", 
+                "graph_queries": "unlimited" if enhanced_ready else "unavailable",
                 "kv_operations": "unlimited",
                 "note": "Quotas depend on underlying database limits",
             },
@@ -1681,7 +1748,9 @@ async def verify_readiness() -> Dict[str, Any]:
 @app.post("/tools/store_context")
 async def store_context(
     request: StoreContextRequest,
-    api_key_info: Optional[APIKeyInfo] = Depends(verify_api_key) if API_KEY_AUTH_AVAILABLE else None
+    api_key_info: Optional[APIKeyInfo] = (
+        Depends(verify_api_key) if API_KEY_AUTH_AVAILABLE else None
+    ),
 ) -> Dict[str, Any]:
     """
     Store context with embeddings and graph relationships.
@@ -1719,12 +1788,17 @@ async def store_context(
         vector_id = None
         if qdrant_client:
             try:
-                logger.info("Generating embedding for vector storage using robust embedding service...")
+                logger.info(
+                    "Generating embedding for vector storage using robust embedding service..."
+                )
                 # Use new robust embedding service with comprehensive error handling
                 from ..embedding import generate_embedding
+
                 try:
                     embedding = await generate_embedding(request.content, adjust_dimensions=True)
-                    logger.info(f"Generated embedding with {len(embedding)} dimensions using robust service")
+                    logger.info(
+                        f"Generated embedding with {len(embedding)} dimensions using robust service"
+                    )
                 except Exception as embedding_error:
                     logger.error(f"Robust embedding service failed: {embedding_error}")
                     # Fall back to legacy method if robust service fails
@@ -1739,7 +1813,7 @@ async def store_context(
                         "content": request.content,
                         "type": request.type,
                         "metadata": request.metadata,
-                    }
+                    },
                 )
                 logger.info(f"Successfully stored vector with ID: {vector_id}")
             except Exception as vector_error:
@@ -1759,7 +1833,7 @@ async def store_context(
                     # Sprint 13 Phase 2.2: Add author attribution to graph
                     "author": author or "unknown",
                     "author_type": author_type or "unknown",
-                    "created_at": datetime.now().isoformat()
+                    "created_at": datetime.now().isoformat(),
                 }
 
                 # Handle request.content safely - convert nested objects to JSON strings
@@ -1774,14 +1848,18 @@ async def store_context(
                 # Also store metadata fields at the top level for easy retrieval
                 if request.metadata:
                     for key, value in request.metadata.items():
-                        if key not in ["author", "author_type", "stored_at"]:  # These are already added
+                        if key not in [
+                            "author",
+                            "author_type",
+                            "stored_at",
+                        ]:  # These are already added
                             # Ensure value is JSON-serializable
                             safe_value = make_json_serializable(value)
                             if isinstance(safe_value, (dict, list)):
                                 flattened_properties[key] = json.dumps(safe_value)
                             else:
                                 flattened_properties[key] = safe_value
-                
+
                 graph_id = neo4j_client.create_node(
                     labels=["Context"],
                     properties=flattened_properties,
@@ -1807,7 +1885,7 @@ async def store_context(
                             result = neo4j_client.create_relationship(
                                 from_id=graph_id,
                                 to_id=rel["target"],
-                                rel_type=rel.get("type", "RELATED_TO")
+                                rel_type=rel.get("type", "RELATED_TO"),
                             )
 
                             # Verify relationship was created
@@ -1867,10 +1945,10 @@ async def store_context(
 
     except Exception as e:
         import traceback
-        
+
         # Log detailed error information securely (internal only)
         logger.error(f"Error storing context: {traceback.format_exc()}")
-        
+
         # Return sanitized error response (external)
         return handle_generic_error(e, "store context")
 
@@ -1885,14 +1963,21 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
     """
     try:
         # PHASE 4: Check Redis cache before performing any backend queries
-        if simple_redis and getattr(request, 'use_cache', True) != False:
-            cache_key = f"retrieve:{hashlib.md5(json.dumps({
-                'query': request.query,
-                'limit': request.limit,
-                'search_mode': request.search_mode,
-                'context_type': getattr(request, 'context_type', None),
-                'sort_by': request.sort_by.value if hasattr(request, 'sort_by') and request.sort_by else 'relevance'
-            }, sort_keys=True).encode()).hexdigest()}"
+        if simple_redis and getattr(request, "use_cache", True) != False:
+            # Build cache key from request parameters
+            cache_params = {
+                "query": request.query,
+                "limit": request.limit,
+                "search_mode": request.search_mode,
+                "context_type": getattr(request, "context_type", None),
+                "sort_by": (
+                    request.sort_by.value
+                    if hasattr(request, "sort_by") and request.sort_by
+                    else "relevance"
+                ),
+            }
+            cache_hash = hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()
+            cache_key = f"retrieve:{cache_hash}"
 
             try:
                 cached_result = simple_redis.get(cache_key)
@@ -1909,18 +1994,20 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
         # PHASE 1: Use unified RetrievalCore if available
         if retrieval_core:
             try:
-                logger.info(f"Using unified RetrievalCore for search: query_length={len(request.query)}, mode={request.search_mode}")
-                
+                logger.info(
+                    f"Using unified RetrievalCore for search: query_length={len(request.query)}, mode={request.search_mode}"
+                )
+
                 # Execute search through unified retrieval core
                 search_response = await retrieval_core.search(
                     query=request.query,
                     limit=request.limit,
                     search_mode=request.search_mode,
-                    context_type=getattr(request, 'context_type', None),
-                    metadata_filters=getattr(request, 'metadata_filters', None),
-                    score_threshold=0.0  # Use default threshold
+                    context_type=getattr(request, "context_type", None),
+                    metadata_filters=getattr(request, "metadata_filters", None),
+                    score_threshold=0.0,  # Use default threshold
                 )
-                
+
                 # Convert SearchResultResponse to MCP format
                 results = []
                 for memory_result in search_response.results:
@@ -1936,20 +2023,22 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                         else:
                             content[key] = value
 
-                    results.append({
-                        "id": memory_result.id,
-                        "content": content,  # Content fields
-                        "metadata": metadata,  # Metadata fields separated
-                        "score": memory_result.score,
-                        "source": memory_result.source.value,  # Convert enum to string
-                        "text": memory_result.text,
-                        "type": memory_result.type.value if memory_result.type else "general",
-                        "title": memory_result.title,
-                        "tags": memory_result.tags,
-                        "namespace": memory_result.namespace,
-                        "user_id": memory_result.user_id
-                    })
-                
+                    results.append(
+                        {
+                            "id": memory_result.id,
+                            "content": content,  # Content fields
+                            "metadata": metadata,  # Metadata fields separated
+                            "score": memory_result.score,
+                            "source": memory_result.source.value,  # Convert enum to string
+                            "text": memory_result.text,
+                            "type": memory_result.type.value if memory_result.type else "general",
+                            "title": memory_result.title,
+                            "tags": memory_result.tags,
+                            "namespace": memory_result.namespace,
+                            "user_id": memory_result.user_id,
+                        }
+                    )
+
                 logger.info(
                     f"Unified search completed: results={len(results)}, "
                     f"backends_used={search_response.backends_used}, "
@@ -1962,35 +2051,42 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                     "search_mode_used": request.search_mode,
                     "backend_timings": search_response.backend_timings,  # PHASE 1: Now includes proper timing!
                     "backends_used": search_response.backends_used,
-                    "message": f"Found {len(results)} contexts using unified search architecture"
+                    "message": f"Found {len(results)} contexts using unified search architecture",
                 }
 
                 # PHASE 4: Cache successful results with 5 minute TTL
-                if simple_redis and getattr(request, 'use_cache', True) != False and results:
+                if simple_redis and getattr(request, "use_cache", True) != False and results:
                     try:
-                        cache_key = f"retrieve:{hashlib.md5(json.dumps({
-                            'query': request.query,
-                            'limit': request.limit,
-                            'search_mode': request.search_mode,
-                            'context_type': getattr(request, 'context_type', None),
-                            'sort_by': request.sort_by.value if hasattr(request, 'sort_by') and request.sort_by else 'relevance'
-                        }, sort_keys=True).encode()).hexdigest()}"
+                        # Build cache key from request parameters
+                        cache_params = {
+                            "query": request.query,
+                            "limit": request.limit,
+                            "search_mode": request.search_mode,
+                            "context_type": getattr(request, "context_type", None),
+                            "sort_by": (
+                                request.sort_by.value
+                                if hasattr(request, "sort_by") and request.sort_by
+                                else "relevance"
+                            ),
+                        }
+                        cache_hash = hashlib.md5(
+                            json.dumps(cache_params, sort_keys=True).encode()
+                        ).hexdigest()
+                        cache_key = f"retrieve:{cache_hash}"
 
-                        simple_redis.setex(
-                            cache_key,
-                            300,  # 5 minute TTL
-                            json.dumps(response)
-                        )
+                        simple_redis.setex(cache_key, 300, json.dumps(response))  # 5 minute TTL
                         logger.info(f"✅ Cached results for query: {request.query[:50]}...")
                     except Exception as cache_error:
                         logger.warning(f"Failed to cache results: {cache_error}")
 
                 return response
-                
+
             except Exception as unified_error:
-                logger.error(f"Unified RetrievalCore failed, falling back to legacy: {unified_error}")
+                logger.error(
+                    f"Unified RetrievalCore failed, falling back to legacy: {unified_error}"
+                )
                 # Fall through to legacy implementation
-        
+
         # LEGACY FALLBACK: Direct Qdrant/Neo4j calls (for backward compatibility)
         results = []
 
@@ -1999,8 +2095,11 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
             try:
                 # Generate semantic embedding for query using robust service
                 from ..embedding import generate_embedding
+
                 query_vector = await generate_embedding(request.query, adjust_dimensions=True)
-                logger.info(f"Generated query embedding with {len(query_vector)} dimensions using robust service")
+                logger.info(
+                    f"Generated query embedding with {len(query_vector)} dimensions using robust service"
+                )
 
                 vector_results = qdrant_client.search(
                     query_vector=query_vector,
@@ -2016,7 +2115,11 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                     results.append(
                         {
                             "id": result.id,
-                            "content": payload.get("content", payload) if isinstance(payload, dict) else payload,
+                            "content": (
+                                payload.get("content", payload)
+                                if isinstance(payload, dict)
+                                else payload
+                            ),
                             "metadata": metadata,  # Include metadata separately
                             "score": result.score,
                             "source": "vector",
@@ -2040,16 +2143,16 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                 raw_graph_results = neo4j_client.query(
                     cypher_query, parameters={"type": request.type, "limit": request.limit}
                 )
-                
+
                 # Normalize graph results to consistent format (eliminate nested 'n' structure)
                 for raw_result in raw_graph_results:
-                    if isinstance(raw_result, dict) and 'n' in raw_result:
+                    if isinstance(raw_result, dict) and "n" in raw_result:
                         # Extract the actual node data from {'n': {...}} wrapper
-                        node_data = raw_result['n']
+                        node_data = raw_result["n"]
                     else:
                         # Handle direct node data
                         node_data = raw_result
-                    
+
                     # Convert to consistent format matching vector results
                     # Extract metadata if present in the node
                     metadata = {}
@@ -2072,9 +2175,9 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                         "source": "graph",
                     }
                     results.append(normalized_result)
-                    
+
                 logger.info(f"Graph search found {len(raw_graph_results)} results")
-                
+
             except Exception as e:
                 logger.warning(f"Graph search failed: {e}")
                 # Continue with vector results only
@@ -2098,21 +2201,26 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
         }
 
         # PHASE 4: Cache successful legacy fallback results with 5 minute TTL
-        if simple_redis and getattr(request, 'use_cache', True) != False and results:
+        if simple_redis and getattr(request, "use_cache", True) != False and results:
             try:
-                cache_key = f"retrieve:{hashlib.md5(json.dumps({
-                    'query': request.query,
-                    'limit': request.limit,
-                    'search_mode': request.search_mode,
-                    'context_type': getattr(request, 'context_type', None),
-                    'sort_by': request.sort_by.value if hasattr(request, 'sort_by') and request.sort_by else 'relevance'
-                }, sort_keys=True).encode()).hexdigest()}"
+                # Build cache key from request parameters
+                cache_params = {
+                    "query": request.query,
+                    "limit": request.limit,
+                    "search_mode": request.search_mode,
+                    "context_type": getattr(request, "context_type", None),
+                    "sort_by": (
+                        request.sort_by.value
+                        if hasattr(request, "sort_by") and request.sort_by
+                        else "relevance"
+                    ),
+                }
+                cache_hash = hashlib.md5(
+                    json.dumps(cache_params, sort_keys=True).encode()
+                ).hexdigest()
+                cache_key = f"retrieve:{cache_hash}"
 
-                simple_redis.setex(
-                    cache_key,
-                    300,  # 5 minute TTL
-                    json.dumps(response)
-                )
+                simple_redis.setex(cache_key, 300, json.dumps(response))  # 5 minute TTL
                 logger.info(f"✅ Cached legacy results for query: {request.query[:50]}...")
             except Exception as cache_error:
                 logger.warning(f"Failed to cache legacy results: {cache_error}")
@@ -2121,10 +2229,10 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
 
     except Exception as e:
         import traceback
-        
+
         # Log detailed error information securely (internal only)
         logger.error(f"Error retrieving context: {traceback.format_exc()}")
-        
+
         # Return sanitized error response (external)
         error_response = handle_generic_error(e, "retrieve context")
         error_response["results"] = []
@@ -2147,10 +2255,7 @@ async def query_graph(request: QueryGraphRequest) -> Dict[str, Any]:
         if not neo4j_client:
             raise HTTPException(status_code=503, detail="Graph database not available")
 
-        results = neo4j_client.query(
-            request.query,
-            parameters=request.parameters
-        )
+        results = neo4j_client.query(request.query, parameters=request.parameters)
 
         return {
             "success": True,
@@ -2166,13 +2271,13 @@ async def query_graph(request: QueryGraphRequest) -> Dict[str, Any]:
 @app.post("/tools/update_scratchpad")
 async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[str, Any]:
     """Update agent scratchpad with transient storage.
-    
+
     Provides temporary storage for agent working memory with TTL support.
     Supports both overwrite and append modes with namespace isolation.
-    
+
     Args:
         request: UpdateScratchpadRequest containing agent_id, key, content, mode, and ttl
-        
+
     Returns:
         Dict containing success status, message, and operation details
     """
@@ -2180,36 +2285,36 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
     if request.ttl < 60:
         raise HTTPException(
             status_code=400,
-            detail="TTL too short: minimum 60 seconds required to prevent resource exhaustion"
+            detail="TTL too short: minimum 60 seconds required to prevent resource exhaustion",
         )
     if request.ttl > 86400:  # 24 hours
         raise HTTPException(
             status_code=400,
-            detail="TTL too long: maximum 86400 seconds (24 hours) allowed to prevent resource exhaustion"
+            detail="TTL too long: maximum 86400 seconds (24 hours) allowed to prevent resource exhaustion",
         )
-    
+
     # Additional content size validation for large payloads
     if len(request.content) > 100000:  # 100KB
         raise HTTPException(
             status_code=400,
-            detail="Content too large: maximum 100KB allowed to prevent resource exhaustion"
+            detail="Content too large: maximum 100KB allowed to prevent resource exhaustion",
         )
-    
+
     # Validate request against MCP contract
     request_data = request.model_dump()
     validation_errors = validate_mcp_request("update_scratchpad", request_data)
     if validation_errors:
         logger.warning(f"MCP contract validation failed: {validation_errors}")
         # Continue processing - validation is for compliance monitoring
-    
+
     try:
         # Use SimpleRedisClient for direct, reliable Redis access
         if not simple_redis:
             raise HTTPException(status_code=503, detail="Redis client not available")
-        
+
         # Create namespaced key
         redis_key = f"scratchpad:{request.agent_id}:{request.key}"
-        
+
         # Store value with TTL based on mode
         if request.mode == "append" and simple_redis.exists(redis_key):
             # Append mode: get existing content and append
@@ -2218,17 +2323,17 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
         else:
             # Overwrite mode or no existing content
             content_str = request.content
-        
+
         try:
             # Use simple_redis for direct Redis access
             logger.info(f"Using SimpleRedisClient to store key: {redis_key}")
             success = simple_redis.set(redis_key, content_str, ex=request.ttl)
             logger.info(f"SimpleRedisClient.set() returned: {success}")
-            
+
         except Exception as e:
             logger.error(f"SimpleRedisClient error: {type(e).__name__}: {e}")
             return handle_storage_error(e, "update scratchpad")
-        
+
         if success:
             return {
                 "success": True,
@@ -2236,15 +2341,15 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
                 "key": redis_key,
                 "ttl": request.ttl,
                 "content_size": len(content_str),
-                "message": f"Scratchpad updated successfully (mode: {request.mode})"
+                "message": f"Scratchpad updated successfully (mode: {request.mode})",
             }
         else:
             return {
                 "success": False,
                 "error_type": "storage_error",
-                "message": "Failed to update scratchpad"
+                "message": "Failed to update scratchpad",
             }
-            
+
     except HTTPException:
         raise
     except Exception as e:
@@ -2254,13 +2359,13 @@ async def update_scratchpad_endpoint(request: UpdateScratchpadRequest) -> Dict[s
 @app.post("/tools/get_agent_state")
 async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, Any]:
     """Retrieve agent state from storage.
-    
+
     Returns agent-specific state data with namespace isolation.
     Supports retrieving specific keys or all keys for an agent.
-    
+
     Args:
         request: GetAgentStateRequest containing agent_id, optional key, and prefix
-        
+
     Returns:
         Dict containing success status, retrieved data, and available keys
     """
@@ -2270,12 +2375,12 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
     if validation_errors:
         logger.warning(f"MCP contract validation failed: {validation_errors}")
         # Continue processing - validation is for compliance monitoring
-    
+
     try:
         # Use SimpleRedisClient for direct, reliable Redis access
         if not simple_redis:
             raise HTTPException(status_code=503, detail="Redis client not available")
-        
+
         # Build key pattern
         if request.key:
             redis_key = f"{request.prefix}:{request.agent_id}:{request.key}"
@@ -2288,25 +2393,25 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
                 error_response = handle_storage_error(e, "get agent state")
                 error_response["data"] = {}
                 return error_response
-            
+
             if value is None:
                 return {
                     "success": False,
                     "data": {},
-                    "message": f"No state found for key: {request.key}"
+                    "message": f"No state found for key: {request.key}",
                 }
-            
+
             # Parse JSON if possible
             try:
                 data = json.loads(value) if isinstance(value, bytes) else value
             except json.JSONDecodeError:
-                data = value.decode('utf-8') if isinstance(value, bytes) else value
-            
+                data = value.decode("utf-8") if isinstance(value, bytes) else value
+
             return {
                 "success": True,
                 "data": {request.key: data},
                 "agent_id": request.agent_id,
-                "message": "State retrieved successfully"
+                "message": "State retrieved successfully",
             }
         else:
             # Get all keys for agent
@@ -2320,36 +2425,36 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
                 error_response = handle_storage_error(e, "get agent state")
                 error_response["data"] = {}
                 return error_response
-            
+
             if not keys:
                 return {
                     "success": True,
                     "data": {},
                     "keys": [],
                     "agent_id": request.agent_id,
-                    "message": "No state found for agent"
+                    "message": "No state found for agent",
                 }
-            
+
             # Retrieve all values
             data = {}
             for key in keys:
-                key_str = key.decode('utf-8') if isinstance(key, bytes) else key
-                key_name = key_str.split(':', 2)[-1]  # Extract key name
+                key_str = key.decode("utf-8") if isinstance(key, bytes) else key
+                key_name = key_str.split(":", 2)[-1]  # Extract key name
                 value = simple_redis.get(key)
-                
+
                 try:
                     data[key_name] = json.loads(value) if isinstance(value, bytes) else value
                 except json.JSONDecodeError:
-                    data[key_name] = value.decode('utf-8') if isinstance(value, bytes) else value
-            
+                    data[key_name] = value.decode("utf-8") if isinstance(value, bytes) else value
+
             return {
                 "success": True,
                 "data": data,
                 "keys": list(data.keys()),
                 "agent_id": request.agent_id,
-                "message": f"Retrieved {len(data)} state entries"
+                "message": f"Retrieved {len(data)} state entries",
             }
-            
+
     except HTTPException:
         raise
     except Exception as e:
@@ -2391,30 +2496,30 @@ async def list_tools() -> Dict[str, Any]:
 
 class RateLimiter:
     """Rate limiter for API endpoints to prevent DoS attacks."""
-    
+
     def __init__(self, max_requests: int = 10, window_seconds: int = 60):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.requests: Dict[str, deque] = defaultdict(lambda: deque())
-    
+
     def is_allowed(self, client_id: str) -> bool:
         """Check if request is allowed for the given client."""
         now = datetime.utcnow()
         cutoff_time = now - timedelta(seconds=self.window_seconds)
-        
+
         # Clean old requests
         client_requests = self.requests[client_id]
         while client_requests and client_requests[0] < cutoff_time:
             client_requests.popleft()
-        
+
         # Check if under limit
         if len(client_requests) >= self.max_requests:
             return False
-        
+
         # Add current request
         client_requests.append(now)
         return True
-    
+
     def get_reset_time(self, client_id: str) -> Optional[datetime]:
         """Get when the rate limit will reset for the client."""
         client_requests = self.requests[client_id]
@@ -2437,7 +2542,7 @@ def get_client_id(request: Request) -> str:
         client_ip = forwarded_for.split(",")[0].strip()
     else:
         client_ip = request.client.host if request.client else "unknown"
-    
+
     # Include user agent in client ID for better granularity
     user_agent = request.headers.get("user-agent", "")[:50]  # Limit length
     return f"{client_ip}:{hash(user_agent) % 10000}"
@@ -2446,20 +2551,20 @@ def get_client_id(request: Request) -> str:
 def check_rate_limit(rate_limiter: RateLimiter, request: Request) -> None:
     """Check rate limit and raise HTTPException if exceeded."""
     client_id = get_client_id(request)
-    
+
     if not rate_limiter.is_allowed(client_id):
         reset_time = rate_limiter.get_reset_time(client_id)
         reset_seconds = int((reset_time - datetime.utcnow()).total_seconds()) if reset_time else 60
-        
+
         raise HTTPException(
             status_code=429,
             detail={
                 "error": "Rate limit exceeded",
                 "retry_after_seconds": reset_seconds,
                 "max_requests": rate_limiter.max_requests,
-                "window_seconds": rate_limiter.window_seconds
+                "window_seconds": rate_limiter.window_seconds,
             },
-            headers={"Retry-After": str(reset_seconds)}
+            headers={"Retry-After": str(reset_seconds)},
         )
 
 
@@ -2467,46 +2572,41 @@ def check_rate_limit(rate_limiter: RateLimiter, request: Request) -> None:
 @app.get("/api/dashboard")
 async def get_dashboard_json(request: Request, include_trends: bool = False):
     """Get complete dashboard data in JSON format with optional trending data.
-    
+
     Args:
         include_trends: Include 5-minute trending data for latency and error rates
     """
     # Apply rate limiting for dashboard endpoint
     check_rate_limit(dashboard_rate_limiter, request)
-    
+
     if not dashboard:
         raise HTTPException(status_code=503, detail="Dashboard not available")
-    
+
     try:
         metrics = await dashboard.collect_all_metrics()
-        response = {
-            "success": True,
-            "format": "json",
-            "timestamp": time.time(),
-            "data": metrics
-        }
-        
+        response = {"success": True, "format": "json", "timestamp": time.time(), "data": metrics}
+
         # Add trending data if requested and available
         if include_trends and REQUEST_METRICS_AVAILABLE:
             try:
                 request_collector = get_metrics_collector()
                 trending_data = await request_collector.get_trending_data(minutes=5)
                 endpoint_stats = await request_collector.get_endpoint_stats()
-                
+
                 response["analytics"] = {
                     "trending": {
                         "period_minutes": 5,
                         "data_points": trending_data,
-                        "description": "Per-minute metrics for the last 5 minutes"
+                        "description": "Per-minute metrics for the last 5 minutes",
                     },
                     "endpoints": {
                         "top_endpoints": dict(list(endpoint_stats.items())[:10]),
-                        "description": "Top 10 endpoints by request count"
-                    }
+                        "description": "Top 10 endpoints by request count",
+                    },
                 }
             except Exception as e:
                 logger.debug(f"Could not get analytics data: {e}")
-                
+
         return response
     except Exception as e:
         logger.error(f"Failed to get dashboard JSON: {e}")
@@ -2514,48 +2614,48 @@ async def get_dashboard_json(request: Request, include_trends: bool = False):
 
 
 @app.get("/api/dashboard/analytics")
-async def get_dashboard_analytics(request: Request, minutes: int = 5, include_insights: bool = True):
+async def get_dashboard_analytics(
+    request: Request, minutes: int = 5, include_insights: bool = True
+):
     """Get enhanced dashboard data with analytics and performance insights for AI agents.
-    
+
     Args:
         minutes: Minutes of trending data to include (default: 5)
         include_insights: Include automated performance insights
     """
     # Apply rate limiting for analytics endpoint
     check_rate_limit(analytics_rate_limiter, request)
-    
+
     # Input validation for minutes parameter
     if minutes <= 0 or minutes > 1440:  # Max 24 hours
         raise HTTPException(
-            status_code=400, 
-            detail="minutes parameter must be between 1 and 1440 (24 hours)"
+            status_code=400, detail="minutes parameter must be between 1 and 1440 (24 hours)"
         )
-    
+
     if not dashboard:
         raise HTTPException(status_code=503, detail="Dashboard not available")
-    
+
     try:
         # Use the enhanced analytics dashboard method
         analytics_json = await dashboard.generate_json_dashboard_with_analytics(
-            metrics=None, 
-            include_trends=True, 
-            minutes=minutes
+            metrics=None, include_trends=True, minutes=minutes
         )
-        
+
         # Parse the JSON to add metadata
         import json as json_module
+
         analytics_data = json_module.loads(analytics_json)
-        
+
         response = {
             "success": True,
             "format": "json_analytics",
             "timestamp": time.time(),
             "analytics_window_minutes": minutes,
-            "data": analytics_data
+            "data": analytics_data,
         }
-        
+
         return response
-        
+
     except Exception as e:
         logger.error(f"Failed to get dashboard analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -2564,13 +2664,13 @@ async def get_dashboard_analytics(request: Request, minutes: int = 5, include_in
 @app.get("/api/dashboard/ascii", response_class=PlainTextResponse)
 async def get_dashboard_ascii() -> str:
     """Get dashboard in ASCII format for human reading.
-    
+
     Returns:
         ASCII art string representation of dashboard metrics
     """
     if not dashboard:
         return "Dashboard Error: Dashboard not available"
-    
+
     try:
         metrics = await dashboard.collect_all_metrics()
         ascii_output = dashboard.generate_ascii_dashboard(metrics)
@@ -2585,14 +2685,14 @@ async def get_system_metrics():
     """Get system metrics only."""
     if not dashboard:
         raise HTTPException(status_code=503, detail="Dashboard not available")
-    
+
     try:
         metrics = await dashboard.collect_all_metrics()
         return {
             "success": True,
             "type": "system_metrics",
             "timestamp": time.time(),
-            "data": metrics.get("system", {})
+            "data": metrics.get("system", {}),
         }
     except Exception as e:
         logger.error(f"Failed to get system metrics: {e}")
@@ -2604,14 +2704,14 @@ async def get_service_metrics():
     """Get service health metrics only."""
     if not dashboard:
         raise HTTPException(status_code=503, detail="Dashboard not available")
-    
+
     try:
         metrics = await dashboard.collect_all_metrics()
         return {
             "success": True,
             "type": "service_metrics",
             "timestamp": time.time(),
-            "data": metrics.get("services", [])
+            "data": metrics.get("services", []),
         }
     except Exception as e:
         logger.error(f"Failed to get service metrics: {e}")
@@ -2623,14 +2723,14 @@ async def get_security_metrics():
     """Get security metrics only."""
     if not dashboard:
         raise HTTPException(status_code=503, detail="Dashboard not available")
-    
+
     try:
         metrics = await dashboard.collect_all_metrics()
         return {
             "success": True,
             "type": "security_metrics",
             "timestamp": time.time(),
-            "data": metrics.get("security", {})
+            "data": metrics.get("security", {}),
         }
     except Exception as e:
         logger.error(f"Failed to get security metrics: {e}")
@@ -2642,22 +2742,20 @@ async def refresh_dashboard():
     """Force refresh of dashboard metrics."""
     if not dashboard:
         raise HTTPException(status_code=503, detail="Dashboard not available")
-    
+
     try:
         metrics = await dashboard.collect_all_metrics(force_refresh=True)
-        
+
         # Broadcast update to all WebSocket connections
-        await _broadcast_to_websockets({
-            "type": "force_refresh",
-            "timestamp": time.time(),
-            "data": metrics
-        })
-        
+        await _broadcast_to_websockets(
+            {"type": "force_refresh", "timestamp": time.time(), "data": metrics}
+        )
+
         return {
             "success": True,
             "message": "Dashboard metrics refreshed",
             "timestamp": time.time(),
-            "websocket_notifications_sent": len(websocket_connections)
+            "websocket_notifications_sent": len(websocket_connections),
         }
     except Exception as e:
         logger.error(f"Failed to refresh dashboard: {e}")
@@ -2667,11 +2765,11 @@ async def refresh_dashboard():
 @app.get("/api/dashboard/health")
 async def dashboard_health():
     """Dashboard API health check.
-    
+
     Returns comprehensive health status of the dashboard system including:
     - Dashboard component health (requires active collection loop)
     - WebSocket connection health (under connection limits)
-    
+
     The collection_running check is required because the dashboard is only
     considered healthy when actively collecting metrics from services.
     Without an active collection loop, metrics become stale and the
@@ -2681,29 +2779,29 @@ async def dashboard_health():
         # Dashboard is healthy when: exists, has recent updates, and collection is active
         dashboard_exists = dashboard is not None
         has_recent_update = dashboard.last_update is not None if dashboard_exists else False
-        
+
         # Check collection status with timeout protection
         collection_running = False
         if dashboard_exists:
             try:
                 # Add timeout protection for collection status check
-                collection_running = getattr(dashboard, '_collection_running', False)
-                
+                collection_running = getattr(dashboard, "_collection_running", False)
+
                 # Additional health check: verify last update is recent (within 2 minutes)
                 if has_recent_update and dashboard.last_update:
                     time_since_update = (datetime.utcnow() - dashboard.last_update).total_seconds()
                     if time_since_update > 120:  # 2 minutes
                         logger.warning(f"Dashboard last update was {time_since_update:.1f}s ago")
                         has_recent_update = False
-                        
+
             except Exception as e:
                 logger.error(f"Error checking dashboard collection status: {e}")
                 collection_running = False
-        
+
         dashboard_healthy = dashboard_exists and has_recent_update and collection_running
         websocket_healthy = len(websocket_connections) <= 100  # Max connections
         overall_healthy = dashboard_healthy and websocket_healthy
-        
+
         return {
             "success": True,
             "healthy": overall_healthy,
@@ -2711,24 +2809,25 @@ async def dashboard_health():
             "components": {
                 "dashboard": {
                     "healthy": dashboard_healthy,
-                    "collection_running": getattr(dashboard, '_collection_running', False) if dashboard else False,
-                    "last_update": dashboard.last_update.isoformat() if dashboard and dashboard.last_update else None
+                    "collection_running": (
+                        getattr(dashboard, "_collection_running", False) if dashboard else False
+                    ),
+                    "last_update": (
+                        dashboard.last_update.isoformat()
+                        if dashboard and dashboard.last_update
+                        else None
+                    ),
                 },
                 "websockets": {
                     "healthy": websocket_healthy,
                     "active_connections": len(websocket_connections),
-                    "max_connections": 100
-                }
-            }
+                    "max_connections": 100,
+                },
+            },
         }
     except Exception as e:
         logger.error(f"Failed to get API health: {e}")
-        return {
-            "success": False,
-            "healthy": False,
-            "error": str(e),
-            "timestamp": time.time()
-        }
+        return {"success": False, "healthy": False, "error": str(e), "timestamp": time.time()}
 
 
 @app.websocket("/ws/dashboard")
@@ -2736,10 +2835,10 @@ async def websocket_dashboard(websocket: WebSocket):
     """WebSocket endpoint for real-time dashboard streaming."""
     await websocket.accept()
     websocket_connections.add(websocket)
-    
+
     try:
         logger.info(f"WebSocket connected ({len(websocket_connections)} total)")
-        
+
         if len(websocket_connections) > 100:  # Max connections
             await websocket.close(code=1008, reason="Max connections exceeded")
             return
@@ -2747,11 +2846,9 @@ async def websocket_dashboard(websocket: WebSocket):
         # Send initial dashboard data
         if dashboard:
             metrics = await dashboard.collect_all_metrics(force_refresh=True)
-            await websocket.send_json({
-                "type": "initial_data",
-                "timestamp": time.time(),
-                "data": metrics
-            })
+            await websocket.send_json(
+                {"type": "initial_data", "timestamp": time.time(), "data": metrics}
+            )
 
         # Start streaming updates
         await _stream_dashboard_updates(websocket)
@@ -2769,36 +2866,33 @@ async def _stream_dashboard_updates(websocket: WebSocket):
     """Stream dashboard updates to WebSocket client."""
     update_interval = 5  # seconds
     heartbeat_interval = 30  # seconds
-    
+
     last_heartbeat = time.time()
-    
+
     try:
         while True:
             if dashboard:
                 # Collect current metrics
                 metrics = await dashboard.collect_all_metrics()
-                
+
                 # Send update
                 update_message = {
                     "type": "dashboard_update",
                     "timestamp": time.time(),
-                    "data": metrics
+                    "data": metrics,
                 }
-                
+
                 await websocket.send_json(update_message)
-                
+
                 # Send heartbeat if needed
                 now = time.time()
                 if (now - last_heartbeat) >= heartbeat_interval:
-                    await websocket.send_json({
-                        "type": "heartbeat",
-                        "timestamp": now
-                    })
+                    await websocket.send_json({"type": "heartbeat", "timestamp": now})
                     last_heartbeat = now
-            
+
             # Wait for next update
             await asyncio.sleep(update_interval)
-            
+
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected during streaming")
     except Exception as e:
@@ -2828,10 +2922,13 @@ async def _broadcast_to_websockets(message: Dict[str, Any]) -> None:
 
 # Sprint 13 Phase 2.3 & 3.2: Delete and Forget Endpoints
 
+
 @app.post("/tools/delete_context")
 async def delete_context_endpoint(
     request: DeleteContextRequest,
-    api_key_info: Optional[APIKeyInfo] = Depends(verify_api_key) if API_KEY_AUTH_AVAILABLE else None
+    api_key_info: Optional[APIKeyInfo] = (
+        Depends(verify_api_key) if API_KEY_AUTH_AVAILABLE else None
+    ),
 ) -> Dict[str, Any]:
     """
     Delete a context (human-only operation).
@@ -2845,10 +2942,7 @@ async def delete_context_endpoint(
         Deletion result with audit information
     """
     if not API_KEY_AUTH_AVAILABLE or not api_key_info:
-        return {
-            "success": False,
-            "error": "Authentication required for delete operations"
-        }
+        return {"success": False, "error": "Authentication required for delete operations"}
 
     try:
         from ..tools.delete_operations import delete_context
@@ -2860,7 +2954,7 @@ async def delete_context_endpoint(
             api_key_info=api_key_info,
             neo4j_client=neo4j_client,
             qdrant_client=qdrant_client,
-            redis_client=simple_redis.redis_client if simple_redis else None
+            redis_client=simple_redis.redis_client if simple_redis else None,
         )
 
         return result
@@ -2871,14 +2965,16 @@ async def delete_context_endpoint(
             "success": False,
             "error": str(e),
             "operation": "delete",
-            "context_id": request.context_id
+            "context_id": request.context_id,
         }
 
 
 @app.post("/tools/forget_context")
 async def forget_context_endpoint(
     request: ForgetContextRequest,
-    api_key_info: Optional[APIKeyInfo] = Depends(verify_api_key) if API_KEY_AUTH_AVAILABLE else None
+    api_key_info: Optional[APIKeyInfo] = (
+        Depends(verify_api_key) if API_KEY_AUTH_AVAILABLE else None
+    ),
 ) -> Dict[str, Any]:
     """
     Soft-delete context with retention period.
@@ -2892,10 +2988,7 @@ async def forget_context_endpoint(
         Forget operation result
     """
     if not API_KEY_AUTH_AVAILABLE or not api_key_info:
-        return {
-            "success": False,
-            "error": "Authentication required for forget operations"
-        }
+        return {"success": False, "error": "Authentication required for forget operations"}
 
     try:
         from ..tools.delete_operations import forget_context
@@ -2906,7 +2999,7 @@ async def forget_context_endpoint(
             retention_days=request.retention_days,
             api_key_info=api_key_info,
             neo4j_client=neo4j_client,
-            redis_client=simple_redis.redis_client if simple_redis else None
+            redis_client=simple_redis.redis_client if simple_redis else None,
         )
 
         return result
@@ -2917,7 +3010,7 @@ async def forget_context_endpoint(
             "success": False,
             "error": str(e),
             "operation": "forget",
-            "context_id": request.context_id
+            "context_id": request.context_id,
         }
 
 
