@@ -395,55 +395,27 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
     except Exception as e:
         logger.error(f"Embedding generation failed: {e}")
 
-        # For MCP protocol compliance, fail rather than provide meaningless embeddings
+        # For production use: fail fast when embeddings unavailable
+        # Set STRICT_EMBEDDINGS=true to raise error immediately
+        # Set STRICT_EMBEDDINGS=false to allow graceful degradation (store context without vector)
         if os.getenv("STRICT_EMBEDDINGS", "false").lower() == "true":
+            logger.error(f"Embedding generation failed with STRICT_EMBEDDINGS=true: {e}")
             raise ValueError(f"Semantic embeddings unavailable and STRICT_EMBEDDINGS=true: {e}")
 
-        # Backward compatibility: Allow hash-based embeddings for migration
-        if os.getenv("ALLOW_HASH_EMBEDDINGS", "false").lower() == "true":
-            # METRICS/ALERTING: Log structured event for monitoring systems to track
-            logger.warning(
-                "MIGRATION MODE: Using hash-based embeddings (0% semantic value). "
-                "This is for backward compatibility only. Set ALLOW_HASH_EMBEDDINGS=false "
-                "after migrating to semantic embeddings.",
-                extra={
-                    "event_type": "embedding_fallback",
-                    "fallback_type": "hash_based",
-                    "semantic_value": "0%",
-                    "migration_mode": True,
-                    "alert_level": "warning",
-                }
-            )
-            # Additional structured log for metrics collection (e.g., by Prometheus, DataDog)
-            logger.info(
-                "METRIC: embedding_fallback_count{type='hash_based',semantic_value='0'} 1"
-            )
-
-            import hashlib
-            import struct
-
-            # Hash-based fallback for backward compatibility ONLY
-            text = json.dumps(content)
-            hash_obj = hashlib.sha256(text.encode()).digest()
-            embedding = []
-            fallback_dim = int(os.getenv("EMBEDDING_DIM", "768"))
-            for i in range(0, min(len(hash_obj), fallback_dim * 4), 4):
-                if i + 4 <= len(hash_obj):
-                    value = struct.unpack("f", hash_obj[i : i + 4])[0]
-                    embedding.append(value)
-            # Pad with zeros if needed
-            while len(embedding) < fallback_dim:
-                embedding.append(0.0)
-            return embedding[:fallback_dim]
-
-        # Log error prominently but allow system to continue
-        logger.critical(
-            "CRITICAL: Embedding generation failed. System will store context "
-            "without vector embeddings. Vector search will not work for this context. "
-            f"Error: {e}"
+        # Default behavior: Log error but allow graceful degradation
+        logger.warning(
+            f"Embedding generation failed. Context will be stored without vector embeddings. "
+            f"Vector search will not work for this context. Error: {e}",
+            extra={
+                "event_type": "embedding_generation_failure",
+                "error_type": type(e).__name__,
+                "strict_mode": False,
+            }
         )
+        # Emit metric for monitoring
+        logger.info("METRIC: embedding_generation_errors_total{strict_mode='false'} 1")
 
-        # Return None to signal embedding failure (handled by caller)
+        # Raise ValueError to signal failure (caller handles gracefully)
         raise ValueError(f"Embedding generation failed: {e}")
 
 

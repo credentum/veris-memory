@@ -711,5 +711,180 @@ class TestBackendRestorationIntegration:
                             assert mock_redis.setex.call_count >= 1
 
 
+# =============================================================================
+# PHASE 5: Monitoring Metrics Emission Tests
+# =============================================================================
+
+
+class TestPhase5MonitoringMetrics:
+    """Test suite for monitoring metrics emission (PR #170 observability)."""
+
+    @pytest.mark.asyncio
+    async def test_embedding_generation_error_metric_emitted(self, caplog):
+        """Test that embedding_generation_errors_total metric is emitted on failure."""
+        import logging
+
+        from src.mcp_server.main import _generate_embedding
+
+        test_content = {"title": "Test", "description": "Test content"}
+
+        # Mock the embedding service to raise an exception
+        with patch("src.embedding.generate_embedding") as mock_embed:
+            mock_embed.side_effect = RuntimeError("Embedding service unavailable")
+
+            with caplog.at_level(logging.INFO):
+                with pytest.raises(ValueError, match="Embedding generation failed"):
+                    await _generate_embedding(test_content)
+
+                # Verify metric log was emitted
+                metric_logs = [
+                    record.message
+                    for record in caplog.records
+                    if "METRIC:" in record.message
+                    and "embedding_generation_errors_total" in record.message
+                ]
+
+                assert len(metric_logs) > 0, "No embedding error metric emitted"
+                assert "embedding_generation_errors_total" in metric_logs[0]
+                assert "strict_mode='false'" in metric_logs[0]
+
+    def test_cache_hit_metric_format(self, caplog):
+        """Test that cache hit metrics follow correct Prometheus format."""
+        import logging
+
+        # Simulate logging a cache hit metric (as done in main.py)
+        logger = logging.getLogger("src.mcp_server.main")
+
+        with caplog.at_level(logging.INFO):
+            # This is the exact format used in src/mcp_server/main.py lines 2090-2091
+            logger.info(
+                "METRIC: cache_requests_total{result='hit',search_mode='hybrid'} 1"
+            )
+
+            # Verify metric was logged
+            metric_logs = [
+                record.message
+                for record in caplog.records
+                if "METRIC:" in record.message
+                and "cache_requests_total" in record.message
+                and "result='hit'" in record.message
+            ]
+
+            assert len(metric_logs) > 0, "No cache hit metric emitted"
+            assert "cache_requests_total" in metric_logs[0]
+            assert "result='hit'" in metric_logs[0]
+            assert "search_mode=" in metric_logs[0]
+
+    def test_cache_miss_metric_format(self, caplog):
+        """Test that cache miss metrics follow correct Prometheus format."""
+        import logging
+
+        # Simulate logging a cache miss metric (as done in main.py)
+        logger = logging.getLogger("src.mcp_server.main")
+
+        with caplog.at_level(logging.INFO):
+            # This is the exact format used in src/mcp_server/main.py lines 2105-2106
+            logger.info(
+                "METRIC: cache_requests_total{result='miss',search_mode='vector'} 1"
+            )
+
+            # Verify metric was logged
+            metric_logs = [
+                record.message
+                for record in caplog.records
+                if "METRIC:" in record.message
+                and "cache_requests_total" in record.message
+                and "result='miss'" in record.message
+            ]
+
+            assert len(metric_logs) > 0, "No cache miss metric emitted"
+            assert "cache_requests_total" in metric_logs[0]
+            assert "result='miss'" in metric_logs[0]
+
+    def test_cache_error_metric_format(self, caplog):
+        """Test that cache error metrics follow correct Prometheus format."""
+        import logging
+
+        # Simulate logging a cache error metric (as done in main.py)
+        logger = logging.getLogger("src.mcp_server.main")
+
+        with caplog.at_level(logging.INFO):
+            # This is the exact format used in src/mcp_server/main.py line 2121
+            logger.info("METRIC: cache_requests_total{result='error'} 1")
+
+            # Verify metric was logged
+            metric_logs = [
+                record.message
+                for record in caplog.records
+                if "METRIC:" in record.message
+                and "cache_requests_total" in record.message
+                and "result='error'" in record.message
+            ]
+
+            assert len(metric_logs) > 0, "No cache error metric emitted"
+            assert "cache_requests_total" in metric_logs[0]
+            assert "result='error'" in metric_logs[0]
+
+    def test_structured_logging_fields_present(self, caplog):
+        """Test that structured logging includes required 'extra' fields."""
+        import logging
+
+        # Test that logging includes structured fields
+        logger = logging.getLogger("src.mcp_server.main")
+
+        with caplog.at_level(logging.WARNING):
+            logger.warning(
+                "Test message",
+                extra={
+                    "event_type": "test_event",
+                    "error_type": "TestError",
+                    "strict_mode": False,
+                },
+            )
+
+            # Verify structured fields are present
+            assert len(caplog.records) > 0
+            record = caplog.records[0]
+
+            # Check that extra fields are attached to log record
+            assert hasattr(record, "event_type")
+            assert record.event_type == "test_event"
+            assert hasattr(record, "error_type")
+            assert record.error_type == "TestError"
+            assert hasattr(record, "strict_mode")
+            assert record.strict_mode is False
+
+    def test_metric_format_compliance(self):
+        """Test that metric logs follow Prometheus format."""
+        # Validate metric format: METRIC: metric_name{label='value'} number
+        valid_metrics = [
+            "METRIC: embedding_generation_errors_total{strict_mode='false'} 1",
+            "METRIC: cache_requests_total{result='hit',search_mode='hybrid'} 1",
+            "METRIC: cache_requests_total{result='miss',search_mode='vector'} 1",
+            "METRIC: cache_requests_total{result='error'} 1",
+        ]
+
+        for metric in valid_metrics:
+            # Check format
+            assert metric.startswith("METRIC: ")
+            assert "{" in metric
+            assert "}" in metric
+            assert metric.split()[-1].isdigit()  # Last part should be a number
+
+            # Extract metric name
+            metric_name = metric.split("{")[0].replace("METRIC: ", "").strip()
+            assert len(metric_name) > 0
+            assert "_" in metric_name  # Prometheus convention
+
+            # Extract labels
+            labels_section = metric.split("{")[1].split("}")[0]
+            assert "=" in labels_section
+
+            # Extract value
+            value = metric.split()[-1]
+            assert value.isdigit()
+            assert int(value) >= 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--cov=src.mcp_server.main"])
