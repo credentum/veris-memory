@@ -6,6 +6,7 @@ Provides the common interface and utilities that all check classes implement.
 """
 
 import asyncio
+import logging
 import os
 import time
 import aiohttp
@@ -14,6 +15,8 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 from .models import CheckResult, SentinelConfig
+
+logger = logging.getLogger(__name__)
 
 
 class BaseCheck(ABC):
@@ -217,6 +220,11 @@ class APITestMixin:
             api_key = os.getenv("API_KEY_MCP")
             if api_key:
                 headers["X-API-Key"] = api_key
+            else:
+                logger.warning(
+                    "API_KEY_MCP not found in environment. API calls may fail with authentication errors. "
+                    "Please set API_KEY_MCP environment variable."
+                )
 
             request_kwargs = {
                 "timeout": aiohttp.ClientTimeout(total=timeout),
