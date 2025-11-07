@@ -148,7 +148,7 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
         success, message, latency, response_data = await self.test_api_call(
             session,
             "POST",
-            f"{self.config.target_base_url}/api/store_context",
+            f"{self.config.target_base_url}/tools/store_context",
             data=store_payload,
             expected_status=200,
             timeout=10.0
@@ -173,7 +173,7 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
         success, message, latency, response_data = await self.test_api_call(
             session,
             "POST",
-            f"{self.config.target_base_url}/api/retrieve_context",
+            f"{self.config.target_base_url}/tools/retrieve_context",
             data=query_payload,
             expected_status=200,
             timeout=15.0

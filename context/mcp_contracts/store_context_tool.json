@@ -101,6 +101,20 @@
         "type": "string",
         "description": "Status message or error description"
       },
+      "embedding_status": {
+        "type": "string",
+        "enum": ["completed", "failed", "unavailable"],
+        "description": "Status of embedding generation (Phase 1 fix)"
+      },
+      "embedding_message": {
+        "type": "string",
+        "description": "Additional details about embedding status when failed/unavailable"
+      },
+      "relationships_created": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Number of relationships successfully created with validated targets (Phase 3 fix)"
+      },
       "storage_info": {
         "type": "object",
         "properties": {
@@ -119,7 +133,7 @@
         }
       }
     },
-    "required": ["success", "context_id", "message"]
+    "required": ["success", "context_id", "message", "embedding_status", "relationships_created"]
   },
   "security": {
     "rate_limits": {

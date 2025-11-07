@@ -182,10 +182,10 @@ class TelegramAlerter:
         """Format an alert message for Telegram."""
         severity_emoji = self.SEVERITY_EMOJIS.get(severity, "")
         status_emoji = self.STATUS_EMOJIS.get(status, "❓")
-        
+
         # Build header
         header = f"<b>{severity_emoji} {severity.value.upper()}: Veris Memory Alert</b>"
-        
+
         # Build body
         lines = [
             header,
@@ -194,29 +194,31 @@ class TelegramAlerter:
             f"<b>Status:</b> {status.upper()} {status_emoji}",
             f"<b>Time:</b> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         ]
-        
+
         if latency_ms:
             lines.append(f"<b>Latency:</b> {latency_ms:.1f}ms")
-        
+
         lines.append("")
         lines.append(f"<b>Message:</b>\n{self._escape_html(message)}")
-        
+
         # Add details if provided
         if details:
             lines.append("")
             lines.append("<b>Details:</b>")
             for key, value in details.items():
                 if isinstance(value, (list, dict)):
+                    # Recursively escape HTML BEFORE JSON dumping to prevent Telegram parse errors
+                    value = self._escape_nested_html(value)
                     value = json.dumps(value, indent=2)
                 lines.append(f"• {self._escape_html(str(key))}: {self._escape_html(str(value))}")
-        
+
         # Add action required for critical/high severity
         if severity in [AlertSeverity.CRITICAL, AlertSeverity.HIGH]:
             lines.append("")
             lines.append("<b>Action Required:</b> Immediate investigation")
-        
+
         lines.append("━━━━━━━━━━━━━━━━━━━━━")
-        
+
         return "\n".join(lines)
     
     def _format_summary(
@@ -346,7 +348,7 @@ class TelegramAlerter:
         """Escape HTML special characters."""
         if not text:
             return ""
-        
+
         return (
             str(text)
             .replace("&", "&amp;")
@@ -355,7 +357,83 @@ class TelegramAlerter:
             .replace('"', "&quot;")
             .replace("'", "&#x27;")
         )
-    
+
+    def _escape_nested_html(self, obj: Any, depth: int = 0, max_depth: int = 10, visited: Optional[set] = None) -> Any:
+        """
+        Recursively escape HTML in nested data structures.
+
+        This prevents Telegram HTML parsing errors when alert details
+        contain angle brackets (< >) that would be interpreted as HTML tags.
+
+        Args:
+            obj: Any object (dict, list, str, or other)
+            depth: Current recursion depth (for circular reference protection)
+            max_depth: Maximum recursion depth allowed (default: 10)
+            visited: Set of object IDs already visited (circular reference detection)
+
+        Returns:
+            The same structure with all strings HTML-escaped
+
+        Raises:
+            ValueError: If max recursion depth is exceeded or circular reference detected
+        """
+        # Prevent infinite recursion
+        if depth > max_depth:
+            logger.warning(f"Max recursion depth {max_depth} exceeded in _escape_nested_html")
+            return "[MAX_DEPTH_EXCEEDED]"
+
+        # Initialize visited set for circular reference detection
+        if visited is None:
+            visited = set()
+
+        # Check for circular references (only for mutable objects)
+        if isinstance(obj, (dict, list)):
+            obj_id = id(obj)
+            if obj_id in visited:
+                logger.warning("Circular reference detected in _escape_nested_html")
+                return "[CIRCULAR_REF]"
+            visited.add(obj_id)
+
+        try:
+            if isinstance(obj, dict):
+                # Handle dict comprehension with error handling for non-string keys
+                result = {}
+                for k, v in obj.items():
+                    try:
+                        safe_key = self._escape_html(str(k))
+                        safe_value = self._escape_nested_html(v, depth + 1, max_depth, visited)
+                        result[safe_key] = safe_value
+                    except Exception as e:
+                        logger.error(f"Error escaping dict key/value: {e}")
+                        result[str(k)] = "[ERROR]"
+                return result
+
+            elif isinstance(obj, list):
+                return [self._escape_nested_html(item, depth + 1, max_depth, visited) for item in obj]
+
+            elif isinstance(obj, str):
+                return self._escape_html(obj)
+
+            elif obj is None:
+                return None
+
+            else:
+                # For numbers, booleans, etc., convert to string and escape
+                try:
+                    return self._escape_html(str(obj))
+                except Exception as e:
+                    logger.error(f"Error converting object to string: {e}")
+                    return "[ERROR]"
+
+        except Exception as e:
+            logger.error(f"Unexpected error in _escape_nested_html: {e}")
+            return "[ERROR]"
+
+        finally:
+            # Remove from visited set after processing (for proper cleanup)
+            if isinstance(obj, (dict, list)):
+                visited.discard(id(obj))
+
     async def test_connection(self) -> bool:
         """
         Test Telegram bot connection.
