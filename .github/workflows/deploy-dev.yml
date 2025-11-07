@@ -518,14 +518,14 @@ jobs:
             sleep 10
 
             # Use the NEO4J_PASSWORD environment variable that was exported earlier
-            if [ -z "$NEO4J_PASSWORD" ]; then
+            if [ -z "\${NEO4J_PASSWORD}" ]; then
               echo "⚠️  NEO4J_PASSWORD not set in environment, skipping index creation"
             else
               # Create context_id_index for 2-5x faster relationship validation
               echo "Creating context_id_index for relationship performance..."
               docker exec veris-memory-dev-neo4j-1 cypher-shell \
                 -u neo4j \
-                -p "$NEO4J_PASSWORD" \
+                -p "\${NEO4J_PASSWORD}" \
                 -d neo4j \
                 "CREATE INDEX context_id_index IF NOT EXISTS FOR (n:Context) ON (n.id);" 2>&1 | grep -v "password" || {
                 echo "⚠️  Index creation failed, may already exist or Neo4j not ready"
@@ -536,7 +536,7 @@ jobs:
               echo "Verifying index status..."
               docker exec veris-memory-dev-neo4j-1 cypher-shell \
                 -u neo4j \
-                -p "$NEO4J_PASSWORD" \
+                -p "\${NEO4J_PASSWORD}" \
                 -d neo4j \
                 "SHOW INDEXES;" 2>&1 | grep -E "context_id_index|name.*type.*state" | head -5 || true
 
