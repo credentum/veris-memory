@@ -1,12 +1,23 @@
 #!/usr/bin/env python3
 """
-Test that metadata fields are properly returned in retrieve_context responses.
-This test validates the fix for S2 golden fact recall checks.
+Test metadata field separation in retrieve_context responses.
+
+This module contains tests that validate the proper separation of metadata fields
+from content fields in the retrieve_context endpoint responses. This fix is critical
+for the S2 golden fact recall checks which rely on the metadata.golden_fact field
+to identify golden facts for testing recall capabilities.
+
+The tests ensure that:
+- Metadata fields are returned in a separate 'metadata' key
+- Content fields remain in the 'content' key
+- S2 checks can successfully identify golden facts
+- Both vector and graph search modes properly separate metadata
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 # Mock the required modules and classes
 @pytest.fixture
@@ -42,10 +53,17 @@ def mock_neo4j_results_with_metadata():
     ]
 
 def test_retrieve_context_includes_metadata_field():
-    """Test that retrieve_context response includes separate metadata field."""
+    """
+    Test that retrieve_context response includes separate metadata field.
 
-    # This test validates that the endpoint properly separates metadata
-    # fields from content fields in the response
+    This test validates that the endpoint properly separates metadata
+    fields from content fields in the response. It ensures that:
+    - Results include both 'content' and 'metadata' keys
+    - Golden fact flag is placed in metadata, not content
+    - Other metadata fields (category, priority) are properly separated
+
+    This fix is essential for S2 golden fact recall checks to work correctly.
+    """
 
     from src.mcp_server.main import app
     from fastapi.testclient import TestClient
@@ -107,9 +125,24 @@ def test_retrieve_context_includes_metadata_field():
                 assert "priority" not in content, "priority should not be in content"
 
 def test_s2_golden_fact_recall_can_find_metadata():
-    """Test that S2 checks can find golden facts using metadata field."""
+    """
+    Test that S2 checks can find golden facts using metadata field.
 
-    # This simulates what the S2 check does: looking for golden_fact in metadata
+    This test simulates the exact behavior of the S2 golden fact recall check
+    by filtering results based on metadata.golden_fact == True. It validates:
+    - Golden facts can be identified using the metadata field
+    - Non-golden facts are properly excluded
+    - The filtering logic matches S2 implementation requirements
+
+    Args:
+        None
+
+    Returns:
+        None
+
+    Raises:
+        AssertionError: If golden facts cannot be properly identified
+    """
     mock_results = [
         {
             "id": "fact-1",
@@ -145,7 +178,19 @@ def test_s2_golden_fact_recall_can_find_metadata():
     assert golden_facts[1]["id"] == "fact-3"
 
 def test_vector_search_includes_metadata():
-    """Test that vector search results also include metadata field."""
+    """
+    Test that vector search results also include metadata field.
+
+    This test ensures that vector search (Qdrant) results properly separate
+    metadata fields from content, maintaining consistency across all search modes.
+    It validates:
+    - Vector search results include 'metadata' key
+    - Metadata fields from Qdrant payload are properly extracted
+    - Consistency with graph search result format
+
+    Vector search is part of hybrid search mode, so this fix ensures
+    metadata separation works regardless of which backend provides results.
+    """
 
     from src.mcp_server.main import app
     from fastapi.testclient import TestClient

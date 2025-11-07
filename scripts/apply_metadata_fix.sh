@@ -22,16 +22,28 @@ echo "Restarting context-store service with updated code..."
 docker-compose restart context-store
 
 echo
-echo "Waiting for service to be ready..."
-sleep 10
 
-# Test the service is up
-echo "Testing service health..."
-if curl -s http://localhost:8000/health | grep -q "healthy"; then
-    echo -e "${GREEN}✓ Service is healthy${NC}"
-else
-    echo "⚠️ Service may not be ready yet"
-fi
+# Implement proper health check with retries
+MAX_RETRIES=30
+RETRY_DELAY=2
+RETRY_COUNT=0
+
+echo "Checking service health (max ${MAX_RETRIES} attempts)..."
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if curl -s http://localhost:8000/health 2>/dev/null | grep -q "healthy"; then
+        echo -e "${GREEN}✓ Service is healthy after $((RETRY_COUNT * RETRY_DELAY)) seconds${NC}"
+        break
+    fi
+
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+        echo "  Attempt $RETRY_COUNT/$MAX_RETRIES - Service not ready, waiting ${RETRY_DELAY}s..."
+        sleep $RETRY_DELAY
+    else
+        echo -e "${YELLOW}⚠️ Service health check timed out after $((MAX_RETRIES * RETRY_DELAY)) seconds${NC}"
+        echo "  Service may still be starting. Check logs with: docker-compose logs context-store"
+    fi
+done
 
 echo
 echo "=================================================="
