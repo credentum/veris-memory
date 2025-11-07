@@ -10,6 +10,7 @@ vector embeddings and graph relationships.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -181,23 +182,84 @@ except ImportError as e:
     HEALTH_ENDPOINTS_AVAILABLE = False
     create_health_routes = None
 
-# PHASE 1: Import unified backend architecture
+# PHASE 1: Import unified backend architecture with granular error handling
+unified_backend_components = {}
+unified_backend_errors = []
+
+# Import QueryDispatcher
 try:
     from ..core.query_dispatcher import QueryDispatcher
-    from ..core.retrieval_core import initialize_retrieval_core
-    from ..backends.vector_backend import VectorBackend
-    from ..backends.graph_backend import GraphBackend
-    from ..backends.kv_backend import KVBackend
-    from ..core.embedding_config import create_embedding_generator
-    UNIFIED_BACKEND_AVAILABLE = True
-    logger.info("Unified backend architecture available")
+    unified_backend_components['QueryDispatcher'] = QueryDispatcher
+    logger.info("✓ QueryDispatcher loaded")
 except ImportError as e:
-    logger.warning(f"Unified backend architecture not available: {e}")
-    UNIFIED_BACKEND_AVAILABLE = False
+    logger.warning(f"✗ QueryDispatcher not available: {e}")
+    unified_backend_errors.append(f"QueryDispatcher: {e}")
     QueryDispatcher = None
+
+# Import RetrievalCore
+try:
+    from ..core.retrieval_core import initialize_retrieval_core
+    unified_backend_components['initialize_retrieval_core'] = initialize_retrieval_core
+    logger.info("✓ RetrievalCore loaded")
+except ImportError as e:
+    logger.warning(f"✗ RetrievalCore not available: {e}")
+    unified_backend_errors.append(f"RetrievalCore: {e}")
+    initialize_retrieval_core = None
+
+# Import VectorBackend
+try:
+    from ..backends.vector_backend import VectorBackend
+    unified_backend_components['VectorBackend'] = VectorBackend
+    logger.info("✓ VectorBackend loaded")
+except ImportError as e:
+    logger.warning(f"✗ VectorBackend not available: {e}")
+    unified_backend_errors.append(f"VectorBackend: {e}")
     VectorBackend = None
+
+# Import GraphBackend
+try:
+    from ..backends.graph_backend import GraphBackend
+    unified_backend_components['GraphBackend'] = GraphBackend
+    logger.info("✓ GraphBackend loaded")
+except ImportError as e:
+    logger.warning(f"✗ GraphBackend not available: {e}")
+    unified_backend_errors.append(f"GraphBackend: {e}")
     GraphBackend = None
+
+# Import KVBackend
+try:
+    from ..backends.kv_backend import KVBackend
+    unified_backend_components['KVBackend'] = KVBackend
+    logger.info("✓ KVBackend loaded")
+except ImportError as e:
+    logger.warning(f"✗ KVBackend not available: {e}")
+    unified_backend_errors.append(f"KVBackend: {e}")
     KVBackend = None
+
+# Import EmbeddingConfig
+try:
+    from ..core.embedding_config import create_embedding_generator
+    unified_backend_components['create_embedding_generator'] = create_embedding_generator
+    logger.info("✓ EmbeddingConfig loaded")
+except ImportError as e:
+    logger.warning(f"✗ EmbeddingConfig not available: {e}")
+    unified_backend_errors.append(f"EmbeddingConfig: {e}")
+    create_embedding_generator = None
+
+# Determine if unified backend is available (requires core components)
+UNIFIED_BACKEND_AVAILABLE = (
+    'QueryDispatcher' in unified_backend_components and
+    'initialize_retrieval_core' in unified_backend_components
+)
+
+if UNIFIED_BACKEND_AVAILABLE:
+    logger.info(f"✅ Unified backend architecture available with {len(unified_backend_components)}/6 components")
+else:
+    logger.error(
+        f"❌ Unified backend architecture unavailable. Missing components: {len(unified_backend_errors)}\n"
+        f"Errors: {'; '.join(unified_backend_errors[:3])}"  # Show first 3 errors
+    )
+    logger.warning("System will fall back to legacy retrieval code path")
 
 # Import monitoring dashboard components
 try:
@@ -250,108 +312,54 @@ def _get_embedding_model() -> Optional[SentenceTransformer]:
 
 async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
     """
-    Generate embedding vector from content using sentence-transformers for semantic embeddings.
+    Generate embedding vector using the robust embedding service.
 
-    This function uses proper sentence-transformers models to create semantically meaningful
-    embeddings instead of hash-based pseudo-embeddings. Falls back to hash-based approach
-    only if sentence-transformers is unavailable.
+    This function is a wrapper around the embedding module's generate_embedding
+    function, which provides better fallback handling than hash-based embeddings.
+
+    The embedding service provides:
+    - Primary: sentence-transformers with semantic meaning
+    - Fallback: DeterministicEmbeddingProvider (30% semantic value)
+    - Never: hash-based embeddings (0% semantic value)
 
     Args:
         content: The content to generate embedding for
 
     Returns:
-        List of floats representing the embedding vector with semantic meaning
+        List of floats representing the embedding vector
+
+    Raises:
+        ValueError: If STRICT_EMBEDDINGS=true and embedding generation fails
     """
-    # Convert content to text for embedding
-    if isinstance(content, dict):
-        # Extract meaningful text from structured content
-        text_parts = []
+    try:
+        # Use the robust embedding service which has better fallback handling
+        from ..embedding import generate_embedding
+        embedding = await generate_embedding(content, adjust_dimensions=True)
 
-        # Handle common content structures
-        if "title" in content:
-            text_parts.append(content["title"])
-        if "description" in content:
-            text_parts.append(content["description"])
-        if "body" in content:
-            text_parts.append(content["body"])
-        if "content" in content:
-            text_parts.append(str(content["content"]))
+        if not embedding or len(embedding) == 0:
+            raise ValueError("Embedding service returned empty embedding")
 
-        # Fallback to JSON string if no structured text found
-        if not text_parts:
-            text_parts = [json.dumps(content, sort_keys=True)]
+        logger.info(f"Generated embedding with {len(embedding)} dimensions via robust service")
+        return embedding
 
-        text_to_embed = " ".join(text_parts)
-    else:
-        text_to_embed = str(content)
+    except Exception as e:
+        logger.error(f"Embedding generation failed: {e}")
 
-    # Try to use sentence-transformers for semantic embeddings
-    model = _get_embedding_model()
-    if model is not None:
-        try:
-            # Generate semantic embedding using sentence-transformers
-            embedding = model.encode(text_to_embed, convert_to_tensor=False)
-            # Convert numpy array to list if needed
-            if hasattr(embedding, "tolist"):
-                embedding = embedding.tolist()
-            else:
-                embedding = list(embedding)
-
-            embedding_dim = len(embedding)
-            logger.debug(
-                f"Generated semantic embedding with {embedding_dim} dimensions "
-                f"using sentence-transformers"
-            )
-            
-            # Pad or truncate to match Qdrant collection dimensions
-            target_dim = Config.EMBEDDING_DIMENSIONS
-            if embedding_dim < target_dim:
-                # Pad with zeros
-                padding = [0.0] * (target_dim - embedding_dim)
-                embedding = embedding + padding
-                logger.debug(f"Padded embedding from {embedding_dim} to {target_dim} dimensions")
-            elif embedding_dim > target_dim:
-                # Truncate
-                embedding = embedding[:target_dim]
-                logger.debug(f"Truncated embedding from {embedding_dim} to {target_dim} dimensions")
-            
-            return embedding
-
-        except Exception as e:
-            logger.warning(
-                f"Failed to generate semantic embedding, falling back to hash-based: {e}"
+        # For MCP protocol compliance, fail rather than provide meaningless embeddings
+        if os.getenv("STRICT_EMBEDDINGS", "false").lower() == "true":
+            raise ValueError(
+                f"Semantic embeddings unavailable and STRICT_EMBEDDINGS=true: {e}"
             )
 
-    # Critical error: Hash-based embeddings lack semantic meaning
-    # This breaks MCP protocol compatibility for semantic search
-    logger.error(
-        "EMBEDDING_FALLBACK_ERROR: Hash-based embeddings are semantically meaningless. "
-        "Install sentence-transformers for MCP protocol compliance."
-    )
-
-    # For MCP protocol compliance, we should fail rather than provide meaningless embeddings
-    if os.getenv("STRICT_EMBEDDINGS", "false").lower() == "true":
-        raise ValueError(
-            "Semantic embeddings unavailable and STRICT_EMBEDDINGS=true. "
-            "Install sentence-transformers package for proper MCP protocol support."
+        # Log error prominently but allow system to continue
+        logger.critical(
+            "CRITICAL: Embedding generation failed. System will store context "
+            "without vector embeddings. Vector search will not work for this context. "
+            f"Error: {e}"
         )
 
-    # Legacy hash-based fallback (deprecated, breaks semantic search)
-    import hashlib
-
-    hash_obj = hashlib.sha256(text_to_embed.encode())
-    hash_bytes = hash_obj.digest()
-
-    # Use standardized embedding dimensions from Config
-    embedding_dim = Config.EMBEDDING_DIMENSIONS
-    embedding = []
-
-    for i in range(embedding_dim):
-        byte_idx = i % len(hash_bytes)
-        embedding.append(float(hash_bytes[byte_idx]) / 255.0)
-
-    logger.debug(f"Generated hash-based fallback embedding with {len(embedding)} dimensions")
-    return embedding
+        # Return None to signal embedding failure (handled by caller)
+        raise ValueError(f"Embedding generation failed: {e}")
 
 
 
@@ -1780,13 +1788,51 @@ async def store_context(
                 )
                 logger.info(f"Successfully created graph node with ID: {graph_id}")
 
-                # Create relationships if specified
+                # Create relationships if specified, with validation
+                relationships_created = 0
                 if request.relationships:
                     for rel in request.relationships:
-                        neo4j_client.create_relationship(
-                            from_id=graph_id, to_id=rel["target"], rel_type=rel["type"]
+                        try:
+                            # Verify target node exists before creating relationship
+                            target_query = "MATCH (n:Context {id: $id}) RETURN n LIMIT 1"
+                            target_exists = neo4j_client.query(target_query, {"id": rel["target"]})
+
+                            if not target_exists:
+                                logger.warning(
+                                    f"Cannot create relationship: target node {rel['target']} not found"
+                                )
+                                continue
+
+                            # Create relationship and verify it was created
+                            result = neo4j_client.create_relationship(
+                                from_id=graph_id,
+                                to_id=rel["target"],
+                                rel_type=rel.get("type", "RELATED_TO")
+                            )
+
+                            # Verify relationship was created
+                            if result:
+                                relationships_created += 1
+                                logger.debug(
+                                    f"Created relationship: {graph_id} -[{rel.get('type')}]-> {rel['target']}"
+                                )
+                            else:
+                                logger.warning(
+                                    f"Relationship creation returned no result for {rel}"
+                                )
+
+                        except Exception as rel_error:
+                            logger.error(f"Failed to create relationship {rel}: {rel_error}")
+                            # Continue with other relationships
+
+                    if relationships_created > 0:
+                        logger.info(
+                            f"Successfully created {relationships_created}/{len(request.relationships)} relationships"
                         )
-                    logger.info(f"Created {len(request.relationships)} relationships")
+                    elif len(request.relationships) > 0:
+                        logger.warning(
+                            f"Failed to create any of {len(request.relationships)} requested relationships"
+                        )
             except Exception as graph_error:
                 logger.error(f"Graph storage failed: {graph_error}")
                 # Continue even if graph storage fails
@@ -1811,6 +1857,7 @@ async def store_context(
             "graph_id": graph_id,
             "message": "Context stored successfully",
             "embedding_status": embedding_status,  # Sprint 13: Add embedding feedback
+            "relationships_created": relationships_created,  # Phase 3: Relationship validation feedback
         }
 
         if embedding_message:
@@ -1837,6 +1884,28 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
     comprehensive context retrieval.
     """
     try:
+        # PHASE 4: Check Redis cache before performing any backend queries
+        if simple_redis and getattr(request, 'use_cache', True) != False:
+            cache_key = f"retrieve:{hashlib.md5(json.dumps({
+                'query': request.query,
+                'limit': request.limit,
+                'search_mode': request.search_mode,
+                'context_type': getattr(request, 'context_type', None),
+                'sort_by': request.sort_by.value if hasattr(request, 'sort_by') and request.sort_by else 'relevance'
+            }, sort_keys=True).encode()).hexdigest()}"
+
+            try:
+                cached_result = simple_redis.get(cache_key)
+                if cached_result:
+                    logger.info(f"✅ Cache hit for query: {request.query[:50]}...")
+                    cached_data = json.loads(cached_result)
+                    cached_data["cached"] = True
+                    cached_data["cache_hit"] = True
+                    return cached_data
+            except Exception as cache_error:
+                logger.warning(f"Cache check failed: {cache_error}")
+                # Continue with normal retrieval if cache fails
+
         # PHASE 1: Use unified RetrievalCore if available
         if retrieval_core:
             try:
@@ -1886,8 +1955,8 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                     f"backends_used={search_response.backends_used}, "
                     f"backend_timings={search_response.backend_timings}"
                 )
-                
-                return {
+
+                response = {
                     "results": results,
                     "total_count": len(results),
                     "search_mode_used": request.search_mode,
@@ -1895,6 +1964,28 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                     "backends_used": search_response.backends_used,
                     "message": f"Found {len(results)} contexts using unified search architecture"
                 }
+
+                # PHASE 4: Cache successful results with 5 minute TTL
+                if simple_redis and getattr(request, 'use_cache', True) != False and results:
+                    try:
+                        cache_key = f"retrieve:{hashlib.md5(json.dumps({
+                            'query': request.query,
+                            'limit': request.limit,
+                            'search_mode': request.search_mode,
+                            'context_type': getattr(request, 'context_type', None),
+                            'sort_by': request.sort_by.value if hasattr(request, 'sort_by') and request.sort_by else 'relevance'
+                        }, sort_keys=True).encode()).hexdigest()}"
+
+                        simple_redis.setex(
+                            cache_key,
+                            300,  # 5 minute TTL
+                            json.dumps(response)
+                        )
+                        logger.info(f"✅ Cached results for query: {request.query[:50]}...")
+                    except Exception as cache_error:
+                        logger.warning(f"Failed to cache results: {cache_error}")
+
+                return response
                 
             except Exception as unified_error:
                 logger.error(f"Unified RetrievalCore failed, falling back to legacy: {unified_error}")
@@ -1998,13 +2089,35 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
             results.sort(key=lambda x: x.get("score", 0) or 0, reverse=True)
             logger.info("Sorted results by relevance score (highest first)")
 
-        return {
+        response = {
             "success": True,
             "results": results[: request.limit],
             "total_count": len(results),
             "search_mode_used": request.search_mode,
             "message": f"Found {len(results)} matching contexts",
         }
+
+        # PHASE 4: Cache successful legacy fallback results with 5 minute TTL
+        if simple_redis and getattr(request, 'use_cache', True) != False and results:
+            try:
+                cache_key = f"retrieve:{hashlib.md5(json.dumps({
+                    'query': request.query,
+                    'limit': request.limit,
+                    'search_mode': request.search_mode,
+                    'context_type': getattr(request, 'context_type', None),
+                    'sort_by': request.sort_by.value if hasattr(request, 'sort_by') and request.sort_by else 'relevance'
+                }, sort_keys=True).encode()).hexdigest()}"
+
+                simple_redis.setex(
+                    cache_key,
+                    300,  # 5 minute TTL
+                    json.dumps(response)
+                )
+                logger.info(f"✅ Cached legacy results for query: {request.query[:50]}...")
+            except Exception as cache_error:
+                logger.warning(f"Failed to cache legacy results: {cache_error}")
+
+        return response
 
     except Exception as e:
         import traceback
