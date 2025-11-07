@@ -509,28 +509,35 @@ jobs:
             echo "=================================="
 
             # Wait a bit longer for Neo4j to be fully ready for index creation
-            sleep 5
+            sleep 10
 
-            # Create context_id_index for 2-5x faster relationship validation
-            echo "Creating context_id_index for relationship performance..."
-            docker exec veris-memory-dev-neo4j-1 cypher-shell \
-              -u neo4j \
-              -p "$NEO4J_PASSWORD" \
-              -d neo4j \
-              "CREATE INDEX context_id_index IF NOT EXISTS FOR (n:Context) ON (n.id);" 2>&1 | grep -v "password" || {
-              echo "⚠️  Index creation failed, may already exist or Neo4j not ready"
-              echo "   This is non-critical, system will work but relationship validation will be slower"
-            }
+            # Extract Neo4j password from .env file (same password the container is using)
+            NEO4J_PASS=$(grep "^NEO4J_PASSWORD=" .env | cut -d'=' -f2-)
 
-            # Verify index was created
-            echo "Verifying index status..."
-            docker exec veris-memory-dev-neo4j-1 cypher-shell \
-              -u neo4j \
-              -p "$NEO4J_PASSWORD" \
-              -d neo4j \
-              "SHOW INDEXES;" 2>&1 | grep -E "context_id_index|name.*type.*state" | head -5 || true
+            if [ -z "$NEO4J_PASS" ]; then
+              echo "⚠️  Could not extract Neo4j password from .env, skipping index creation"
+            else
+              # Create context_id_index for 2-5x faster relationship validation
+              echo "Creating context_id_index for relationship performance..."
+              docker exec veris-memory-dev-neo4j-1 cypher-shell \
+                -u neo4j \
+                -p "$NEO4J_PASS" \
+                -d neo4j \
+                "CREATE INDEX context_id_index IF NOT EXISTS FOR (n:Context) ON (n.id);" 2>&1 | grep -v "password" || {
+                echo "⚠️  Index creation failed, may already exist or Neo4j not ready"
+                echo "   This is non-critical, system will work but relationship validation will be slower"
+              }
 
-            echo "✅ Neo4j index configuration completed"
+              # Verify index was created
+              echo "Verifying index status..."
+              docker exec veris-memory-dev-neo4j-1 cypher-shell \
+                -u neo4j \
+                -p "$NEO4J_PASS" \
+                -d neo4j \
+                "SHOW INDEXES;" 2>&1 | grep -E "context_id_index|name.*type.*state" | head -5 || true
+
+              echo "✅ Neo4j index configuration completed"
+            fi
 
             # Configure firewall for exposed services
             echo ""
