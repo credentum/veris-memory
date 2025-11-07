@@ -503,18 +503,47 @@ jobs:
               fi
             fi
             
+            # Configure Neo4j Performance Index (PR #170)
+            echo ""
+            echo "🔧 Creating Neo4j performance index..."
+            echo "=================================="
+
+            # Wait a bit longer for Neo4j to be fully ready for index creation
+            sleep 5
+
+            # Create context_id_index for 2-5x faster relationship validation
+            echo "Creating context_id_index for relationship performance..."
+            docker exec veris-memory-dev-neo4j-1 cypher-shell \
+              -u neo4j \
+              -p "$NEO4J_PASSWORD" \
+              -d neo4j \
+              "CREATE INDEX context_id_index IF NOT EXISTS FOR (n:Context) ON (n.id);" 2>&1 | grep -v "password" || {
+              echo "⚠️  Index creation failed, may already exist or Neo4j not ready"
+              echo "   This is non-critical, system will work but relationship validation will be slower"
+            }
+
+            # Verify index was created
+            echo "Verifying index status..."
+            docker exec veris-memory-dev-neo4j-1 cypher-shell \
+              -u neo4j \
+              -p "$NEO4J_PASSWORD" \
+              -d neo4j \
+              "SHOW INDEXES;" 2>&1 | grep -E "context_id_index|name.*type.*state" | head -5 || true
+
+            echo "✅ Neo4j index configuration completed"
+
             # Configure firewall for exposed services
             echo ""
             echo "🔥 Configuring firewall rules..."
             echo "=================================="
-            
+
             # Run comprehensive firewall setup script
             echo "Running firewall setup script..."
             chmod +x scripts/setup-firewall.sh
             sudo ./scripts/setup-firewall.sh
-            
+
             echo "✅ Firewall configuration completed"
-            
+
             echo ""
             echo "🔵 DEV DEPLOYMENT COMPLETED"
             echo "=================================="
