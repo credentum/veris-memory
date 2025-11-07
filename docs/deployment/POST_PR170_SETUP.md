@@ -75,6 +75,8 @@ services:
 
 **Purpose**: Optimize relationship validation queries (2-5x faster)
 
+⚠️ **NOTE**: This index is **automatically created** by the GitHub Actions deployment workflows (`deploy-dev.yml` and `deploy-prod-manual.yml`). Manual creation is only needed if deploying outside of GitHub Actions.
+
 ### Run Once Per Environment:
 
 ```cypher
