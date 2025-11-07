@@ -2078,13 +2078,50 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
             try:
                 cached_result = simple_redis.get(cache_key)
                 if cached_result:
-                    logger.info(f"✅ Cache hit for query: {request.query[:50]}...")
+                    # METRICS: Log cache hit with structured data for monitoring
+                    logger.info(
+                        f"✅ Cache hit for query: {request.query[:50]}...",
+                        extra={
+                            "event_type": "cache_hit",
+                            "cache_key": cache_key[:16] + "...",  # Truncated for privacy
+                            "query_length": len(request.query),
+                            "search_mode": request.search_mode,
+                        }
+                    )
+                    # Prometheus/DataDog-compatible metric
+                    logger.info(
+                        f"METRIC: cache_requests_total{{result='hit',search_mode='{request.search_mode}'}} 1"
+                    )
+
                     cached_data = json.loads(cached_result)
                     cached_data["cached"] = True
                     cached_data["cache_hit"] = True
                     return cached_data
+                else:
+                    # METRICS: Log cache miss with structured data for monitoring
+                    logger.info(
+                        f"Cache miss for query: {request.query[:50]}...",
+                        extra={
+                            "event_type": "cache_miss",
+                            "cache_key": cache_key[:16] + "...",
+                            "query_length": len(request.query),
+                            "search_mode": request.search_mode,
+                        }
+                    )
+                    # Prometheus/DataDog-compatible metric
+                    logger.info(
+                        f"METRIC: cache_requests_total{{result='miss',search_mode='{request.search_mode}'}} 1"
+                    )
             except Exception as cache_error:
-                logger.warning(f"Cache check failed: {cache_error}")
+                logger.warning(
+                    f"Cache check failed: {cache_error}",
+                    extra={
+                        "event_type": "cache_error",
+                        "error_type": type(cache_error).__name__,
+                    }
+                )
+                # Prometheus/DataDog-compatible metric
+                logger.info("METRIC: cache_requests_total{result='error'} 1")
                 # Continue with normal retrieval if cache fails
 
         # PHASE 1: Use unified RetrievalCore if available
