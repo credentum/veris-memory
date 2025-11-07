@@ -1944,9 +1944,9 @@ async def store_context(
 
                             # Create relationship using internal node IDs
                             result = neo4j_client.create_relationship(
-                                from_id=graph_id,
-                                to_id=target_node_id,
-                                rel_type=rel.get("type", "RELATED_TO"),
+                                start_node=graph_id,
+                                end_node=target_node_id,
+                                relationship_type=rel.get("type", "RELATED_TO"),
                             )
 
                             # Verify relationship was created
