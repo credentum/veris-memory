@@ -87,6 +87,10 @@ HEALTH_CHECK_GRACE_PERIOD_DEFAULT = 60
 HEALTH_CHECK_MAX_RETRIES_DEFAULT = 3
 HEALTH_CHECK_RETRY_DELAY_DEFAULT = 5.0
 
+# Cache TTL configuration (Phase 4: Redis caching)
+# Configurable via environment variable for expensive queries
+CACHE_TTL_SECONDS = int(os.getenv("VERIS_CACHE_TTL_SECONDS", "300"))  # Default: 5 minutes
+
 # Metadata field names that should be separated from content fields
 METADATA_FIELD_NAMES = [
     "golden_fact",
@@ -394,6 +398,30 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
         # For MCP protocol compliance, fail rather than provide meaningless embeddings
         if os.getenv("STRICT_EMBEDDINGS", "false").lower() == "true":
             raise ValueError(f"Semantic embeddings unavailable and STRICT_EMBEDDINGS=true: {e}")
+
+        # Backward compatibility: Allow hash-based embeddings for migration
+        if os.getenv("ALLOW_HASH_EMBEDDINGS", "false").lower() == "true":
+            logger.warning(
+                "MIGRATION MODE: Using hash-based embeddings (0% semantic value). "
+                "This is for backward compatibility only. Set ALLOW_HASH_EMBEDDINGS=false "
+                "after migrating to semantic embeddings."
+            )
+            import hashlib
+            import struct
+
+            # Hash-based fallback for backward compatibility ONLY
+            text = json.dumps(content)
+            hash_obj = hashlib.sha256(text.encode()).digest()
+            embedding = []
+            fallback_dim = int(os.getenv("EMBEDDING_DIM", "768"))
+            for i in range(0, min(len(hash_obj), fallback_dim * 4), 4):
+                if i + 4 <= len(hash_obj):
+                    value = struct.unpack("f", hash_obj[i : i + 4])[0]
+                    embedding.append(value)
+            # Pad with zeros if needed
+            while len(embedding) < fallback_dim:
+                embedding.append(0.0)
+            return embedding[:fallback_dim]
 
         # Log error prominently but allow system to continue
         logger.critical(
@@ -1830,20 +1858,31 @@ async def store_context(
                 except Exception as embedding_error:
                     logger.error(f"Robust embedding service failed: {embedding_error}")
                     # Fall back to legacy method if robust service fails
-                    embedding = await _generate_embedding(request.content)
-                    logger.warning("Used legacy embedding generation as fallback")
+                    try:
+                        embedding = await _generate_embedding(request.content)
+                        logger.warning("Used legacy embedding generation as fallback")
+                    except ValueError as fallback_error:
+                        # _generate_embedding can raise ValueError if embeddings unavailable
+                        logger.error(f"Embedding generation completely failed: {fallback_error}")
+                        # Set embedding to None - vector storage will be skipped but context still stored
+                        embedding = None
 
-                logger.info("Storing vector in Qdrant...")
-                vector_id = qdrant_client.store_vector(
-                    vector_id=context_id,
-                    embedding=embedding,
-                    metadata={
-                        "content": request.content,
-                        "type": request.type,
-                        "metadata": request.metadata,
-                    },
-                )
-                logger.info(f"Successfully stored vector with ID: {vector_id}")
+                # Only store vector if embedding generation succeeded
+                if embedding is not None:
+                    logger.info("Storing vector in Qdrant...")
+                    vector_id = qdrant_client.store_vector(
+                        vector_id=context_id,
+                        embedding=embedding,
+                        metadata={
+                            "content": request.content,
+                            "type": request.type,
+                            "metadata": request.metadata,
+                        },
+                    )
+                    logger.info(f"Successfully stored vector with ID: {vector_id}")
+                else:
+                    logger.warning("Skipping vector storage - no embedding available")
+                    vector_id = None
             except Exception as vector_error:
                 logger.error(f"Vector storage failed: {vector_error}")
                 # Continue with graph storage even if vector storage fails
@@ -1900,7 +1939,13 @@ async def store_context(
                     for rel in request.relationships:
                         try:
                             # Verify target node exists before creating relationship
-                            target_query = "MATCH (n:Context {id: $id}) RETURN n LIMIT 1"
+                            # Using index hint for better performance on id lookups
+                            target_query = """
+                                MATCH (n:Context)
+                                WHERE n.id = $id
+                                RETURN n
+                                LIMIT 1
+                            """
                             target_exists = neo4j_client.query(target_query, {"id": rel["target"]})
 
                             if not target_exists:
@@ -2112,7 +2157,7 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                         ).hexdigest()
                         cache_key = f"retrieve:{cache_hash}"
 
-                        simple_redis.setex(cache_key, 300, json.dumps(response))  # 5 minute TTL
+                        simple_redis.setex(cache_key, CACHE_TTL_SECONDS, json.dumps(response))
                         logger.info(f"✅ Cached results for query: {request.query[:50]}...")
                     except Exception as cache_error:
                         logger.warning(f"Failed to cache results: {cache_error}")

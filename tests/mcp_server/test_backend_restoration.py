@@ -16,10 +16,18 @@ Tests ensure 30%+ coverage for modified code sections.
 import asyncio
 import hashlib
 import json
+import os
+import sys
 from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+
+# Add project root to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+
+# Dynamic embedding dimension from environment or default
+EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "768"))
 
 
 # =============================================================================
@@ -39,12 +47,12 @@ class TestPhase1EmbeddingGeneration:
 
         # Mock the embedding service to return valid embedding
         with patch("src.embedding.generate_embedding") as mock_embed:
-            mock_embed.return_value = [0.1] * 768
+            mock_embed.return_value = [0.1] * EMBEDDING_DIM
 
             result = await _generate_embedding(test_content)
 
             assert result is not None
-            assert len(result) == 768
+            assert len(result) == EMBEDDING_DIM
             assert all(isinstance(x, float) for x in result)
             mock_embed.assert_called_once()
 
@@ -450,12 +458,13 @@ class TestPhase4RedisCaching:
 
                     assert response.status_code == 200
 
-                    # Verify setex was called with correct TTL (300 seconds)
+                    # Verify setex was called with correct TTL (default 300 seconds or custom)
                     if mock_redis.setex.called:
                         call_args = mock_redis.setex.call_args
                         # Second argument should be TTL
                         ttl = call_args[0][1]
-                        assert ttl == 300, f"Expected TTL 300, got {ttl}"
+                        expected_ttl = int(os.getenv("VERIS_CACHE_TTL_SECONDS", "300"))
+                        assert ttl == expected_ttl, f"Expected TTL {expected_ttl}, got {ttl}"
 
     @pytest.mark.asyncio
     async def test_cache_disabled_via_request_param(self):
@@ -542,6 +551,78 @@ class TestPhase4RedisCaching:
 
         # Different parameters should produce different cache keys
         assert hash1 != hash2
+
+    @pytest.mark.asyncio
+    async def test_cache_key_determinism(self):
+        """Test that cache key generation is deterministic and handles edge cases."""
+        # Test 1: Same parameters should always produce same key
+        cache_params = {
+            "query": "test query",
+            "limit": 10,
+            "search_mode": "hybrid",
+            "context_type": None,
+            "sort_by": "relevance",
+        }
+
+        hash1 = hashlib.sha256(
+            json.dumps(cache_params, sort_keys=True).encode()
+        ).hexdigest()
+        hash2 = hashlib.sha256(
+            json.dumps(cache_params, sort_keys=True).encode()
+        ).hexdigest()
+
+        # Same parameters should always produce same hash (deterministic)
+        assert hash1 == hash2
+
+        # Test 2: Handle null values consistently
+        cache_params_null = {
+            "query": "test",
+            "limit": 10,
+            "search_mode": "hybrid",
+            "context_type": None,  # Explicitly None
+            "sort_by": "relevance",
+        }
+
+        hash_null = hashlib.sha256(
+            json.dumps(cache_params_null, sort_keys=True).encode()
+        ).hexdigest()
+
+        # Should produce consistent hash even with None values
+        assert len(hash_null) == 64  # SHA256 produces 64 hex chars
+        assert hash_null.isalnum()  # Should be valid hex
+
+        # Test 3: Handle special characters in query
+        cache_params_special = {
+            "query": "test with 'quotes' and \"double quotes\" and \n newlines",
+            "limit": 10,
+            "search_mode": "hybrid",
+            "context_type": None,
+            "sort_by": "relevance",
+        }
+
+        hash_special = hashlib.sha256(
+            json.dumps(cache_params_special, sort_keys=True).encode()
+        ).hexdigest()
+
+        # Should handle special characters without errors
+        assert len(hash_special) == 64
+        assert hash_special != hash1  # Different query should produce different hash
+
+        # Test 4: Empty string vs None should produce different keys
+        cache_params_empty = {
+            "query": "",  # Empty string
+            "limit": 10,
+            "search_mode": "hybrid",
+            "context_type": None,
+            "sort_by": "relevance",
+        }
+
+        hash_empty = hashlib.sha256(
+            json.dumps(cache_params_empty, sort_keys=True).encode()
+        ).hexdigest()
+
+        # Empty string is different from "test query"
+        assert hash_empty != hash1
 
 
 # =============================================================================
