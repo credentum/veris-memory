@@ -1714,6 +1714,15 @@ async def store_context(
                         flattened_properties[f"{key}_json"] = json.dumps(value)
                     else:
                         flattened_properties[key] = value
+
+                # Also store metadata fields at the top level for easy retrieval
+                if request.metadata:
+                    for key, value in request.metadata.items():
+                        if key not in ["author", "author_type", "stored_at"]:  # These are already added
+                            if isinstance(value, (dict, list)):
+                                flattened_properties[key] = json.dumps(value)
+                            else:
+                                flattened_properties[key] = value
                 
                 graph_id = neo4j_client.create_node(
                     labels=["Context"],
@@ -1796,9 +1805,22 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                 # Convert SearchResultResponse to MCP format
                 results = []
                 for memory_result in search_response.results:
+                    # Extract content and metadata separately
+                    content = {}
+                    metadata = {}
+
+                    # The memory_result.metadata contains all the fields
+                    for key, value in memory_result.metadata.items():
+                        # Separate metadata fields from content fields
+                        if key in ["golden_fact", "category", "priority", "sprint", "component", "compliance", "pr_number", "milestone", "sentinel", "test", "phase", "initialization", "author", "author_type", "stored_at"]:
+                            metadata[key] = value
+                        else:
+                            content[key] = value
+
                     results.append({
                         "id": memory_result.id,
-                        "content": memory_result.metadata,  # Full metadata
+                        "content": content,  # Content fields
+                        "metadata": metadata,  # Metadata fields separated
                         "score": memory_result.score,
                         "source": memory_result.source.value,  # Convert enum to string
                         "text": memory_result.text,
@@ -1846,10 +1868,15 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
 
                 # Convert results to proper format
                 for result in vector_results:
+                    # Extract metadata from payload if present
+                    payload = result.payload
+                    metadata = payload.get("metadata", {}) if isinstance(payload, dict) else {}
+
                     results.append(
                         {
                             "id": result.id,
-                            "content": result.payload,
+                            "content": payload.get("content", payload) if isinstance(payload, dict) else payload,
+                            "metadata": metadata,  # Include metadata separately
                             "score": result.score,
                             "source": "vector",
                         }
@@ -1883,12 +1910,23 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                         node_data = raw_result
                     
                     # Convert to consistent format matching vector results
+                    # Extract metadata if present in the node
+                    metadata = {}
+                    content = {}
+
+                    for key, value in node_data.items():
+                        if key == "id":
+                            continue  # Don't duplicate id
+                        # Check if this looks like metadata fields
+                        if key in ["golden_fact", "category", "priority", "sprint", "component", "compliance", "pr_number", "milestone", "sentinel", "test", "phase", "initialization"]:
+                            metadata[key] = value
+                        else:
+                            content[key] = value
+
                     normalized_result = {
                         "id": node_data.get("id", "unknown"),
-                        "content": {
-                            key: value for key, value in node_data.items() 
-                            if key != "id"  # Don't duplicate id in content
-                        },
+                        "content": content,
+                        "metadata": metadata,  # Include metadata separately
                         "score": 1.0,  # Graph results don't have similarity scores
                         "source": "graph",
                     }
