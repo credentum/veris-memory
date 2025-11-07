@@ -409,14 +409,14 @@ class Neo4jGraphTests:
                 return {"passed": False, "error": f"Index query failed: {response.status_code}"}
 
             data = response.json()
-            records = data.get("records", [])
+            results = data.get("results", [])
 
             # Check if context_id_index exists
-            has_index = any("context_id_index" in str(record).lower() for record in records)
+            has_index = any("context_id_index" in str(result).lower() for result in results)
 
             return {
                 "passed": has_index,
-                "details": {"index_found": has_index, "total_indexes": len(records)}
+                "details": {"index_found": has_index, "total_indexes": len(results)}
             }
         except Exception as e:
             return {"passed": False, "error": str(e)}
