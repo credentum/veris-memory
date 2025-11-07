@@ -1923,27 +1923,30 @@ async def store_context(
                 if request.relationships:
                     for rel in request.relationships:
                         try:
-                            # Verify target node exists before creating relationship
+                            # Verify target node exists and get its internal ID
                             # Using index hint for better performance on id lookups
                             target_query = """
                                 MATCH (n:Context)
                                 WHERE n.id = $id
-                                RETURN n
+                                RETURN ID(n) as node_id
                                 LIMIT 1
                             """
-                            target_exists = neo4j_client.query(target_query, {"id": rel["target"]})
+                            target_result = neo4j_client.query(target_query, {"id": rel["target"]})
 
-                            if not target_exists:
+                            if not target_result or len(target_result) == 0:
                                 logger.warning(
                                     f"Cannot create relationship: target node {rel['target']} not found"
                                 )
                                 continue
 
-                            # Create relationship and verify it was created
+                            # Extract the internal node ID (numeric)
+                            target_node_id = str(target_result[0].get("node_id"))
+
+                            # Create relationship using internal node IDs
                             result = neo4j_client.create_relationship(
-                                from_id=graph_id,
-                                to_id=rel["target"],
-                                rel_type=rel.get("type", "RELATED_TO"),
+                                start_node=graph_id,
+                                end_node=target_node_id,
+                                relationship_type=rel.get("type", "RELATED_TO"),
                             )
 
                             # Verify relationship was created

@@ -1,0 +1,55 @@
+{
+  "total_tests": 31,
+  "passed": 30,
+  "failed": 1,
+  "pass_rate": 96.7741935483871,
+  "duration_seconds": 8.543877363204956,
+  "by_category": {
+    "redis": {
+      "passed": 3,
+      "failed": 0,
+      "total": 3
+    },
+    "graph": {
+      "passed": 4,
+      "failed": 1,
+      "total": 5
+    },
+    "vector": {
+      "passed": 4,
+      "failed": 0,
+      "total": 4
+    },
+    "mcp": {
+      "passed": 4,
+      "failed": 0,
+      "total": 4
+    },
+    "search": {
+      "passed": 5,
+      "failed": 0,
+      "total": 5
+    },
+    "api": {
+      "passed": 3,
+      "failed": 0,
+      "total": 3
+    },
+    "monitoring": {
+      "passed": 3,
+      "failed": 0,
+      "total": 3
+    },
+    "stress": {
+      "passed": 3,
+      "failed": 0,
+      "total": 3
+    },
+    "types": {
+      "passed": 1,
+      "failed": 0,
+      "total": 1
+    }
+  },
+  "timestamp": "2025-11-07T21:35:10.257871"
+}

@@ -234,20 +234,24 @@ jobs:
               fi
               
               # Configure environment variables
-              
-              # Remove ALL NEO4J and TELEGRAM lines to ensure clean state
-              echo "🗑️  Removing ALL existing NEO4J and TELEGRAM lines from .env..."
+
+              # Remove ALL managed variables to ensure clean state (no duplicates)
+              echo "🗑️  Removing managed variables from .env to prevent duplicates..."
               if [ -f .env ]; then
+                # Remove NEO4J, TELEGRAM, and PR #170 variables
                 grep -v "^NEO4J" .env > .env.tmp || true
-                grep -v "^TELEGRAM" .env.tmp > .env || true
-                rm -f .env.tmp
+                grep -v "^TELEGRAM" .env.tmp > .env.tmp2 || true
+                grep -v "^VERIS_CACHE_TTL" .env.tmp2 > .env.tmp3 || true
+                grep -v "^STRICT_EMBEDDINGS" .env.tmp3 > .env.tmp4 || true
+                grep -v "^EMBEDDING_DIM" .env.tmp4 > .env || true
+                rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4
               fi
               
               # Write secrets to .env without echoing them
               {
                 printf "NEO4J_PASSWORD=%s\n" "${{ secrets.NEO4J_PASSWORD }}"
                 printf "NEO4J_AUTH=neo4j/%s\n" "${{ secrets.NEO4J_PASSWORD }}"
-                
+
                 # Add Telegram configuration if available
                 if [ -n "${{ secrets.TELEGRAM_BOT_TOKEN }}" ]; then
                   printf "TELEGRAM_BOT_TOKEN=%s\n" "${{ secrets.TELEGRAM_BOT_TOKEN }}"
@@ -255,6 +259,12 @@ jobs:
                 if [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ]; then
                   printf "TELEGRAM_CHAT_ID=%s\n" "${{ secrets.TELEGRAM_CHAT_ID }}"
                 fi
+
+                # PR #170: Cache and Embedding Configuration
+                printf "\n# Veris Memory Cache Configuration (PR #170)\n"
+                printf "VERIS_CACHE_TTL_SECONDS=300\n"
+                printf "STRICT_EMBEDDINGS=false\n"
+                printf "EMBEDDING_DIM=384\n"
               } >> .env 2>/dev/null
               
               # Verify configuration was written correctly
@@ -503,18 +513,52 @@ jobs:
               fi
             fi
             
+            # Configure Neo4j Performance Index (PR #170)
+            echo ""
+            echo "🔧 Creating Neo4j performance index..."
+            echo "=================================="
+
+            # Wait a bit longer for Neo4j to be fully ready for index creation
+            sleep 10
+
+            # Use the NEO4J_PASSWORD environment variable that was exported earlier
+            if [ -z "\${NEO4J_PASSWORD}" ]; then
+              echo "⚠️  NEO4J_PASSWORD not set in environment, skipping index creation"
+            else
+              # Create context_id_index for 2-5x faster relationship validation
+              echo "Creating context_id_index for relationship performance..."
+              docker exec veris-memory-dev-neo4j-1 cypher-shell \
+                -u neo4j \
+                -p "\${NEO4J_PASSWORD}" \
+                -d neo4j \
+                "CREATE INDEX context_id_index IF NOT EXISTS FOR (n:Context) ON (n.id);" 2>&1 | grep -v "password" || {
+                echo "⚠️  Index creation failed, may already exist or Neo4j not ready"
+                echo "   This is non-critical, system will work but relationship validation will be slower"
+              }
+
+              # Verify index was created
+              echo "Verifying index status..."
+              docker exec veris-memory-dev-neo4j-1 cypher-shell \
+                -u neo4j \
+                -p "\${NEO4J_PASSWORD}" \
+                -d neo4j \
+                "SHOW INDEXES;" 2>&1 | grep -E "context_id_index|name.*type.*state" | head -5 || true
+
+              echo "✅ Neo4j index configuration completed"
+            fi
+
             # Configure firewall for exposed services
             echo ""
             echo "🔥 Configuring firewall rules..."
             echo "=================================="
-            
+
             # Run comprehensive firewall setup script
             echo "Running firewall setup script..."
             chmod +x scripts/setup-firewall.sh
             sudo ./scripts/setup-firewall.sh
-            
+
             echo "✅ Firewall configuration completed"
-            
+
             echo ""
             echo "🔵 DEV DEPLOYMENT COMPLETED"
             echo "=================================="

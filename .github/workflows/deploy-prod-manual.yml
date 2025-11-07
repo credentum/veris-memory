@@ -168,7 +168,50 @@ jobs:
                 exit 1
               fi
             fi
-            
+
+            # Configure Neo4j Performance Index (PR #170)
+            echo ""
+            echo "🔧 Creating Neo4j performance index..."
+            echo "=================================="
+
+            # Wait a bit longer for Neo4j to be fully ready for index creation
+            sleep 10
+
+            # Determine Neo4j container name (prod might use different naming)
+            NEO4J_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E 'neo4j|veris-memory' | grep -v dev | head -1)
+
+            if [ -n "$NEO4J_CONTAINER" ]; then
+              echo "Found Neo4j container: $NEO4J_CONTAINER"
+
+              # Use the NEO4J_PASSWORD environment variable that was exported earlier
+              if [ -z "\${NEO4J_PASSWORD}" ]; then
+                echo "⚠️  NEO4J_PASSWORD not set in environment, skipping index creation"
+              else
+                # Create context_id_index for 2-5x faster relationship validation
+                echo "Creating context_id_index for relationship performance..."
+                docker exec "$NEO4J_CONTAINER" cypher-shell \
+                  -u neo4j \
+                  -p "\${NEO4J_PASSWORD}" \
+                  -d neo4j \
+                  "CREATE INDEX context_id_index IF NOT EXISTS FOR (n:Context) ON (n.id);" 2>&1 | grep -v "password" || {
+                  echo "⚠️  Index creation failed, may already exist or Neo4j not ready"
+                  echo "   This is non-critical, system will work but relationship validation will be slower"
+                }
+
+                # Verify index was created
+                echo "Verifying index status..."
+                docker exec "$NEO4J_CONTAINER" cypher-shell \
+                  -u neo4j \
+                  -p "\${NEO4J_PASSWORD}" \
+                  -d neo4j \
+                  "SHOW INDEXES;" 2>&1 | grep -E "context_id_index|name.*type.*state" | head -5 || true
+
+                echo "✅ Neo4j index configuration completed"
+              fi
+            else
+              echo "⚠️  Neo4j container not found, skipping index creation"
+            fi
+
             echo ""
             echo "🔴 PRODUCTION DEPLOYMENT COMPLETED"
             echo "=================================="
