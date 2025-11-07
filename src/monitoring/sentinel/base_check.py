@@ -6,6 +6,9 @@ Provides the common interface and utilities that all check classes implement.
 """
 
 import asyncio
+import logging
+import os
+import re
 import time
 import aiohttp
 from abc import ABC, abstractmethod
@@ -13,6 +16,8 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 from .models import CheckResult, SentinelConfig
+
+logger = logging.getLogger(__name__)
 
 
 class BaseCheck(ABC):
@@ -211,19 +216,52 @@ class APITestMixin:
         start_time = time.time()
         
         try:
+            # Include API key authentication header with validation
+            headers = {}
+            api_key = os.getenv("API_KEY_MCP")
+            if api_key:
+                # Validate API key format
+                api_key = api_key.strip()
+                if not api_key:
+                    logger.warning("API_KEY_MCP is empty after stripping whitespace.")
+                else:
+                    # Validate format: should start with vmk_ and follow expected pattern
+                    # Pattern: vmk_{prefix}_{hash}:user_id:role:is_agent
+                    api_key_pattern = re.compile(r'^vmk_[a-zA-Z0-9]+_[a-zA-Z0-9]+:[^:]+:[^:]+:(true|false)$')
+
+                    if not api_key_pattern.match(api_key):
+                        # Redact key for security - show only prefix for debugging
+                        redacted_key = api_key[:8] + "..." if len(api_key) > 8 else "***"
+                        logger.warning(
+                            f"API_KEY_MCP format invalid. Expected format: vmk_{{prefix}}_{{hash}}:user_id:role:is_agent. "
+                            f"Got: {redacted_key}"
+                        )
+                    else:
+                        headers["X-API-Key"] = api_key
+                        # Log success with redacted key
+                        redacted_key = api_key[:12] + "..." if len(api_key) > 12 else "***"
+                        logger.debug(f"Using API key: {redacted_key}")
+            else:
+                logger.warning(
+                    "API_KEY_MCP not found in environment. API calls may fail with authentication errors. "
+                    "Please set API_KEY_MCP environment variable."
+                )
+
             request_kwargs = {
-                "timeout": aiohttp.ClientTimeout(total=timeout)
+                "timeout": aiohttp.ClientTimeout(total=timeout),
+                "headers": headers
             }
-            
+
             if data and method.upper() in ['POST', 'PUT', 'PATCH']:
                 request_kwargs["json"] = data
-            
+
             async with getattr(session, method.lower())(endpoint, **request_kwargs) as resp:
                 latency_ms = (time.time() - start_time) * 1000
-                
+
                 try:
                     response_data = await resp.json()
-                except:
+                except Exception as e:
+                    logger.debug(f"Failed to parse JSON response: {e}. Response might not be JSON.")
                     response_data = None
                 
                 if resp.status == expected_status:

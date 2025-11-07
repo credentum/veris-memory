@@ -3,6 +3,8 @@
 # where other services (Qdrant, Neo4j, Redis) run as separate containers
 
 # Use pinned SHA256 digest for security (python:3.11-slim as of 2025-01-14)
+# SHA verification ensures image integrity - Docker automatically verifies the digest
+# during pull. To manually verify: docker inspect python:3.11-slim | grep -i sha256
 FROM python:3.11-slim@sha256:2ec5a4a5c3e919570f57675471f081d6299668d909feabd8d4803c6c61af666c
 
 # Build arguments
