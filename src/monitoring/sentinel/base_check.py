@@ -215,11 +215,21 @@ class APITestMixin:
         start_time = time.time()
         
         try:
-            # Include API key authentication header
+            # Include API key authentication header with validation
             headers = {}
             api_key = os.getenv("API_KEY_MCP")
             if api_key:
-                headers["X-API-Key"] = api_key
+                # Validate API key format
+                api_key = api_key.strip()
+                if not api_key:
+                    logger.warning("API_KEY_MCP is empty after stripping whitespace.")
+                elif not all(c.isalnum() or c in '_-:' for c in api_key):
+                    logger.warning(
+                        "API_KEY_MCP contains invalid characters. "
+                        "Expected format: alphanumeric with underscores, hyphens, and colons."
+                    )
+                else:
+                    headers["X-API-Key"] = api_key
             else:
                 logger.warning(
                     "API_KEY_MCP not found in environment. API calls may fail with authentication errors. "
@@ -236,10 +246,11 @@ class APITestMixin:
 
             async with getattr(session, method.lower())(endpoint, **request_kwargs) as resp:
                 latency_ms = (time.time() - start_time) * 1000
-                
+
                 try:
                     response_data = await resp.json()
-                except:
+                except Exception as e:
+                    logger.debug(f"Failed to parse JSON response: {e}. Response might not be JSON.")
                     response_data = None
                 
                 if resp.status == expected_status:

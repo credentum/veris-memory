@@ -16,7 +16,12 @@ Target: 40+ comprehensive test methods covering all major code paths
 
 import os
 import tempfile
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
+try:
+    from unittest.mock import AsyncMock
+except ImportError:
+    # For compatibility, use Mock if AsyncMock not available
+    AsyncMock = Mock
 
 import pytest
 import yaml
@@ -152,11 +157,13 @@ class TestNeo4jBusinessLogic:
         """Test SSL protocol selection based on configuration."""
         mock_get_config.return_value = {"host": "neo4j.example.com", "port": 7687, "ssl": True}
 
-        mock_driver_instance = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver_instance = Mock()
+        mock_session = Mock()
         mock_driver_instance.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver_instance.session.return_value.__exit__ = Mock(return_value=None)
-        mock_session.run.return_value.single.return_value = {"test": 1}
+        mock_result = Mock()
+        mock_result.single.return_value = {"test": 1}
+        mock_session.run.return_value = mock_result
         mock_driver.return_value = mock_driver_instance
 
         initializer = Neo4jInitializer(self.config_path)
@@ -216,11 +223,13 @@ class TestNeo4jBusinessLogic:
         """Test successful session verification during connection."""
         mock_get_config.return_value = {"host": "localhost", "port": 7687, "ssl": False}
 
-        mock_driver_instance = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver_instance = Mock()
+        mock_session = Mock()
         mock_driver_instance.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver_instance.session.return_value.__exit__ = Mock(return_value=None)
-        mock_session.run.return_value.single.return_value = {"test": 1}
+        mock_result = Mock()
+        mock_result.single.return_value = {"test": 1}
+        mock_session.run.return_value = mock_result
         mock_driver.return_value = mock_driver_instance
 
         initializer = Neo4jInitializer(self.config_path)
@@ -852,11 +861,13 @@ class TestNeo4jBusinessLogic:
         """Test connection with custom port configuration."""
         mock_get_config.return_value = {"host": "custom.neo4j.com", "port": 7688, "ssl": True}
 
-        mock_driver_instance = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver_instance = Mock()
+        mock_session = Mock()
         mock_driver_instance.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver_instance.session.return_value.__exit__ = Mock(return_value=None)
-        mock_session.run.return_value.single.return_value = {"test": 1}
+        mock_result = Mock()
+        mock_result.single.return_value = {"test": 1}
+        mock_session.run.return_value = mock_result
         mock_driver.return_value = mock_driver_instance
 
         custom_config = {
