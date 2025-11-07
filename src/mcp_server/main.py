@@ -199,14 +199,42 @@ def _try_import_backend_component(
     """
     Helper function to import a backend component with proper error handling.
 
+    This function implements Phase 2 of the backend restoration fix, providing
+    granular error handling for each backend component import. Instead of failing
+    the entire unified backend on a single import error, this allows the system
+    to degrade gracefully by loading only available components.
+
     Args:
-        module_path: Full import path (e.g., "..core.query_dispatcher")
+        module_path: Full import path (e.g., "src.core.query_dispatcher")
         component_name: Name of the component to import (e.g., "QueryDispatcher")
         components_dict: Dictionary to store successfully imported components
-        errors_list: List to append error messages to
+        errors_list: List to append error messages to for diagnostics
 
     Returns:
-        The imported component or None if import failed
+        The imported component (class, function, or module) or None if import failed
+
+    Raises:
+        No exceptions are raised. All import errors are caught and logged.
+
+    Example:
+        >>> components = {}
+        >>> errors = []
+        >>> QueryDispatcher = _try_import_backend_component(
+        ...     "src.core.query_dispatcher",
+        ...     "QueryDispatcher",
+        ...     components,
+        ...     errors
+        ... )
+        >>> if QueryDispatcher:
+        ...     print("Successfully imported QueryDispatcher")
+        ... else:
+        ...     print(f"Import failed: {errors}")
+
+    Note:
+        - Logs success with "✓ {component_name} loaded" at INFO level
+        - Logs failure with "✗ {component_name} not available: {error}" at WARNING level
+        - Appends "{component_name}: {error}" to errors_list for diagnostics
+        - Handles both ImportError (module not found) and AttributeError (component not in module)
     """
     try:
         module = __import__(module_path, fromlist=[component_name], level=0)
@@ -1900,7 +1928,15 @@ async def store_context(
                                 )
 
                         except Exception as rel_error:
-                            logger.error(f"Failed to create relationship {rel}: {rel_error}")
+                            # Sanitize error message to prevent information leakage
+                            sanitized_target = rel.get("target", "unknown")[:20]  # Truncate to 20 chars
+                            sanitized_type = rel.get("type", "unknown")
+                            logger.error(
+                                f"Failed to create relationship to target={sanitized_target}... type={sanitized_type}: "
+                                f"{type(rel_error).__name__}"
+                            )
+                            # Log full details only in debug mode
+                            logger.debug(f"Relationship creation error details: {rel_error}", exc_info=True)
                             # Continue with other relationships
 
                     if relationships_created > 0:
@@ -1976,7 +2012,9 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                     else "relevance"
                 ),
             }
-            cache_hash = hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()
+            cache_hash = hashlib.sha256(
+                json.dumps(cache_params, sort_keys=True).encode()
+            ).hexdigest()
             cache_key = f"retrieve:{cache_hash}"
 
             try:
@@ -2069,7 +2107,7 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                                 else "relevance"
                             ),
                         }
-                        cache_hash = hashlib.md5(
+                        cache_hash = hashlib.sha256(
                             json.dumps(cache_params, sort_keys=True).encode()
                         ).hexdigest()
                         cache_key = f"retrieve:{cache_hash}"
@@ -2215,7 +2253,7 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                         else "relevance"
                     ),
                 }
-                cache_hash = hashlib.md5(
+                cache_hash = hashlib.sha256(
                     json.dumps(cache_params, sort_keys=True).encode()
                 ).hexdigest()
                 cache_key = f"retrieve:{cache_hash}"
