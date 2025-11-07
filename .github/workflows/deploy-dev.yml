@@ -234,13 +234,17 @@ jobs:
               fi
               
               # Configure environment variables
-              
-              # Remove ALL NEO4J and TELEGRAM lines to ensure clean state
-              echo "🗑️  Removing ALL existing NEO4J and TELEGRAM lines from .env..."
+
+              # Remove ALL managed variables to ensure clean state (no duplicates)
+              echo "🗑️  Removing managed variables from .env to prevent duplicates..."
               if [ -f .env ]; then
+                # Remove NEO4J, TELEGRAM, and PR #170 variables
                 grep -v "^NEO4J" .env > .env.tmp || true
-                grep -v "^TELEGRAM" .env.tmp > .env || true
-                rm -f .env.tmp
+                grep -v "^TELEGRAM" .env.tmp > .env.tmp2 || true
+                grep -v "^VERIS_CACHE_TTL" .env.tmp2 > .env.tmp3 || true
+                grep -v "^STRICT_EMBEDDINGS" .env.tmp3 > .env.tmp4 || true
+                grep -v "^EMBEDDING_DIM" .env.tmp4 > .env || true
+                rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4
               fi
               
               # Write secrets to .env without echoing them
