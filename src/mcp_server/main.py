@@ -198,8 +198,8 @@ except ImportError as e:
 
 # PHASE 1: Import unified backend architecture with granular error handling
 def _try_import_backend_component(
-    module_path: str, component_name: str, components_dict: dict, errors_list: list
-):
+    module_path: str, component_name: str, components_dict: Dict[str, Any], errors_list: List[str]
+) -> Optional[Any]:
     """
     Helper function to import a backend component with proper error handling.
 
@@ -401,11 +401,24 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
 
         # Backward compatibility: Allow hash-based embeddings for migration
         if os.getenv("ALLOW_HASH_EMBEDDINGS", "false").lower() == "true":
+            # METRICS/ALERTING: Log structured event for monitoring systems to track
             logger.warning(
                 "MIGRATION MODE: Using hash-based embeddings (0% semantic value). "
                 "This is for backward compatibility only. Set ALLOW_HASH_EMBEDDINGS=false "
-                "after migrating to semantic embeddings."
+                "after migrating to semantic embeddings.",
+                extra={
+                    "event_type": "embedding_fallback",
+                    "fallback_type": "hash_based",
+                    "semantic_value": "0%",
+                    "migration_mode": True,
+                    "alert_level": "warning",
+                }
             )
+            # Additional structured log for metrics collection (e.g., by Prometheus, DataDog)
+            logger.info(
+                "METRIC: embedding_fallback_count{type='hash_based',semantic_value='0'} 1"
+            )
+
             import hashlib
             import struct
 
@@ -2303,7 +2316,7 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                 ).hexdigest()
                 cache_key = f"retrieve:{cache_hash}"
 
-                simple_redis.setex(cache_key, 300, json.dumps(response))  # 5 minute TTL
+                simple_redis.setex(cache_key, CACHE_TTL_SECONDS, json.dumps(response))
                 logger.info(f"✅ Cached legacy results for query: {request.query[:50]}...")
             except Exception as cache_error:
                 logger.warning(f"Failed to cache legacy results: {cache_error}")
