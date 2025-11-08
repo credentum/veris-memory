@@ -36,21 +36,34 @@ class CheckResult:
 
 @dataclass
 class SentinelConfig:
-    """Configuration for Sentinel monitoring."""
-    target_base_url: str = "http://localhost:8001"
+    """
+    Configuration for Sentinel monitoring.
+
+    Uses TARGET_BASE_URL environment variable for Docker deployments.
+    Falls back to localhost for local development.
+    """
+    target_base_url: Optional[str] = None
     check_interval_seconds: int = 60
     alert_threshold_failures: int = 3
     webhook_url: Optional[str] = None
     github_token: Optional[str] = None
     github_repo: Optional[str] = None
     enabled_checks: List[str] = None
-    
+
     def __post_init__(self):
-        """Set default enabled checks if not specified."""
+        """Set defaults from environment variables if not specified."""
+        import os
+
+        # Set target_base_url from environment (Docker) or use localhost (local dev)
+        # Note: Default port is 8000 to match context-store default port
+        if self.target_base_url is None:
+            self.target_base_url = os.getenv('TARGET_BASE_URL', 'http://localhost:8000')
+
+        # Set default enabled checks if not specified
         if self.enabled_checks is None:
             self.enabled_checks = [
                 "S1-probes",
-                "S2-golden-fact-recall", 
+                "S2-golden-fact-recall",
                 "S3-paraphrase-robustness",
                 "S4-metrics-wiring",
                 "S5-security-negatives",
@@ -76,9 +89,8 @@ class SentinelConfig:
         if key == 'veris_memory_url':
             return self.target_base_url
         elif key == 'api_url':
-            # Get API URL from environment or use default
-            import os
-            return os.getenv('SENTINEL_API_URL', 'http://localhost:8001')
+            # Return the configured target_base_url (already set from environment)
+            return self.target_base_url
         elif key == 'qdrant_url':
             import os
             return os.getenv('QDRANT_URL', 'http://localhost:6333')
@@ -103,15 +115,31 @@ class SentinelConfig:
     
     @classmethod
     def from_env(cls) -> 'SentinelConfig':
-        """Create configuration from environment variables."""
+        """Create configuration from environment variables.
+
+        Reads Sentinel-specific environment variables and creates a SentinelConfig instance.
+        TARGET_BASE_URL and enabled_checks are handled by __post_init__() to avoid duplication.
+
+        Environment variables:
+            SENTINEL_CHECK_INTERVAL: Check interval in seconds (default: 60)
+            SENTINEL_ALERT_THRESHOLD: Number of failures before alerting (default: 3)
+            SENTINEL_WEBHOOK_URL: Webhook URL for alerts
+            GITHUB_TOKEN: GitHub token for creating issues
+            SENTINEL_GITHUB_REPO: GitHub repository for issue creation
+            SENTINEL_ENABLED_CHECKS: Comma-separated list of enabled checks
+            TARGET_BASE_URL: Base URL for Veris Memory (handled by __post_init__)
+        """
         import os
-        
+
+        # Let __post_init__() handle target_base_url and enabled_checks to avoid duplication
+        # Only read Sentinel-specific env vars here
         return cls(
-            target_base_url=os.getenv('SENTINEL_TARGET_URL', 'http://localhost:8000'),
+            # target_base_url=None handled by __post_init__() reading TARGET_BASE_URL
             check_interval_seconds=int(os.getenv('SENTINEL_CHECK_INTERVAL', '60')),
             alert_threshold_failures=int(os.getenv('SENTINEL_ALERT_THRESHOLD', '3')),
             webhook_url=os.getenv('SENTINEL_WEBHOOK_URL'),
             github_token=os.getenv('GITHUB_TOKEN'),
             github_repo=os.getenv('SENTINEL_GITHUB_REPO'),
+            # enabled_checks=None handled by __post_init__() with SENTINEL_ENABLED_CHECKS fallback
             enabled_checks=os.getenv('SENTINEL_ENABLED_CHECKS', '').split(',') if os.getenv('SENTINEL_ENABLED_CHECKS') else None
         )

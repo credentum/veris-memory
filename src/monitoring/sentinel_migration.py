@@ -166,7 +166,7 @@ StandardOutput=journal
 StandardError=journal
 
 # Environment variables
-Environment=SENTINEL_TARGET_URL=http://localhost:8000
+Environment=TARGET_BASE_URL=http://localhost:8000
 Environment=SENTINEL_CHECK_INTERVAL=60
 Environment=SENTINEL_ALERT_THRESHOLD=3
 
@@ -189,7 +189,7 @@ services:
     ports:
       - "9090:9090"
     environment:
-      - SENTINEL_TARGET_URL=http://veris-memory:8000
+      - TARGET_BASE_URL=http://veris-memory:8000
       - SENTINEL_CHECK_INTERVAL=60
       - SENTINEL_ALERT_THRESHOLD=3
     volumes:
