@@ -38,6 +38,7 @@ jobs:
           echo "::add-mask::${{ secrets.NEO4J_PASSWORD }}"
           echo "::add-mask::${{ secrets.TELEGRAM_BOT_TOKEN }}"
           echo "::add-mask::${{ secrets.TELEGRAM_CHAT_ID }}"
+          echo "::add-mask::${{ secrets.API_KEY_MCP }}"
           echo "::add-mask::${{ secrets.LIVEKIT_API_KEY }}"
           echo "::add-mask::${{ secrets.LIVEKIT_API_SECRET }}"
           echo "::add-mask::${{ secrets.API_KEY_VOICEBOT }}"
@@ -242,21 +243,22 @@ jobs:
               # Remove ALL managed variables to ensure clean state (no duplicates)
               echo "🗑️  Removing managed variables from .env to prevent duplicates..."
               if [ -f .env ]; then
-                # Remove NEO4J, TELEGRAM, PR #170, and Voice Platform variables
+                # Remove NEO4J, TELEGRAM, API keys, PR #170, and Voice Platform variables
                 grep -v "^NEO4J" .env > .env.tmp || true
                 grep -v "^TELEGRAM" .env.tmp > .env.tmp2 || true
-                grep -v "^VERIS_CACHE_TTL" .env.tmp2 > .env.tmp3 || true
-                grep -v "^STRICT_EMBEDDINGS" .env.tmp3 > .env.tmp4 || true
-                grep -v "^EMBEDDING_DIM" .env.tmp4 > .env.tmp5 || true
-                grep -v "^LIVEKIT" .env.tmp5 > .env.tmp6 || true
-                grep -v "^API_KEY_VOICEBOT" .env.tmp6 > .env.tmp7 || true
-                grep -v "^VOICE_BOT" .env.tmp7 > .env.tmp8 || true
-                grep -v "^STT_" .env.tmp8 > .env.tmp9 || true
-                grep -v "^TTS_" .env.tmp9 > .env.tmp10 || true
-                grep -v "^OPENAI_API_KEY" .env.tmp10 > .env.tmp11 || true
-                grep -v "^ENABLE_MCP_RETRY" .env.tmp11 > .env.tmp12 || true
-                grep -v "^MCP_RETRY_ATTEMPTS" .env.tmp12 > .env || true
-                rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12
+                grep -v "^API_KEY_MCP" .env.tmp2 > .env.tmp3 || true
+                grep -v "^VERIS_CACHE_TTL" .env.tmp3 > .env.tmp4 || true
+                grep -v "^STRICT_EMBEDDINGS" .env.tmp4 > .env.tmp5 || true
+                grep -v "^EMBEDDING_DIM" .env.tmp5 > .env.tmp6 || true
+                grep -v "^LIVEKIT" .env.tmp6 > .env.tmp7 || true
+                grep -v "^API_KEY_VOICEBOT" .env.tmp7 > .env.tmp8 || true
+                grep -v "^VOICE_BOT" .env.tmp8 > .env.tmp9 || true
+                grep -v "^STT_" .env.tmp9 > .env.tmp10 || true
+                grep -v "^TTS_" .env.tmp10 > .env.tmp11 || true
+                grep -v "^OPENAI_API_KEY" .env.tmp11 > .env.tmp12 || true
+                grep -v "^ENABLE_MCP_RETRY" .env.tmp12 > .env.tmp13 || true
+                grep -v "^MCP_RETRY_ATTEMPTS" .env.tmp13 > .env || true
+                rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13
               fi
               
               # Write secrets to .env without echoing them
@@ -270,6 +272,19 @@ jobs:
                 fi
                 if [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ]; then
                   printf "TELEGRAM_CHAT_ID=%s\n" "${{ secrets.TELEGRAM_CHAT_ID }}"
+                fi
+
+                # Sprint 13: MCP API Key Authentication
+                printf "\n# MCP Server Authentication (Sprint 13)\n"
+                if [ -n "${{ secrets.API_KEY_MCP }}" ]; then
+                  printf "API_KEY_MCP=%s\n" "${{ secrets.API_KEY_MCP }}"
+                  printf "AUTH_REQUIRED=true\n"
+                  printf "ENVIRONMENT=production\n"
+                else
+                  # Development fallback - use test key
+                  printf "API_KEY_MCP=vmk_mcp_test:mcp_server:writer:true\n"
+                  printf "AUTH_REQUIRED=false\n"
+                  printf "ENVIRONMENT=development\n"
                 fi
 
                 # PR #170: Cache and Embedding Configuration
