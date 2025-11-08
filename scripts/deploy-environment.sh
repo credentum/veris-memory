@@ -338,12 +338,21 @@ echo "  → Full command: docker compose -p \"$PROJECT_NAME\" -f \"$COMPOSE_FILE
 # Try modern docker compose syntax first, capture full output for debugging
 echo -e "${BLUE}Running: docker compose -p \"$PROJECT_NAME\" -f \"$COMPOSE_FILE\" up -d --build${NC}"
 
+# Temporarily disable set -e to capture errors properly
+set +e
+
 # Capture output to show actual errors
 COMPOSE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build 2>&1)
 COMPOSE_EXIT=$?
 
+# Re-enable set -e
+set -e
+
 if [ $COMPOSE_EXIT -ne 0 ]; then
-    echo -e "${RED}❌ Docker compose failed with exit code $COMPOSE_EXIT${NC}"
+    echo ""
+    echo -e "${RED}========================================================================${NC}"
+    echo -e "${RED}❌ Docker compose FAILED with exit code $COMPOSE_EXIT${NC}"
+    echo -e "${RED}========================================================================${NC}"
     echo ""
     echo -e "${YELLOW}==================== Docker Compose Error Output ====================${NC}"
     echo "$COMPOSE_OUTPUT"
@@ -353,6 +362,7 @@ if [ $COMPOSE_EXIT -ne 0 ]; then
     echo "  → Docker version: $(docker --version 2>/dev/null || echo 'Not found')"
     echo "  → Docker compose version: $(docker compose version 2>/dev/null || echo 'Not found')"
     echo "  → Current directory: $(pwd)"
+    echo "  → Project name: $PROJECT_NAME"
     echo "  → Compose file: $COMPOSE_FILE"
     echo "  → Compose file exists: $(test -f "$COMPOSE_FILE" && echo 'Yes' || echo 'No')"
     echo "  → Dockerfile exists: $(test -f 'dockerfiles/Dockerfile' && echo 'Yes' || echo 'No')"
@@ -365,12 +375,17 @@ if [ $COMPOSE_EXIT -ne 0 ]; then
         echo "  → .env file exists"
         echo "  → NEO4J_PASSWORD set: $(grep -q '^NEO4J_PASSWORD=' .env && echo 'Yes' || echo 'No')"
         echo "  → .env file size: $(wc -l < .env) lines"
+        echo "  → First 10 env vars:"
+        head -10 .env | sed 's/=.*/=***/'
     else
         echo "  → .env file missing!"
     fi
+    echo ""
+    echo -e "${RED}Deployment failed. Please review the error output above.${NC}"
     exit 1
 else
     echo "$COMPOSE_OUTPUT"
+    echo -e "${GREEN}✅ Docker Compose completed successfully${NC}"
 fi
 
 # Wait for services to be healthy
