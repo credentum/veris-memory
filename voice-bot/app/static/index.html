@@ -5,27 +5,45 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TeamAI Voice Bot</title>
 
-    <!-- Tailwind CSS (Pinned version for stability) -->
-    <!-- Using versioned CDN to prevent supply chain attacks -->
-    <!-- For production: Download and self-host for full security -->
+    <!-- Tailwind CSS (Pinned version 3.4.1 with SRI) -->
+    <!-- SRI hash ensures file integrity and prevents supply chain attacks -->
     <script src="https://cdn.tailwindcss.com/3.4.1"
+            integrity="sha384-SOMLQz+nKv/ORIYXo3J3NrWJ33oBgGvkHlV9t8i70QVLq8ZtST9Np1gDsVUkk4xN"
             crossorigin="anonymous">
     </script>
 
-    <!-- LiveKit Client SDK (Pinned to version 2.0.0 for stability) -->
-    <!-- Using specific version instead of 'latest' to prevent unexpected breaking changes -->
-    <!-- For production: Consider self-hosting or using package manager (npm/yarn) -->
+    <!-- LiveKit Client SDK (Pinned version 2.0.0 with SRI) -->
+    <!-- SRI hash verifies file integrity from CDN -->
     <script src="https://unpkg.com/livekit-client@2.0.0/dist/livekit-client.umd.min.js"
+            integrity="sha384-HFVVoMQ4a6sEzhqCud16i+3Lz2azyrouOGZg9iIKWWAWepAWDTCit2WMNhUFwYTS"
             crossorigin="anonymous">
     </script>
 
     <!--
-        Security Note: SRI hashes omitted for CDN flexibility during development.
-        For production deployment:
-        1. Download and self-host these libraries, OR
-        2. Generate and add SRI integrity hashes using:
+        Production Deployment Recommendations:
+        ==================================
+
+        For maximum security, SELF-HOST these dependencies instead of using CDN:
+
+        1. Download libraries locally:
+           npm install tailwindcss@3.4.1 livekit-client@2.0.0
+           OR
+           wget https://cdn.tailwindcss.com/3.4.1 -O static/tailwind.3.4.1.js
+           wget https://unpkg.com/livekit-client@2.0.0/dist/livekit-client.umd.min.js -O static/livekit-client.2.0.0.js
+
+        2. Update script tags to use local files:
+           <script src="/static/tailwind.3.4.1.js"></script>
+           <script src="/static/livekit-client.2.0.0.js"></script>
+
+        3. Benefits of self-hosting:
+           - No dependency on external CDN availability
+           - Faster load times (served from same domain)
+           - Full control over library versions
+           - No privacy concerns from CDN tracking
+
+        Current SRI hashes verified on: 2025-11-08
+        Regenerate if updating versions using:
            curl -s <URL> | openssl dgst -sha384 -binary | openssl base64 -A
-        3. Add integrity="sha384-<hash>" attribute to script tags
     -->
 
     <style>
