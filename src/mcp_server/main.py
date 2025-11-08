@@ -865,17 +865,31 @@ async def startup_event() -> None:
                 # Initialize embedding generator (needed for VectorBackend)
                 embedding_generator = None
                 try:
-                    # Load config (same way as API does)
-                    config_path = ".ctxrc.yaml"
-                    if os.path.exists(config_path):
+                    # Load config - check multiple possible locations
+                    # Priority: ENV var > config/.ctxrc.yaml > .ctxrc.yaml
+                    config_candidates = [
+                        os.getenv("CTX_CONFIG_PATH"),
+                        "config/.ctxrc.yaml",
+                        ".ctxrc.yaml",
+                    ]
+
+                    config_path = None
+                    for candidate in config_candidates:
+                        if candidate and os.path.exists(candidate):
+                            config_path = candidate
+                            logger.info(f"📁 Found config at: {config_path}")
+                            break
+
+                    if config_path:
                         import yaml
 
                         with open(config_path, "r") as f:
                             base_config = yaml.safe_load(f)
                         embedding_generator = await create_embedding_generator(base_config)
-                        logger.info("✅ Embedding generator initialized for MCP")
+                        logger.info(f"✅ Embedding generator initialized from {config_path}")
                     else:
-                        logger.warning("⚠️ Config file not found, using fallback embedding")
+                        logger.warning("⚠️ Config file not found in any location, using fallback embedding")
+                        logger.warning(f"   Searched: {', '.join([c for c in config_candidates if c])}")
                 except Exception as e:
                     logger.warning(f"⚠️ Embedding generator initialization failed: {e}")
 

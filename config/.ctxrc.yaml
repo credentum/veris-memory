@@ -7,9 +7,11 @@ system:
   debug: false
 
 # Embedding configuration - ALIGNED WITH PRODUCTION LOCKED CONFIG
-embedding:
+# Note: Key is "embeddings" (plural) to match EmbeddingConfig expectations
+embeddings:
+  provider: huggingface  # Required: huggingface, openai, or development
   dimensions: 384
-  model: all-MiniLM-L6-v2
+  model: sentence-transformers/all-MiniLM-L6-v2  # Full HuggingFace model path
   batch_size: 50
   max_retries: 3
   timeout: 30
