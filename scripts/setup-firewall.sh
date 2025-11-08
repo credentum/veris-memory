@@ -49,6 +49,7 @@ ufw allow 60000:61000/udp comment 'Mosh UDP range' || echo "  ⚠️ Warning: Fa
 echo "Adding Veris Memory service rules..."
 ufw allow 8000/tcp comment 'Veris Memory MCP Server' || echo "  ⚠️ Warning: Failed to add port 8000 rule"
 ufw allow 8001/tcp comment 'Veris Memory REST API' || echo "  ⚠️ Warning: Failed to add port 8001 rule"
+ufw allow 8002/tcp comment 'Voice-Bot API' || echo "  ⚠️ Warning: Failed to add port 8002 rule"
 ufw allow 8080/tcp comment 'Monitoring Dashboard' || echo "  ⚠️ Warning: Failed to add port 8080 rule"
 ufw allow 9090/tcp comment 'Sentinel Monitoring API' || echo "  ⚠️ Warning: Failed to add port 9090 rule"
 
@@ -116,6 +117,7 @@ echo "  ✅ Claude:     Port 2222"
 echo "  ✅ Mosh:       Ports 60000-61000/udp"
 echo "  ✅ MCP Server: Port 8000"
 echo "  ✅ REST API:   Port 8001"
+echo "  ✅ Voice-Bot:  Port 8002"
 echo "  ✅ Dashboard:  Port 8080"
 echo "  ✅ Sentinel:   Port 9090"
 
@@ -135,6 +137,9 @@ timeout 2 curl -s http://localhost:8000 > /dev/null 2>&1 && echo "✅ Responding
 
 echo -n "  REST API (8001): "
 timeout 2 curl -s http://localhost:8001 > /dev/null 2>&1 && echo "✅ Responding" || echo "⚠️ Not responding (service may be down)"
+
+echo -n "  Voice-Bot (8002): "
+timeout 2 curl -s http://localhost:8002/health > /dev/null 2>&1 && echo "✅ Responding" || echo "⚠️ Not responding (service may be down)"
 
 echo -n "  Dashboard (8080): "
 timeout 2 curl -s http://localhost:8080 > /dev/null 2>&1 && echo "✅ Responding" || echo "⚠️ Not responding (service may be down)"
