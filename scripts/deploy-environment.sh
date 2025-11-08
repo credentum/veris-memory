@@ -449,6 +449,38 @@ else
     echo -e "${RED}✗ Failed${NC}"
 fi
 
+# Update firewall rules to ensure all service ports are accessible
+echo ""
+echo -e "${BLUE}🔥 Updating firewall rules for service ports...${NC}"
+if [ -f "scripts/update-firewall-rules.sh" ]; then
+    # Check if we have sudo access
+    if command -v sudo &> /dev/null && sudo -n true 2>/dev/null; then
+        echo "  → Running firewall update with sudo..."
+        if sudo bash scripts/update-firewall-rules.sh 2>&1 | tee /tmp/firewall-update.log; then
+            echo -e "${GREEN}✅ Firewall rules updated successfully${NC}"
+
+            # Show which ports are now open
+            echo ""
+            echo -e "${CYAN}📋 Open service ports:${NC}"
+            sudo ufw status | grep -E "8000|8001|8002|8080|9090" || echo "  → UFW not configured or not showing expected ports"
+        else
+            echo -e "${YELLOW}⚠️  Firewall update encountered issues (non-blocking)${NC}"
+            echo "  → Check /tmp/firewall-update.log for details"
+            echo "  → Services may not be accessible externally"
+            echo "  → Manual fix: sudo bash scripts/update-firewall-rules.sh"
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Sudo not available or requires password${NC}"
+        echo "  → Firewall rules NOT updated automatically"
+        echo "  → Manual step required: sudo bash scripts/update-firewall-rules.sh"
+        echo "  → Services may not be accessible externally until firewall is configured"
+    fi
+else
+    echo -e "${YELLOW}⚠️  Firewall update script not found at scripts/update-firewall-rules.sh${NC}"
+    echo "  → Skipping automatic firewall configuration"
+    echo "  → Ensure ports are manually opened if needed"
+fi
+
 # Show running containers
 echo ""
 echo -e "${BLUE}📊 $ENVIRONMENT containers running:${NC}"
@@ -477,16 +509,29 @@ echo -e "${GREEN}🎉 $ENVIRONMENT deployment completed!${NC}"
 echo "================================================"
 if [ "$ENVIRONMENT" = "dev" ]; then
     echo "Development services available at:"
-    echo "  • API: http://localhost:$API_PORT"
+    echo "  • MCP Server: http://localhost:8000"
+    echo "  • REST API: http://localhost:8001"
+    echo "  • Voice-Bot: http://localhost:8002"
+    echo "  • Dashboard: http://localhost:8080"
+    echo "  • Sentinel: http://localhost:9090"
     echo "  • Qdrant: http://localhost:$QDRANT_PORT"
     echo "  • Neo4j: http://localhost:$NEO4J_HTTP_PORT"
     echo "  • Redis: localhost:$REDIS_PORT"
+    echo ""
+    echo "External access (if firewall configured):"
+    echo "  • API Docs: http://$(hostname -I | awk '{print $1}'):8001/docs"
+    echo "  • Voice Docs: http://$(hostname -I | awk '{print $1}'):8002/docs"
+    echo "  • Dashboard: http://$(hostname -I | awk '{print $1}'):8080"
     echo ""
     echo "Run tests with:"
     echo "  python ops/smoke/smoke_runner.py --api-url http://localhost:$API_PORT --qdrant-url http://localhost:$QDRANT_PORT"
 else
     echo "Production services available at:"
-    echo "  • API: http://localhost:$API_PORT"
+    echo "  • MCP Server: http://localhost:8000"
+    echo "  • REST API: http://localhost:8001"
+    echo "  • Voice-Bot: http://localhost:8002"
+    echo "  • Dashboard: http://localhost:8080"
+    echo "  • Sentinel: http://localhost:9090"
     echo "  • Qdrant: http://localhost:$QDRANT_PORT"
     echo "  • Neo4j: http://localhost:$NEO4J_HTTP_PORT"
     echo "  • Redis: localhost:$REDIS_PORT"
@@ -494,6 +539,9 @@ else
     echo "Run tests with:"
     echo "  python ops/smoke/smoke_runner.py"
 fi
+echo ""
+echo -e "${CYAN}📝 Note: Firewall configuration attempted during deployment${NC}"
+echo "  → If services not accessible externally, run: sudo bash scripts/update-firewall-rules.sh"
 
 # Output final JSON report location
 LATEST_REPORT="/opt/veris-memory/deployment-reports/latest-${ENVIRONMENT}.json"
