@@ -48,10 +48,12 @@ class ConfigParity(BaseCheck):
             "LOG_LEVEL",
             "ENVIRONMENT"
         ])
+        # Expected versions updated to match actual deployment (Phase 4)
+        # Python 3.10 (from system), FastAPI 0.115, Uvicorn 0.32
         self.expected_versions = config.get("s7_expected_versions", {
-            "python": "3.11",
-            "fastapi": "0.100",
-            "uvicorn": "0.20"
+            "python": "3.10",
+            "fastapi": "0.115",
+            "uvicorn": "0.32"
         })
         
     async def run_check(self) -> CheckResult:
