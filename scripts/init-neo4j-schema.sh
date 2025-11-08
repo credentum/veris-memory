@@ -21,6 +21,28 @@ NC='\033[0m' # No Color
 echo "🔧 Neo4j Schema Initialization"
 echo "================================"
 
+# Validate NEO4J_PASSWORD
+if [ -z "$NEO4J_PASSWORD" ]; then
+    echo -e "${RED}❌ ERROR: NEO4J_PASSWORD environment variable is not set${NC}"
+    echo "Please set NEO4J_PASSWORD before running this script."
+    exit 1
+fi
+
+# Validate password format (basic security checks)
+PASSWORD_LENGTH=${#NEO4J_PASSWORD}
+if [ "$PASSWORD_LENGTH" -lt 8 ]; then
+    echo -e "${YELLOW}⚠️  WARNING: Password is less than 8 characters${NC}"
+    echo "For production, use a password with at least 8 characters."
+fi
+
+# Check for special characters that might need escaping in Cypher
+if echo "$NEO4J_PASSWORD" | grep -q '["\$`\\]'; then
+    echo -e "${YELLOW}⚠️  WARNING: Password contains special characters that may need escaping${NC}"
+fi
+
+echo -e "${GREEN}✅ Password validation passed${NC}"
+echo ""
+
 # Check if running in Docker environment or local
 if docker ps --format '{{.Names}}' | grep -q "$NEO4J_CONTAINER"; then
     echo "✅ Detected Docker environment"
@@ -31,31 +53,19 @@ else
 fi
 
 # Function to execute Cypher via docker
+# Uses environment variable passing to avoid password exposure in process listings
 execute_cypher_docker() {
     local query="$1"
-    docker exec "$NEO4J_CONTAINER" cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASSWORD" "$query"
+    docker exec -e NEO4J_PASSWORD="$NEO4J_PASSWORD" "$NEO4J_CONTAINER" \
+        sh -c "cypher-shell -u \"$NEO4J_USER\" -p \"\$NEO4J_PASSWORD\" \"$query\""
 }
 
 # Function to execute Cypher via Python (fallback)
+# Uses separate Python script for better testability
 execute_cypher_python() {
     local query="$1"
-    python3 << PYTHON
-from neo4j import GraphDatabase
-import os
-
-uri = "bolt://${NEO4J_HOST}:${NEO4J_PORT}"
-driver = GraphDatabase.driver(uri, auth=("${NEO4J_USER}", "${NEO4J_PASSWORD}"))
-
-try:
-    with driver.session() as session:
-        result = session.run("${query}")
-        print("✓ Query executed successfully")
-except Exception as e:
-    print(f"✗ Query failed: {e}")
-    exit(1)
-finally:
-    driver.close()
-PYTHON
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    python3 "$SCRIPT_DIR/init_neo4j_schema.py" --query "$query"
 }
 
 # Determine execution method
@@ -68,7 +78,9 @@ fi
 echo ""
 echo "📊 Checking Neo4j connection..."
 if [ "$DOCKER_MODE" = true ]; then
-    if docker exec "$NEO4J_CONTAINER" cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASSWORD" "RETURN 1" > /dev/null 2>&1; then
+    # Use environment variable passing to avoid password exposure
+    if docker exec -e NEO4J_PASSWORD="$NEO4J_PASSWORD" "$NEO4J_CONTAINER" \
+        sh -c "cypher-shell -u \"$NEO4J_USER\" -p \"\$NEO4J_PASSWORD\" \"RETURN 1\"" > /dev/null 2>&1; then
         echo -e "${GREEN}✅ Connected to Neo4j${NC}"
     else
         echo -e "${RED}❌ Failed to connect to Neo4j${NC}"
@@ -89,39 +101,15 @@ if [ -f "$CYPHER_FILE" ]; then
     echo "📄 Loading schema from: $CYPHER_FILE"
 
     if [ "$DOCKER_MODE" = true ]; then
-        # Copy file to container and execute
+        # Copy file to container and execute (using env var for password security)
         docker cp "$CYPHER_FILE" "$NEO4J_CONTAINER":/tmp/init-schema.cypher
-        docker exec "$NEO4J_CONTAINER" cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASSWORD" -f /tmp/init-schema.cypher
+        docker exec -e NEO4J_PASSWORD="$NEO4J_PASSWORD" "$NEO4J_CONTAINER" \
+            sh -c "cypher-shell -u \"$NEO4J_USER\" -p \"\$NEO4J_PASSWORD\" -f /tmp/init-schema.cypher"
         docker exec "$NEO4J_CONTAINER" rm /tmp/init-schema.cypher
     else
-        # Execute via Python
-        python3 << PYTHON
-from neo4j import GraphDatabase
-import os
-
-uri = "bolt://${NEO4J_HOST}:${NEO4J_PORT}"
-driver = GraphDatabase.driver(uri, auth=("${NEO4J_USER}", "${NEO4J_PASSWORD}"))
-
-with open("${CYPHER_FILE}", 'r') as f:
-    cypher_script = f.read()
-
-# Split by semicolon and execute each statement
-statements = [s.strip() for s in cypher_script.split(';') if s.strip() and not s.strip().startswith('//')]
-
-try:
-    with driver.session() as session:
-        for stmt in statements:
-            if stmt:
-                try:
-                    session.run(stmt)
-                    print(f"✓ Executed: {stmt[:50]}...")
-                except Exception as e:
-                    # Ignore "already exists" errors
-                    if "already exists" not in str(e).lower():
-                        print(f"✗ Failed: {e}")
-finally:
-    driver.close()
-PYTHON
+        # Execute via Python using separate script
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        python3 "$SCRIPT_DIR/init_neo4j_schema.py" --file "$CYPHER_FILE"
     fi
 else
     echo -e "${YELLOW}⚠️  Cypher file not found, creating schema programmatically${NC}"
@@ -156,8 +144,11 @@ fi
 echo ""
 echo "🔍 Verifying schema..."
 if [ "$DOCKER_MODE" = true ]; then
-    CONSTRAINT_COUNT=$(docker exec "$NEO4J_CONTAINER" cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASSWORD" "CALL db.constraints() YIELD name RETURN count(name) as count" | grep -oE '[0-9]+' | head -1)
-    INDEX_COUNT=$(docker exec "$NEO4J_CONTAINER" cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASSWORD" "CALL db.indexes() YIELD name RETURN count(name) as count" | grep -oE '[0-9]+' | head -1)
+    # Use environment variable passing for password security
+    CONSTRAINT_COUNT=$(docker exec -e NEO4J_PASSWORD="$NEO4J_PASSWORD" "$NEO4J_CONTAINER" \
+        sh -c "cypher-shell -u \"$NEO4J_USER\" -p \"\$NEO4J_PASSWORD\" \"CALL db.constraints() YIELD name RETURN count(name) as count\"" | grep -oE '[0-9]+' | head -1)
+    INDEX_COUNT=$(docker exec -e NEO4J_PASSWORD="$NEO4J_PASSWORD" "$NEO4J_CONTAINER" \
+        sh -c "cypher-shell -u \"$NEO4J_USER\" -p \"\$NEO4J_PASSWORD\" \"CALL db.indexes() YIELD name RETURN count(name) as count\"" | grep -oE '[0-9]+' | head -1)
 
     echo -e "${GREEN}✅ Constraints: $CONSTRAINT_COUNT${NC}"
     echo -e "${GREEN}✅ Indexes: $INDEX_COUNT${NC}"

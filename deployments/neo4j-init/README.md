@@ -10,6 +10,60 @@ The schema initialization ensures that Neo4j has the required constraints and in
 
 - `001-init-schema.cypher` - Core schema definition with constraints and indexes
 
+## Script Execution Order
+
+**IMPORTANT**: Neo4j executes initialization scripts in **alphabetical order**.
+
+### Naming Convention
+
+All schema initialization scripts must follow this naming pattern:
+```
+NNN-description.cypher
+```
+
+Where:
+- `NNN` is a zero-padded number (001, 002, 003, etc.)
+- `description` is a brief description of what the script does
+
+### Current Scripts
+
+1. **001-init-schema.cypher** - Creates base constraints and indexes for Context, Document, Sprint, Task, and User labels
+
+### Adding New Schema Scripts
+
+When adding new schema initialization scripts:
+
+1. **Use the next sequential number** (e.g., `002-add-indexes.cypher`)
+2. **Make scripts idempotent** using `IF NOT EXISTS` clauses
+3. **Document what the script does** in this README
+4. **Test locally first** before deploying to production
+
+Example:
+```cypher
+// 002-add-project-label.cypher
+// Adds Project label with constraints and indexes
+
+CREATE CONSTRAINT project_id_unique IF NOT EXISTS
+FOR (p:Project) REQUIRE p.id IS UNIQUE;
+
+CREATE INDEX project_status_idx IF NOT EXISTS
+FOR (p:Project) ON (p.status);
+```
+
+### Why Numbered Prefixes?
+
+- **Deterministic execution order** - Scripts run in a predictable sequence
+- **Schema migrations** - New constraints/indexes can be added without breaking existing setup
+- **Version control** - Easy to see when and in what order schema changes were made
+- **Rollback safety** - Can track which scripts have been applied
+
+### Execution Context
+
+Scripts in this directory are executed:
+1. **On first container start** - Neo4j automatically runs all scripts in `/docker-entrypoint-initdb.d/`
+2. **On deployment** - `scripts/init-neo4j-schema.sh` explicitly executes them
+3. **Idempotently** - Safe to run multiple times (uses `IF NOT EXISTS`)
+
 ## How It Works
 
 ### Automatic Initialization

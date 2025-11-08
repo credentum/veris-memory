@@ -297,8 +297,16 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     echo "🔧 Initializing Neo4j schema..."
     if [ -f "scripts/init-neo4j-schema.sh" ]; then
       chmod +x scripts/init-neo4j-schema.sh
-      # Run schema initialization
-      ./scripts/init-neo4j-schema.sh || echo "⚠️  Schema initialization encountered warnings (may be non-critical)"
+      # Run schema initialization with proper error handling
+      if ./scripts/init-neo4j-schema.sh; then
+        echo "✅ Schema initialization completed successfully"
+      else
+        SCHEMA_EXIT_CODE=\$?
+        # Non-zero exit could be warnings (e.g., already exists) or real errors
+        # Log the warning but continue deployment
+        echo "⚠️  Schema initialization exited with code \$SCHEMA_EXIT_CODE"
+        echo "   Deployment will continue, but verify schema manually if needed"
+      fi
     else
       echo "⚠️  Neo4j schema initialization script not found"
       echo "   Attempting manual initialization..."
@@ -307,11 +315,34 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
       NEO4J_CONTAINER=\$(docker ps --filter "name=neo4j" --format "{{.Names}}" | head -1)
       if [ -n "\$NEO4J_CONTAINER" ]; then
         echo "   Found Neo4j container: \$NEO4J_CONTAINER"
-        docker exec "\$NEO4J_CONTAINER" cypher-shell -u neo4j -p "\$NEO4J_PASSWORD" \
-          "CREATE CONSTRAINT context_id_unique IF NOT EXISTS FOR (c:Context) REQUIRE c.id IS UNIQUE" || true
-        docker exec "\$NEO4J_CONTAINER" cypher-shell -u neo4j -p "\$NEO4J_PASSWORD" \
-          "CREATE INDEX context_type_idx IF NOT EXISTS FOR (c:Context) ON (c.type)" || true
-        echo "   ✅ Basic schema constraints created"
+
+        # Create constraint with proper error handling
+        CONSTRAINT_OUTPUT=\$(docker exec -e NEO4J_PASSWORD="\$NEO4J_PASSWORD" "\$NEO4J_CONTAINER" \
+          sh -c 'cypher-shell -u neo4j -p "\$NEO4J_PASSWORD" "CREATE CONSTRAINT context_id_unique IF NOT EXISTS FOR (c:Context) REQUIRE c.id IS UNIQUE"' 2>&1)
+        CONSTRAINT_RESULT=\$?
+
+        if [ \$CONSTRAINT_RESULT -eq 0 ]; then
+          echo "   ✅ Context constraint created"
+        elif echo "\$CONSTRAINT_OUTPUT" | grep -qi "already exists"; then
+          echo "   ℹ️  Context constraint already exists (idempotent)"
+        else
+          echo "   ⚠️  Constraint creation failed: \$CONSTRAINT_OUTPUT"
+        fi
+
+        # Create index with proper error handling
+        INDEX_OUTPUT=\$(docker exec -e NEO4J_PASSWORD="\$NEO4J_PASSWORD" "\$NEO4J_CONTAINER" \
+          sh -c 'cypher-shell -u neo4j -p "\$NEO4J_PASSWORD" "CREATE INDEX context_type_idx IF NOT EXISTS FOR (c:Context) ON (c.type)"' 2>&1)
+        INDEX_RESULT=\$?
+
+        if [ \$INDEX_RESULT -eq 0 ]; then
+          echo "   ✅ Context index created"
+        elif echo "\$INDEX_OUTPUT" | grep -qi "already exists"; then
+          echo "   ℹ️  Context index already exists (idempotent)"
+        else
+          echo "   ⚠️  Index creation failed: \$INDEX_OUTPUT"
+        fi
+
+        echo "   ✅ Basic schema initialization attempted"
       else
         echo "   ⚠️  Neo4j container not found, skipping schema init"
       fi
