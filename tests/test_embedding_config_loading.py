@@ -21,6 +21,7 @@ from src.embedding.service import (
     _MODEL_NAME_MAP,
     EmbeddingConfig,
     EmbeddingModel,
+    EmbeddingService,
     get_embedding_service,
 )
 
