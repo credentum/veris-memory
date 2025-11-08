@@ -19,6 +19,12 @@ from .models import CheckResult, SentinelConfig
 
 logger = logging.getLogger(__name__)
 
+# API key validation patterns
+# Key-only format: vmk_{prefix}_{hash}
+API_KEY_PATTERN = re.compile(r'^vmk_[a-zA-Z0-9]+_[a-zA-Z0-9]+$')
+# Full format: vmk_{prefix}_{hash}:user_id:role:is_agent
+FULL_FORMAT_PATTERN = re.compile(r'^vmk_[a-zA-Z0-9]+_[a-zA-Z0-9]+:[^:]+:[^:]+:(true|false)$')
+
 
 class BaseCheck(ABC):
     """Abstract base class for all Sentinel checks."""
@@ -229,21 +235,16 @@ class APITestMixin:
                     # Extract key portion from format: vmk_{prefix}_{hash}:user_id:role:is_agent
                     # Context-store expects only the key portion (before first colon)
                     # This matches how context-store's api_key_auth.py parses the env var
-                    api_key_parts = api_key_env.split(":")
+                    api_key_parts: list[str] = api_key_env.split(":")
                     api_key = api_key_parts[0]  # Extract key portion only
 
-                    # Validate format: should start with vmk_
-                    # Full pattern: vmk_{prefix}_{hash}:user_id:role:is_agent (but we only send the key part)
-                    api_key_pattern = re.compile(r'^vmk_[a-zA-Z0-9]+_[a-zA-Z0-9]+$')
-                    full_pattern = re.compile(r'^vmk_[a-zA-Z0-9]+_[a-zA-Z0-9]+:[^:]+:[^:]+:(true|false)$')
-
                     # Check if env var has full format (preferred) or just key
-                    if full_pattern.match(api_key_env):
+                    if FULL_FORMAT_PATTERN.match(api_key_env):
                         # Full format detected, extracted key portion
                         headers["X-API-Key"] = api_key
                         redacted_key = api_key[:12] + "..." if len(api_key) > 12 else "***"
                         logger.debug(f"Using API key (extracted from full format): {redacted_key}")
-                    elif api_key_pattern.match(api_key):
+                    elif API_KEY_PATTERN.match(api_key):
                         # Key-only format
                         headers["X-API-Key"] = api_key
                         redacted_key = api_key[:12] + "..." if len(api_key) > 12 else "***"
