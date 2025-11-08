@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60  # 60 requests per minute per IP
 
     # LiveKit Config
-    LIVEKIT_URL: str = "ws://livekit:7880"
+    LIVEKIT_URL: str = "ws://livekit:7880"  # Internal URL for backend
+    LIVEKIT_WS_URL: Optional[str] = None  # Public URL for browser clients (ws://IP:7880)
     LIVEKIT_API_KEY: str
     LIVEKIT_API_SECRET: str
 
