@@ -14,8 +14,8 @@
 
     <!-- LiveKit Client SDK (Pinned version 2.0.0 with SRI) -->
     <!-- SRI hash verifies file integrity from CDN -->
-    <script src="https://unpkg.com/livekit-client@2.0.0/dist/livekit-client.umd.min.js"
-            integrity="sha384-HFVVoMQ4a6sEzhqCud16i+3Lz2azyrouOGZg9iIKWWAWepAWDTCit2WMNhUFwYTS"
+    <script src="https://unpkg.com/livekit-client@2.0.0/dist/livekit-client.umd.js"
+            integrity="sha384-etZo3vB1lFNElw5yMm6eog+BozGxwlRbdh7D5CAEUdig9bOxN67pHo3n9lLWBgFt"
             crossorigin="anonymous">
     </script>
 
@@ -29,7 +29,7 @@
            npm install tailwindcss@3.4.1 livekit-client@2.0.0
            OR
            wget https://cdn.tailwindcss.com/3.4.1 -O static/tailwind.3.4.1.js
-           wget https://unpkg.com/livekit-client@2.0.0/dist/livekit-client.umd.min.js -O static/livekit-client.2.0.0.js
+           wget https://unpkg.com/livekit-client@2.0.0/dist/livekit-client.umd.js -O static/livekit-client.2.0.0.js
 
         2. Update script tags to use local files:
            <script src="/static/tailwind.3.4.1.js"></script>
@@ -152,6 +152,18 @@
     </div>
 
     <script>
+        // Debug: Check if LiveKit SDK loaded
+        console.log('=== Voice Bot UI Loaded ===');
+        console.log('LiveKit SDK available:', typeof LiveKit !== 'undefined');
+        if (typeof LiveKit !== 'undefined') {
+            console.log('LiveKit version:', LiveKit.version || 'unknown');
+            console.log('LiveKit.Room:', typeof LiveKit.Room);
+            console.log('LiveKit.RoomEvent:', typeof LiveKit.RoomEvent);
+        } else {
+            console.error('❌ LiveKit SDK failed to load!');
+            console.error('Check browser console for script loading errors');
+        }
+
         // State
         let room = null;
         let isConnected = false;
@@ -254,6 +266,13 @@
         // Connect to voice bot
         async function connect() {
             try {
+                // Verify LiveKit SDK is loaded
+                if (typeof LiveKit === 'undefined') {
+                    console.error('LiveKit SDK not loaded');
+                    throw new Error('LiveKit SDK failed to load. Please refresh the page.');
+                }
+                console.log('✅ LiveKit SDK verified, starting connection...');
+
                 addToConversation('System', 'Creating voice session...', 'system');
                 updateConnectionStatus('Connecting...');
 
@@ -273,16 +292,21 @@
                 }
 
                 const session = await response.json();
+                console.log('Session data:', session);
                 addToConversation('System', `Session created: ${session.room_name}`, 'system');
 
                 // Connect to LiveKit room
+                console.log('Creating LiveKit.Room...');
                 room = new LiveKit.Room({
                     adaptiveStream: true,
                     dynacast: true,
                 });
+                console.log('✅ Room created:', room);
 
                 // Set up room event handlers
+                console.log('Setting up event handlers...');
                 room.on(LiveKit.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                    console.log('Track subscribed:', track.kind);
                     if (track.kind === LiveKit.Track.Kind.Audio) {
                         const audioElement = track.attach();
                         document.body.appendChild(audioElement);
@@ -292,6 +316,7 @@
 
                 room.on(LiveKit.RoomEvent.DataReceived, (payload, participant) => {
                     const data = JSON.parse(new TextDecoder().decode(payload));
+                    console.log('Data received:', data);
                     if (data.type === 'transcription') {
                         addToConversation('You', data.text);
                     } else if (data.type === 'response') {
@@ -300,16 +325,21 @@
                 });
 
                 room.on(LiveKit.RoomEvent.Disconnected, () => {
+                    console.log('Room disconnected');
                     disconnect();
                 });
 
                 // Connect to room
+                console.log('Connecting to LiveKit room:', session.url);
                 await room.connect(session.url, session.token);
+                console.log('✅ Connected to room');
                 updateConnectionStatus('Connected');
                 updateStatus('Connected', 'bg-green-500 pulse');
 
                 // Enable microphone
+                console.log('Enabling microphone...');
                 await room.localParticipant.setMicrophoneEnabled(true);
+                console.log('✅ Microphone enabled');
                 updateMicStatus('Active');
 
                 // Monitor audio levels
@@ -329,7 +359,13 @@
                 addToConversation('System', 'Ready! Start speaking...', 'system');
 
             } catch (error) {
-                console.error('Connection error:', error);
+                console.error('❌ Connection error:', error);
+                console.error('Error stack:', error.stack);
+                console.error('Error details:', {
+                    message: error.message,
+                    name: error.name,
+                    livekitAvailable: typeof LiveKit !== 'undefined'
+                });
                 addToConversation('System', `Error: ${error.message}`, 'error');
                 updateConnectionStatus('Error');
                 updateStatus('Error', 'bg-red-500');
