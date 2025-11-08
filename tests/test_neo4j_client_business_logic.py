@@ -243,8 +243,8 @@ class TestNeo4jBusinessLogic:
 
     def test_create_constraints_comprehensive_list(self):
         """Test creation of all constraint types with comprehensive validation."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -290,8 +290,8 @@ class TestNeo4jBusinessLogic:
 
     def test_create_constraints_session_exception_handling(self):
         """Test constraint creation with session exceptions."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
         mock_session.run.side_effect = ClientError(
@@ -309,8 +309,8 @@ class TestNeo4jBusinessLogic:
 
     def test_create_indexes_comprehensive_coverage(self):
         """Test creation of all index types including full-text indexes."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -326,8 +326,8 @@ class TestNeo4jBusinessLogic:
 
     def test_create_indexes_fulltext_handling(self):
         """Test full-text index creation with specific query format."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -345,8 +345,8 @@ class TestNeo4jBusinessLogic:
 
     def test_create_indexes_btree_handling(self):
         """Test B-tree index creation with proper query format."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -366,8 +366,8 @@ class TestNeo4jBusinessLogic:
 
     def test_create_indexes_exception_tolerance(self):
         """Test index creation continues despite individual failures."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -388,8 +388,8 @@ class TestNeo4jBusinessLogic:
 
     def test_create_indexes_critical_failure_handling(self):
         """Test index creation fails when critical errors occur."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(
             side_effect=DatabaseError("Database connection lost")
         )
@@ -406,8 +406,8 @@ class TestNeo4jBusinessLogic:
 
     def test_setup_graph_schema_comprehensive_structure(self):
         """Test comprehensive graph schema setup with all components."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -423,8 +423,8 @@ class TestNeo4jBusinessLogic:
 
     def test_setup_graph_schema_system_node_creation(self):
         """Test system node creation with proper configuration."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -446,8 +446,8 @@ class TestNeo4jBusinessLogic:
 
     def test_setup_graph_schema_agent_creation(self):
         """Test agent node creation with all expected agents."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -465,8 +465,8 @@ class TestNeo4jBusinessLogic:
 
     def test_setup_graph_schema_document_types(self):
         """Test document type hierarchy creation."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -484,8 +484,8 @@ class TestNeo4jBusinessLogic:
 
     def test_setup_graph_schema_relationship_creation(self):
         """Test relationship creation between system components."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -514,8 +514,8 @@ class TestNeo4jBusinessLogic:
 
     def test_setup_graph_schema_session_exception(self):
         """Test schema setup with session exceptions."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
         mock_session.run.side_effect = DatabaseError("Schema setup failed")
@@ -531,8 +531,8 @@ class TestNeo4jBusinessLogic:
 
     def test_verify_setup_with_apoc_support(self):
         """Test setup verification with APOC procedures available."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -567,8 +567,8 @@ class TestNeo4jBusinessLogic:
 
     def test_verify_setup_without_apoc_fallback(self):
         """Test setup verification fallback when APOC is not available."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -589,8 +589,8 @@ class TestNeo4jBusinessLogic:
 
     def test_verify_setup_complete_failure(self):
         """Test setup verification when all queries fail."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
         mock_session.run.side_effect = Exception("Database error")
@@ -615,7 +615,7 @@ class TestNeo4jBusinessLogic:
 
     def test_close_connection_success(self):
         """Test successful connection closure."""
-        mock_driver = AsyncMock()
+        mock_driver = Mock()
 
         initializer = Neo4jInitializer(self.config_path)
         initializer.driver = mock_driver
@@ -634,7 +634,7 @@ class TestNeo4jBusinessLogic:
 
     def test_close_connection_with_exception_handling(self):
         """Test connection closure handles driver exceptions gracefully."""
-        mock_driver = AsyncMock()
+        mock_driver = Mock()
         mock_driver.close.side_effect = Exception("Driver close failed")
 
         initializer = Neo4jInitializer(self.config_path)
@@ -656,8 +656,8 @@ class TestNeo4jBusinessLogic:
         """Test main function successful execution path."""
         from src.storage.neo4j_client import main
 
-        with patch("storage.neo4j_client.Neo4jInitializer") as mock_initializer_class:
-            mock_initializer = AsyncMock()
+        with patch("src.storage.neo4j_client.Neo4jInitializer") as mock_initializer_class:
+            mock_initializer = Mock()
             mock_initializer.connect.return_value = True
             mock_initializer.create_constraints.return_value = True
             mock_initializer.create_indexes.return_value = True
@@ -665,8 +665,8 @@ class TestNeo4jBusinessLogic:
             mock_initializer.verify_setup.return_value = True
 
             # Mock the driver and session properly
-            mock_driver = AsyncMock()
-            mock_session = AsyncMock()
+            mock_driver = Mock()
+            mock_session = Mock()
             mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
             mock_driver.session.return_value.__exit__ = Mock(return_value=None)
             mock_session.run.return_value.single.return_value = None  # Database doesn't exist
@@ -685,7 +685,7 @@ class TestNeo4jBusinessLogic:
             finally:
                 sys.argv = original_argv
 
-            mock_initializer.connect.assert_called_once_with()
+            mock_initializer.connect.assert_called_once_with(username="neo4j", password="test")
             mock_initializer.create_constraints.assert_called_once_with()
             mock_initializer.create_indexes.assert_called_once_with()
             mock_initializer.setup_graph_schema.assert_called_once_with()
@@ -698,13 +698,13 @@ class TestNeo4jBusinessLogic:
         """Test main function with connection failure."""
         from src.storage.neo4j_client import main
 
-        with patch("storage.neo4j_client.Neo4jInitializer") as mock_initializer_class:
-            mock_initializer = AsyncMock()
+        with patch("src.storage.neo4j_client.Neo4jInitializer") as mock_initializer_class:
+            mock_initializer = Mock()
             mock_initializer.connect.return_value = False
 
             # Mock driver for consistency
-            mock_driver = AsyncMock()
-            mock_session = AsyncMock()
+            mock_driver = Mock()
+            mock_session = Mock()
             mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
             mock_driver.session.return_value.__exit__ = Mock(return_value=None)
             mock_initializer.driver = mock_driver
@@ -729,14 +729,14 @@ class TestNeo4jBusinessLogic:
         """Test main function with constraint creation failure."""
         from src.storage.neo4j_client import main
 
-        with patch("storage.neo4j_client.Neo4jInitializer") as mock_initializer_class:
-            mock_initializer = AsyncMock()
+        with patch("src.storage.neo4j_client.Neo4jInitializer") as mock_initializer_class:
+            mock_initializer = Mock()
             mock_initializer.connect.return_value = True
             mock_initializer.create_constraints.return_value = False
 
             # Mock driver and session
-            mock_driver = AsyncMock()
-            mock_session = AsyncMock()
+            mock_driver = Mock()
+            mock_session = Mock()
             mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
             mock_driver.session.return_value.__exit__ = Mock(return_value=None)
             mock_initializer.driver = mock_driver
@@ -761,14 +761,14 @@ class TestNeo4jBusinessLogic:
         """Test main function with skip flags."""
         from src.storage.neo4j_client import main
 
-        with patch("storage.neo4j_client.Neo4jInitializer") as mock_initializer_class:
-            mock_initializer = AsyncMock()
+        with patch("src.storage.neo4j_client.Neo4jInitializer") as mock_initializer_class:
+            mock_initializer = Mock()
             mock_initializer.connect.return_value = True
             mock_initializer.verify_setup.return_value = True
 
             # Mock driver and session
-            mock_driver = AsyncMock()
-            mock_session = AsyncMock()
+            mock_driver = Mock()
+            mock_session = Mock()
             mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
             mock_driver.session.return_value.__exit__ = Mock(return_value=None)
             mock_session.run.return_value.single.return_value = None
@@ -803,8 +803,8 @@ class TestNeo4jBusinessLogic:
 
     def test_enterprise_edition_database_creation_logic(self):
         """Test database creation logic for Enterprise Edition."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -828,8 +828,8 @@ class TestNeo4jBusinessLogic:
 
     def test_community_edition_fallback_handling(self):
         """Test Community Edition fallback behavior."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -893,8 +893,8 @@ class TestNeo4jBusinessLogic:
 
     def test_complex_constraint_scenarios(self):
         """Test complex constraint creation scenarios with mixed results."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 
@@ -922,8 +922,8 @@ class TestNeo4jBusinessLogic:
 
     def test_index_creation_mixed_success_scenarios(self):
         """Test index creation with various mixed success scenarios."""
-        mock_driver = AsyncMock()
-        mock_session = AsyncMock()
+        mock_driver = Mock()
+        mock_session = Mock()
         mock_driver.session.return_value.__enter__ = Mock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = Mock(return_value=None)
 

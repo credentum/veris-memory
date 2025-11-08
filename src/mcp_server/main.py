@@ -1520,12 +1520,11 @@ async def database_status() -> Dict[str, Any]:
         """Mask sensitive parts of URL for security."""
         if debug_mode:
             return url
-        # Replace host details with service name only
+        # Replace all host details with [REDACTED] to prevent infrastructure disclosure
         if "://" in url:
-            protocol, rest = url.split("://", 1)
-            service_name = rest.split(":")[0].split("/")[0]
-            return f"{protocol}://{service_name}:****"
-        return "****"
+            protocol = url.split("://", 1)[0]
+            return f"{protocol}://[REDACTED]"
+        return "[REDACTED]"
 
     # Get URLs from environment variables with fallbacks
     neo4j_url = os.getenv("NEO4J_BOLT", "bolt://neo4j:7687")
@@ -2765,37 +2764,6 @@ async def get_agent_state_endpoint(request: GetAgentStateRequest) -> Dict[str, A
         error_response = handle_generic_error(e, "retrieve agent state")
         error_response["data"] = {}
         return error_response
-
-
-@app.get("/tools")
-async def list_tools() -> Dict[str, Any]:
-    """List available MCP tools and their contracts."""
-    contracts_dir = Path(__file__).parent.parent.parent / "contracts"
-    tools = []
-
-    if contracts_dir.exists():
-        for contract_file in contracts_dir.glob("*.json"):
-            try:
-                with open(contract_file) as f:
-                    contract = json.load(f)
-                    tools.append(
-                        {
-                            "name": contract.get("name"),
-                            "description": contract.get("description"),
-                            "version": contract.get("version"),
-                        }
-                    )
-            except FileNotFoundError as e:
-                logger.warning(f"Contract file not found: {contract_file} - {e}")
-                continue
-            except json.JSONDecodeError as e:
-                logger.warning(f"Invalid JSON in contract file {contract_file}: {e}")
-                continue
-            except Exception as e:
-                logger.error(f"Unexpected error reading contract file {contract_file}: {e}")
-                continue
-
-    return {"tools": tools, "server_version": "1.0.0"}
 
 
 class RateLimiter:

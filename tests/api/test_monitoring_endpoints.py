@@ -243,10 +243,10 @@ class TestDatabaseStatusEndpoint:
 
                 data = response.json()
 
-                # Verify fallback URLs are used (masked in production)
-                assert "bolt://neo4j:" in data["databases"]["neo4j"]["url"]
-                assert "http://qdrant:" in data["databases"]["qdrant"]["url"]
-                assert "redis://redis:" in data["databases"]["redis"]["url"]
+                # Verify URLs are masked in production (DEBUG=false)
+                assert data["databases"]["neo4j"]["url"] == "bolt://[REDACTED]"
+                assert data["databases"]["qdrant"]["url"] == "http://[REDACTED]"
+                assert data["databases"]["redis"]["url"] == "redis://[REDACTED]"
 
 
 class TestStorageStatusEndpoint:
