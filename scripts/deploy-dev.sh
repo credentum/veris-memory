@@ -1,0 +1,266 @@
+#!/bin/bash
+# Development Deployment Script
+# Called by .github/workflows/deploy-dev.yml
+# Expects environment variables to be set for all secrets
+
+set -e
+
+# SIMPLE PASSWORD HANDLING:
+# ========================
+# Store the password as PLAIN TEXT in GitHub Secrets
+# GitHub Secrets are already encrypted and secure
+# No need for base64 encoding - it just adds complexity
+
+# Verify required environment variables exist
+if [ -z "$NEO4J_PASSWORD" ]; then
+  echo "❌ ERROR: NEO4J_PASSWORD not set!"
+  exit 1
+fi
+
+if [ -z "$HETZNER_USER" ]; then
+  echo "❌ ERROR: HETZNER_USER not set!"
+  exit 1
+fi
+
+if [ -z "$HETZNER_HOST" ]; then
+  echo "❌ ERROR: HETZNER_HOST not set!"
+  exit 1
+fi
+
+echo "✅ Required environment variables are set"
+
+# Pass the password directly to the remote server
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 $HETZNER_USER@$HETZNER_HOST << 'EOSSH'
+  set -e
+
+  echo "🔵 DEVELOPMENT DEPLOYMENT STARTING"
+  echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S UTC')"
+  echo "Host: $(hostname)"
+  echo "User: $(whoami)"
+
+  # Check if running as root
+  if [ "$(id -u)" -eq 0 ]; then
+    echo "⚠️  WARNING: Running as root. Consider using a non-root user for deployments."
+  fi
+
+  cd /opt/veris-memory || exit 1
+
+  # Backup current state before deployment
+  echo "📦 Creating pre-deployment backup..."
+  BACKUP_DIR="/opt/veris-memory-backups/$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$BACKUP_DIR"
+
+  # Backup .env file (contains secrets)
+  if [ -f .env ]; then
+    cp .env "$BACKUP_DIR/.env.backup"
+    echo "✅ Backed up .env to $BACKUP_DIR"
+  fi
+
+  # Backup docker-compose.yml
+  if [ -f docker-compose.yml ]; then
+    cp docker-compose.yml "$BACKUP_DIR/docker-compose.yml.backup"
+  fi
+
+  # Pull latest code
+  echo "📥 Pulling latest code from main branch..."
+  git fetch origin
+  git checkout main
+  git reset --hard origin/main
+  echo "✅ Code updated to latest version: $(git rev-parse --short HEAD)"
+
+  # Show what changed
+  echo "📝 Recent commits:"
+  git log --oneline -5
+
+  # Extensive cleanup
+  echo "🧹 Performing comprehensive cleanup..."
+
+  # Stop all containers first
+  echo "🛑 Stopping all containers gracefully..."
+  docker compose down --remove-orphans 2>/dev/null || true
+
+  # Force stop any remaining containers with our project name
+  echo "🛑 Force stopping any remaining veris-memory containers..."
+  docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker stop 2>/dev/null || true
+  docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker rm 2>/dev/null || true
+
+  # Stop containers by port (more aggressive)
+  for port in 8000 8001 8080 6333 7474 7687 6379; do
+    container=$(docker ps --filter "publish=$port" --format "{{.Names}}" 2>/dev/null | head -1)
+    if [ -n "$container" ]; then
+      echo "Stopping container on port $port: $container"
+      docker stop "$container" 2>/dev/null || true
+      docker rm "$container" 2>/dev/null || true
+    fi
+  done
+
+  # Prune system
+  echo "🗑️  Pruning Docker system..."
+  docker system prune -f --volumes 2>/dev/null || true
+
+  # Wait for cleanup
+  echo "⏳ Waiting 5 seconds for cleanup to complete..."
+  sleep 5
+
+  # Verify cleanup
+  remaining_containers=$(docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | wc -l)
+  remaining_volumes=$(docker volume ls --filter "name=veris-memory" --format "{{.Name}}" | wc -l)
+
+  echo "📊 Cleanup summary:"
+  echo "  - Remaining containers: $remaining_containers"
+  echo "  - Remaining volumes: $remaining_volumes"
+
+  if [ "$remaining_containers" -eq 0 ] && [ "$remaining_volumes" -eq 0 ]; then
+    echo "🎉 Complete cleanup achieved!"
+  else
+    echo "⚠️  Some resources may still exist, but deployment will continue"
+    docker ps -a --filter "name=veris-memory-dev" --format "table {{.Names}}\t{{.Status}}" || true
+  fi
+
+  # Check if deployment script exists
+  if [ -f "scripts/deploy-environment.sh" ]; then
+    echo "🚀 Running environment deployment script for DEV..."
+    chmod +x scripts/deploy-environment.sh
+    ./scripts/deploy-environment.sh dev
+  else
+    echo "⚠️ Environment deployment script not found, using fallback..."
+
+    # Fallback deployment for dev
+    echo "🛑 Stopping existing dev containers..."
+    docker compose -p veris-memory-dev down --remove-orphans 2>/dev/null || true
+
+    # Stop containers on dev ports (standard ports we test with)
+    for port in 8000 6333 7474 7687 6379 6334; do
+      containers=$(docker ps --filter "publish=$port" --format "{{.Names}}" 2>/dev/null || true)
+      if [ -n "$containers" ]; then
+        echo "Stopping containers on port $port: $containers"
+        docker stop $containers 2>/dev/null || true
+        docker rm $containers 2>/dev/null || true
+      fi
+    done
+
+    # Dev uses standard docker compose file
+    COMPOSE_FILE="docker-compose.yml"
+    echo "✅ Using standard docker compose for dev environment"
+
+    # Setup dev environment file
+    if [ -f ".env.dev" ]; then
+      cp .env.dev .env
+    elif [ -f ".env.template" ]; then
+      cp .env.template .env
+    fi
+
+    # Configure environment variables
+
+    # Remove ALL managed variables to ensure clean state (no duplicates)
+    echo "🗑️  Removing managed variables from .env to prevent duplicates..."
+    if [ -f .env ]; then
+      # Remove NEO4J, TELEGRAM, API keys, PR #170, and Voice Platform variables
+      grep -v "^NEO4J" .env > .env.tmp || true
+      grep -v "^TELEGRAM" .env.tmp > .env.tmp2 || true
+      grep -v "^API_KEY_MCP" .env.tmp2 > .env.tmp3 || true
+      grep -v "^VERIS_CACHE_TTL" .env.tmp3 > .env.tmp4 || true
+      grep -v "^STRICT_EMBEDDINGS" .env.tmp4 > .env.tmp5 || true
+      grep -v "^EMBEDDING_DIM" .env.tmp5 > .env.tmp6 || true
+      grep -v "^LIVEKIT" .env.tmp6 > .env.tmp7 || true
+      grep -v "^API_KEY_VOICEBOT" .env.tmp7 > .env.tmp8 || true
+      grep -v "^VOICE_BOT" .env.tmp8 > .env.tmp9 || true
+      grep -v "^STT_" .env.tmp9 > .env.tmp10 || true
+      grep -v "^TTS_" .env.tmp10 > .env.tmp11 || true
+      grep -v "^OPENAI_API_KEY" .env.tmp11 > .env.tmp12 || true
+      grep -v "^ENABLE_MCP_RETRY" .env.tmp12 > .env.tmp13 || true
+      grep -v "^MCP_RETRY_ATTEMPTS" .env.tmp13 > .env || true
+      rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13
+    fi
+
+    # Write secrets to .env without echoing them
+    # Note: Secrets are passed as environment variables from GitHub Actions
+    {
+      printf "NEO4J_PASSWORD=%s\n" "$NEO4J_PASSWORD"
+      printf "NEO4J_AUTH=neo4j/%s\n" "$NEO4J_PASSWORD"
+
+      # Add Telegram configuration if available
+      if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
+        printf "TELEGRAM_BOT_TOKEN=%s\n" "$TELEGRAM_BOT_TOKEN"
+      fi
+      if [ -n "$TELEGRAM_CHAT_ID" ]; then
+        printf "TELEGRAM_CHAT_ID=%s\n" "$TELEGRAM_CHAT_ID"
+      fi
+
+      # Sprint 13: MCP API Key Authentication
+      printf "\n# MCP Server Authentication (Sprint 13)\n"
+      if [ -n "$API_KEY_MCP" ]; then
+        printf "API_KEY_MCP=%s\n" "$API_KEY_MCP"
+        printf "AUTH_REQUIRED=true\n"
+        printf "ENVIRONMENT=production\n"
+      else
+        # Development fallback - use test key
+        printf "API_KEY_MCP=vmk_mcp_test:mcp_server:writer:true\n"
+        printf "AUTH_REQUIRED=false\n"
+        printf "ENVIRONMENT=development\n"
+      fi
+
+      # PR #170: Cache and Embedding Configuration
+      printf "\n# Veris Memory Cache Configuration (PR #170)\n"
+      printf "VERIS_CACHE_TTL_SECONDS=300\n"
+      printf "STRICT_EMBEDDINGS=false\n"
+      printf "EMBEDDING_DIM=384\n"
+
+      # Voice Platform Configuration
+      printf "\n# TeamAI Voice Platform Configuration\n"
+      if [ -n "$LIVEKIT_API_KEY" ]; then
+        printf "LIVEKIT_API_KEY=%s\n" "$LIVEKIT_API_KEY"
+      fi
+      if [ -n "$LIVEKIT_API_SECRET" ]; then
+        printf "LIVEKIT_API_SECRET=%s\n" "$LIVEKIT_API_SECRET"
+      fi
+      if [ -n "$LIVEKIT_API_WEBSOCKET" ]; then
+        printf "LIVEKIT_API_WEBSOCKET=%s\n" "$LIVEKIT_API_WEBSOCKET"
+      fi
+      if [ -n "$API_KEY_VOICEBOT" ]; then
+        printf "API_KEY_VOICEBOT=%s\n" "$API_KEY_VOICEBOT"
+      fi
+
+      # Voice Bot Sprint 13 Configuration
+      printf "VOICE_BOT_AUTHOR_PREFIX=voice_bot\n"
+      printf "ENABLE_MCP_RETRY=true\n"
+      printf "MCP_RETRY_ATTEMPTS=3\n"
+
+      # OpenAI for STT/TTS (Whisper + TTS)
+      if [ -n "$OPENAI_API_KEY" ]; then
+        printf "OPENAI_API_KEY=%s\n" "$OPENAI_API_KEY"
+        printf "STT_PROVIDER=whisper\n"
+        printf "STT_API_KEY=%s\n" "$OPENAI_API_KEY"
+        printf "TTS_PROVIDER=openai\n"
+        printf "TTS_API_KEY=%s\n" "$OPENAI_API_KEY"
+      fi
+
+      # Voice Bot Feature Flags
+      printf "ENABLE_VOICE_COMMANDS=true\n"
+      printf "ENABLE_FACT_STORAGE=true\n"
+      printf "ENABLE_CONVERSATION_TRACE=true\n"
+    } >> .env 2>/dev/null
+
+    # Verify configuration was written correctly
+    if ! grep -q "^NEO4J_PASSWORD=" .env; then
+      echo "❌ ERROR: NEO4J_PASSWORD not found in .env!"
+      exit 1
+    fi
+    echo "✅ Configuration file created successfully"
+
+    # Build and start services
+    echo "🏗️  Building and starting services..."
+    docker compose up -d --build
+
+    echo "⏳ Waiting for services to start..."
+    sleep 10
+
+    # Show service status
+    echo "📊 Service Status:"
+    docker compose ps
+
+    echo "✅ Development deployment completed!"
+  fi
+EOSSH
+
+echo "✅ Deployment script completed successfully"
