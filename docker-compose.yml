@@ -266,11 +266,11 @@ services:
       - voice-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7880/"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
+      test: ["CMD-SHELL", "netstat -tuln | grep :7880 || ss -tuln | grep :7880"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # Voice Bot Service - Integrates LiveKit with MCP Memory
   voice-bot:
