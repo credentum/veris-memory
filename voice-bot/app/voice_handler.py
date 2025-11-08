@@ -17,7 +17,7 @@ class VoiceHandler:
         self.livekit_url = livekit_url
         self.api_key = api_key
         self.api_secret = api_secret
-        self.room_service = None
+        self.lk_api = None
 
     async def initialize(self):
         """Initialize LiveKit services"""
@@ -25,11 +25,11 @@ class VoiceHandler:
             # Convert WebSocket URL to HTTP for API
             http_url = self.livekit_url.replace("ws://", "http://").replace("wss://", "https://")
 
-            # Initialize API clients
-            self.room_service = api.RoomService(
-                http_url,
-                self.api_key,
-                self.api_secret
+            # Initialize API client (livekit-api 1.0.7+)
+            self.lk_api = api.LiveKitAPI(
+                url=http_url,
+                api_key=self.api_key,
+                api_secret=self.api_secret
             )
             logger.info("✅ LiveKit services initialized")
             return True
@@ -58,7 +58,7 @@ class VoiceHandler:
 
         # Create room
         try:
-            await self.room_service.create_room(
+            await self.lk_api.room.create_room(
                 api.CreateRoomRequest(
                     name=room_name,
                     max_participants=2,  # User + bot
@@ -89,13 +89,13 @@ class VoiceHandler:
         This is a simple connectivity check that doesn't depend on room state.
         """
         try:
-            if not self.room_service:
-                logger.warning("LiveKit room_service not initialized")
+            if not self.lk_api:
+                logger.warning("LiveKit API not initialized")
                 return False
 
             # List rooms as health check - works even with empty room list
             # This verifies connectivity to LiveKit server without depending on room state
-            result = await self.room_service.list_rooms(api.ListRoomsRequest())
+            result = await self.lk_api.room.list_rooms(api.ListRoomsRequest())
 
             # If we got a response (even empty list), LiveKit is healthy
             logger.debug(f"LiveKit health check: {len(result.rooms)} active rooms")
@@ -108,10 +108,10 @@ class VoiceHandler:
     async def list_active_sessions(self) -> List[Dict[str, Any]]:
         """List all active voice sessions"""
         try:
-            if not self.room_service:
+            if not self.lk_api:
                 return []
 
-            response = await self.room_service.list_rooms(api.ListRoomsRequest())
+            response = await self.lk_api.room.list_rooms(api.ListRoomsRequest())
             sessions = []
 
             for room in response.rooms:
@@ -130,10 +130,10 @@ class VoiceHandler:
     async def end_session(self, room_name: str) -> bool:
         """End a voice session"""
         try:
-            if not self.room_service:
+            if not self.lk_api:
                 return False
 
-            await self.room_service.delete_room(
+            await self.lk_api.room.delete_room(
                 api.DeleteRoomRequest(room=room_name)
             )
             logger.info(f"Ended voice session: {room_name}")
