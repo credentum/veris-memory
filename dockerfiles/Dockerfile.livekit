@@ -2,7 +2,8 @@
 # Based on Alpine Linux
 # Pinned to v1.7.0 with SHA256 digest for security
 # Digest verified from Docker Hub: https://hub.docker.com/layers/livekit/livekit-server/v1.7.0/images/sha256-84e422e2db78f0448169322fa24b0c9043dda40f349c4d4a767b66e5c2fd5f2f
-FROM livekit/livekit-server:v1.7.0@sha256:84e422e2db78f0448169322fa24b0c9043dda40f349c4d4a767b66e5c2fd5f2f
+# Platform explicitly set to linux/amd64 to prevent architecture mismatch
+FROM --platform=linux/amd64 livekit/livekit-server:v1.7.0@sha256:84e422e2db78f0448169322fa24b0c9043dda40f349c4d4a767b66e5c2fd5f2f
 
 # Install curl for health checks
 # LiveKit is based on Alpine Linux
