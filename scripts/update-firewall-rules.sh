@@ -29,6 +29,7 @@ echo "➕ Adding rules for Veris Memory services..."
 # Core services
 ufw allow 8000/tcp comment 'Veris Memory MCP Server'
 ufw allow 8001/tcp comment 'Veris Memory REST API'
+ufw allow 8002/tcp comment 'Voice-Bot API'
 ufw allow 8080/tcp comment 'Monitoring Dashboard'
 ufw allow 9090/tcp comment 'Sentinel Monitoring API'
 
@@ -53,5 +54,7 @@ echo "You can now access:"
 echo "  - MCP Server: http://$(hostname -I | awk '{print $1}'):8000"
 echo "  - REST API: http://$(hostname -I | awk '{print $1}'):8001"
 echo "  - API Docs: http://$(hostname -I | awk '{print $1}'):8001/docs"
+echo "  - Voice-Bot: http://$(hostname -I | awk '{print $1}'):8002"
+echo "  - Voice Docs: http://$(hostname -I | awk '{print $1}'):8002/docs"
 echo "  - Dashboard: http://$(hostname -I | awk '{print $1}'):8080"
 echo "  - Sentinel: http://$(hostname -I | awk '{print $1}'):9090/status"
