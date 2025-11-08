@@ -17,7 +17,7 @@ services:
       - "7881:7881"  # TURN/TLS
       - "7882:7882"  # Metrics
     environment:
-      - LIVEKIT_KEYS=${LIVEKIT_API_KEY}:${LIVEKIT_API_SECRET}
+      - LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}:${LIVEKIT_API_SECRET:-devsecret}
       - LIVEKIT_WEBHOOK_URLS=${LIVEKIT_WEBHOOK_URLS:-}
       - LIVEKIT_TURN_ENABLED=true
       - LIVEKIT_PORT=7880
@@ -30,10 +30,10 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7880/"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
 
   # Voice Bot Service - Integrates LiveKit with MCP Memory
   voice-bot:
@@ -44,8 +44,8 @@ services:
     environment:
       # LiveKit Configuration
       - LIVEKIT_URL=ws://livekit:7880
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devsecret}
 
       # MCP Server Connection (using existing context-store)
       - MCP_SERVER_URL=http://context-store:8000
