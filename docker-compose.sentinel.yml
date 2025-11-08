@@ -26,6 +26,7 @@ services:
 
       # Sprint 13 API Authentication
       - API_KEY_MCP=${API_KEY_MCP}
+      - SENTINEL_API_KEY=${SENTINEL_API_KEY}
 
       # Host Check Authentication (shared secret for host monitoring script)
       - HOST_CHECK_SECRET=${HOST_CHECK_SECRET:-veris_host_check_default_secret_change_me}

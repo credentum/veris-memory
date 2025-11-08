@@ -45,6 +45,8 @@ jobs:
           echo "::add-mask::${{ secrets.LIVEKIT_API_SECRET }}"
           echo "::add-mask::${{ secrets.API_KEY_VOICEBOT }}"
           echo "::add-mask::${{ secrets.OPENAI_API_KEY }}"
+          echo "::add-mask::${{ secrets.SENTINEL_API_KEY }}"
+          echo "::add-mask::${{ secrets.HOST_CHECK_SECRET }}"
           
           # Create SSH key with secure permissions
           # Use printf to preserve newlines in the key
@@ -71,6 +73,8 @@ jobs:
           LIVEKIT_API_WEBSOCKET: ${{ secrets.LIVEKIT_API_WEBSOCKET }}
           API_KEY_VOICEBOT: ${{ secrets.API_KEY_VOICEBOT }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SENTINEL_API_KEY: ${{ secrets.SENTINEL_API_KEY }}
+          HOST_CHECK_SECRET: ${{ secrets.HOST_CHECK_SECRET }}
           HETZNER_USER: ${{ secrets.HETZNER_USER }}
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
         run: |
