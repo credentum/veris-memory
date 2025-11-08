@@ -3,12 +3,14 @@ TeamAI Voice Bot - Main FastAPI Application
 Integrates LiveKit voice with Veris MCP memory system
 """
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from datetime import datetime
+from pathlib import Path
 from .config import settings
 import logging
 import sys
@@ -45,6 +47,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount static files for voice bot UI
+static_path = Path(__file__).parent / "static"
+if static_path.exists():
+    app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+    logger.info(f"✅ Mounted static files from {static_path}")
+else:
+    logger.warning(f"⚠️  Static directory not found at {static_path}")
 
 # Global clients (initialized on startup)
 memory_client = None
@@ -133,10 +143,20 @@ async def root():
         "endpoints": {
             "health": "/health",
             "docs": "/docs",
+            "ui": "/ui",
             "voice_session": "/api/v1/voice/session",
             "echo_test": "/api/v1/voice/echo-test"
         }
     }
+
+
+@app.get("/ui")
+async def voice_ui():
+    """Serve the voice bot UI"""
+    static_path = Path(__file__).parent / "static" / "index.html"
+    if not static_path.exists():
+        raise HTTPException(status_code=404, detail="Voice UI not found")
+    return FileResponse(static_path)
 
 
 @app.get("/health")
@@ -222,7 +242,7 @@ async def detailed_health_check():
 
 @app.post("/api/v1/voice/session")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def create_voice_session(request: Request, user_id: str):
+async def create_voice_session(request: Request):
     """
     Create a new voice session for user
     Returns LiveKit connection details
@@ -233,9 +253,18 @@ async def create_voice_session(request: Request, user_id: str):
         raise HTTPException(status_code=503, detail="Voice handler not initialized")
 
     try:
+        # Get user_id from JSON body
+        body = await request.json()
+        user_id = body.get("user_id")
+
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required in request body")
+
         session = await voice_handler.create_voice_session(user_id)
         logger.info(f"Created voice session for user {user_id}: {session['room_name']}")
         return JSONResponse(content=session, status_code=201)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating voice session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
