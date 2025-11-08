@@ -1986,18 +1986,20 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         if metadata_filters and enhanced_results:
             filtered_results = []
             for result in enhanced_results:
-                metadata = result.get('metadata', {})
-                
+                # Fix: Access metadata from correct nesting level in payload structure
+                # User metadata is stored at payload.metadata, not at top level
+                metadata = result.get('payload', {}).get('metadata', {})
+
                 # Check if all metadata filters match exactly
                 match = True
                 for filter_key, filter_value in metadata_filters.items():
                     if metadata.get(filter_key) != filter_value:
                         match = False
                         break
-                
+
                 if match:
                     filtered_results.append(result)
-            
+
             enhanced_results = filtered_results
             logger.info(f"Strict metadata filtering applied: {len(enhanced_results)} results remaining")
 
