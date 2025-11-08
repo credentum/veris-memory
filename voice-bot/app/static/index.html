@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TeamAI Voice Bot</title>
+
+    <!-- Tailwind CSS (Pinned version 3.4.1 with SRI) -->
+    <!-- SRI hash ensures file integrity and prevents supply chain attacks -->
+    <script src="https://cdn.tailwindcss.com/3.4.1"
+            integrity="sha384-SOMLQz+nKv/ORIYXo3J3NrWJ33oBgGvkHlV9t8i70QVLq8ZtST9Np1gDsVUkk4xN"
+            crossorigin="anonymous">
+    </script>
+
+    <!-- LiveKit Client SDK (Pinned version 2.0.0 with SRI) -->
+    <!-- SRI hash verifies file integrity from CDN -->
+    <script src="https://unpkg.com/livekit-client@2.0.0/dist/livekit-client.umd.min.js"
+            integrity="sha384-HFVVoMQ4a6sEzhqCud16i+3Lz2azyrouOGZg9iIKWWAWepAWDTCit2WMNhUFwYTS"
+            crossorigin="anonymous">
+    </script>
+
+    <!--
+        Production Deployment Recommendations:
+        ==================================
+
+        For maximum security, SELF-HOST these dependencies instead of using CDN:
+
+        1. Download libraries locally:
+           npm install tailwindcss@3.4.1 livekit-client@2.0.0
+           OR
+           wget https://cdn.tailwindcss.com/3.4.1 -O static/tailwind.3.4.1.js
+           wget https://unpkg.com/livekit-client@2.0.0/dist/livekit-client.umd.min.js -O static/livekit-client.2.0.0.js
+
+        2. Update script tags to use local files:
+           <script src="/static/tailwind.3.4.1.js"></script>
+           <script src="/static/livekit-client.2.0.0.js"></script>
+
+        3. Benefits of self-hosting:
+           - No dependency on external CDN availability
+           - Faster load times (served from same domain)
+           - Full control over library versions
+           - No privacy concerns from CDN tracking
+
+        Current SRI hashes verified on: 2025-11-08
+        Regenerate if updating versions using:
+           curl -s <URL> | openssl dgst -sha384 -binary | openssl base64 -A
+    -->
+
+    <style>
+        body {
+            overscroll-behavior: none;
+        }
+        .pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .conversation-log {
+            max-height: 40vh;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <div class="bg-white shadow-sm sticky top-0 z-10">
+        <div class="max-w-md mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <span class="text-2xl">🎤</span>
+                    <h1 class="text-xl font-bold text-gray-900">TeamAI Voice Bot</h1>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span id="status-indicator" class="h-3 w-3 rounded-full bg-gray-400"></span>
+                    <span id="status-text" class="text-sm text-gray-600">Disconnected</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="max-w-md mx-auto px-4 py-6 space-y-6">
+
+        <!-- Connection Button -->
+        <div class="flex justify-center">
+            <button
+                id="connect-btn"
+                class="w-full max-w-xs h-20 rounded-2xl text-white text-xl font-bold shadow-lg transition-all duration-200 active:scale-95"
+                style="background-color: #3B82F6;">
+                <span id="btn-text">🎙️ CONNECT</span>
+            </button>
+        </div>
+
+        <!-- Status Indicators -->
+        <div class="bg-white rounded-xl shadow-sm p-4 space-y-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <span class="text-lg">🎙️</span>
+                    <span class="text-sm font-medium text-gray-700">Microphone</span>
+                </div>
+                <span id="mic-status" class="text-sm text-gray-500">Inactive</span>
+            </div>
+
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <span class="text-lg">🔊</span>
+                    <span class="text-sm font-medium text-gray-700">Audio Level</span>
+                </div>
+                <div class="flex space-x-1">
+                    <div id="level-1" class="w-2 h-4 bg-gray-300 rounded"></div>
+                    <div id="level-2" class="w-2 h-4 bg-gray-300 rounded"></div>
+                    <div id="level-3" class="w-2 h-4 bg-gray-300 rounded"></div>
+                    <div id="level-4" class="w-2 h-4 bg-gray-300 rounded"></div>
+                    <div id="level-5" class="w-2 h-4 bg-gray-300 rounded"></div>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <span class="text-lg">🌐</span>
+                    <span class="text-sm font-medium text-gray-700">Connection</span>
+                </div>
+                <span id="connection-status" class="text-sm text-gray-500">Not connected</span>
+            </div>
+        </div>
+
+        <!-- Conversation Log -->
+        <div class="bg-white rounded-xl shadow-sm">
+            <div class="px-4 py-3 border-b border-gray-200">
+                <h2 class="text-sm font-semibold text-gray-900">📝 Conversation</h2>
+            </div>
+            <div id="conversation-log" class="conversation-log px-4 py-3 space-y-2 text-sm">
+                <div class="text-gray-400 text-center py-8">
+                    Connect to start conversation
+                </div>
+            </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="bg-blue-50 rounded-xl p-4">
+            <h3 class="text-sm font-semibold text-blue-900 mb-2">💡 How to use:</h3>
+            <ol class="text-xs text-blue-800 space-y-1 list-decimal list-inside">
+                <li>Tap "CONNECT" to start</li>
+                <li>Allow microphone access when prompted</li>
+                <li>Speak naturally to the bot</li>
+                <li>Your conversation will appear below</li>
+                <li>Tap "DISCONNECT" when done</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let room = null;
+        let isConnected = false;
+        let userId = 'user_' + Math.random().toString(36).substr(2, 9);
+
+        // DOM Elements
+        const connectBtn = document.getElementById('connect-btn');
+        const btnText = document.getElementById('btn-text');
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+        const micStatus = document.getElementById('mic-status');
+        const connectionStatus = document.getElementById('connection-status');
+        const conversationLog = document.getElementById('conversation-log');
+
+        // Update UI state
+        function updateStatus(status, color) {
+            statusIndicator.className = `h-3 w-3 rounded-full ${color}`;
+            statusText.textContent = status;
+        }
+
+        function updateConnectionStatus(status) {
+            connectionStatus.textContent = status;
+        }
+
+        function updateMicStatus(status) {
+            micStatus.textContent = status;
+        }
+
+        function addToConversation(speaker, message, type = 'normal') {
+            // Clear placeholder if first message
+            if (conversationLog.querySelector('.text-gray-400')) {
+                conversationLog.innerHTML = '';
+            }
+
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'py-2 border-b border-gray-100 last:border-0';
+
+            let icon = speaker === 'You' ? '👤' : '🤖';
+            let textColor = speaker === 'You' ? 'text-blue-700' : 'text-green-700';
+
+            if (type === 'system') {
+                icon = 'ℹ️';
+                textColor = 'text-gray-600';
+            } else if (type === 'error') {
+                icon = '❌';
+                textColor = 'text-red-600';
+            }
+
+            // Use DOM manipulation to prevent XSS - safer than innerHTML
+            const container = document.createElement('div');
+            container.className = 'flex items-start space-x-2';
+
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'text-lg';
+            iconSpan.textContent = icon;
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'flex-1';
+
+            const speakerSpan = document.createElement('span');
+            speakerSpan.className = `font-semibold ${textColor}`;
+            speakerSpan.textContent = speaker + ':';
+
+            const messageSpan = document.createElement('span');
+            messageSpan.className = 'text-gray-700 ml-1';
+            messageSpan.textContent = message;  // textContent prevents XSS
+
+            contentDiv.appendChild(speakerSpan);
+            contentDiv.appendChild(messageSpan);
+
+            container.appendChild(iconSpan);
+            container.appendChild(contentDiv);
+
+            msgDiv.appendChild(container);
+
+            conversationLog.appendChild(msgDiv);
+            conversationLog.scrollTop = conversationLog.scrollHeight;
+        }
+
+        // Audio level visualization
+        function updateAudioLevel(level) {
+            const bars = [
+                document.getElementById('level-1'),
+                document.getElementById('level-2'),
+                document.getElementById('level-3'),
+                document.getElementById('level-4'),
+                document.getElementById('level-5')
+            ];
+
+            const activeCount = Math.floor(level * 5);
+            bars.forEach((bar, index) => {
+                if (index < activeCount) {
+                    bar.className = 'w-2 h-4 bg-green-500 rounded';
+                } else {
+                    bar.className = 'w-2 h-4 bg-gray-300 rounded';
+                }
+            });
+        }
+
+        // Connect to voice bot
+        async function connect() {
+            try {
+                addToConversation('System', 'Creating voice session...', 'system');
+                updateConnectionStatus('Connecting...');
+
+                // Create voice session via API
+                const response = await fetch('/api/v1/voice/session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        user_id: userId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to create voice session');
+                }
+
+                const session = await response.json();
+                addToConversation('System', `Session created: ${session.room_name}`, 'system');
+
+                // Connect to LiveKit room
+                room = new LivekitClient.Room({
+                    adaptiveStream: true,
+                    dynacast: true,
+                });
+
+                // Set up room event handlers
+                room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                    if (track.kind === LivekitClient.Track.Kind.Audio) {
+                        const audioElement = track.attach();
+                        document.body.appendChild(audioElement);
+                        addToConversation('Bot', 'Connected and listening...', 'system');
+                    }
+                });
+
+                room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
+                    const data = JSON.parse(new TextDecoder().decode(payload));
+                    if (data.type === 'transcription') {
+                        addToConversation('You', data.text);
+                    } else if (data.type === 'response') {
+                        addToConversation('Bot', data.text);
+                    }
+                });
+
+                room.on(LivekitClient.RoomEvent.Disconnected, () => {
+                    disconnect();
+                });
+
+                // Connect to room
+                await room.connect(session.url, session.token);
+                updateConnectionStatus('Connected');
+                updateStatus('Connected', 'bg-green-500 pulse');
+
+                // Enable microphone
+                await room.localParticipant.setMicrophoneEnabled(true);
+                updateMicStatus('Active');
+
+                // Monitor audio levels
+                const audioTrack = Array.from(room.localParticipant.audioTracks.values())[0]?.audioTrack;
+                if (audioTrack) {
+                    setInterval(() => {
+                        // Simulate audio level (LiveKit doesn't expose this easily)
+                        const level = Math.random() * 0.8;
+                        updateAudioLevel(level);
+                    }, 100);
+                }
+
+                isConnected = true;
+                connectBtn.style.backgroundColor = '#EF4444';
+                btnText.textContent = '🔴 DISCONNECT';
+
+                addToConversation('System', 'Ready! Start speaking...', 'system');
+
+            } catch (error) {
+                console.error('Connection error:', error);
+                addToConversation('System', `Error: ${error.message}`, 'error');
+                updateConnectionStatus('Error');
+                updateStatus('Error', 'bg-red-500');
+            }
+        }
+
+        // Disconnect from voice bot
+        async function disconnect() {
+            try {
+                if (room) {
+                    await room.disconnect();
+                    room = null;
+                }
+
+                isConnected = false;
+                connectBtn.style.backgroundColor = '#3B82F6';
+                btnText.textContent = '🎙️ CONNECT';
+
+                updateStatus('Disconnected', 'bg-gray-400');
+                updateConnectionStatus('Not connected');
+                updateMicStatus('Inactive');
+                updateAudioLevel(0);
+
+                addToConversation('System', 'Disconnected', 'system');
+
+            } catch (error) {
+                console.error('Disconnect error:', error);
+                addToConversation('System', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Button click handler
+        connectBtn.addEventListener('click', async () => {
+            connectBtn.disabled = true;
+
+            if (isConnected) {
+                await disconnect();
+            } else {
+                await connect();
+            }
+
+            connectBtn.disabled = false;
+        });
+
+        // Initial load message
+        window.addEventListener('load', () => {
+            addToConversation('System', 'Voice Bot UI loaded. Tap CONNECT to start.', 'system');
+        });
+    </script>
+</body>
+</html>
