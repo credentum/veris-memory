@@ -10,8 +10,11 @@ services:
     build:
       context: ./dockerfiles
       dockerfile: Dockerfile.livekit
+      platforms:
+        - linux/amd64
     image: veris-memory/livekit:v1.7.0-healthcheck
     container_name: livekit-server
+    platform: linux/amd64
     ports:
       - "7880:7880"  # WebRTC
       - "7881:7881"  # TURN/TLS
