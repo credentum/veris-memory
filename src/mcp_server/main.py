@@ -16,7 +16,7 @@ import logging
 import os
 import time
 from collections import defaultdict, deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -90,6 +90,11 @@ HEALTH_CHECK_RETRY_DELAY_DEFAULT = 5.0
 # Cache TTL configuration (Phase 4: Redis caching)
 # Configurable via environment variable for expensive queries
 CACHE_TTL_SECONDS = int(os.getenv("VERIS_CACHE_TTL_SECONDS", "300"))  # Default: 5 minutes
+
+# Sentinel monitoring configuration (Phase 2)
+METRICS_CACHE_TTL_SECONDS = int(os.getenv("METRICS_CACHE_TTL_SECONDS", "10"))  # Default: 10 seconds
+SERVICE_VERSION = os.getenv("SERVICE_VERSION", "0.9.0")  # Configurable version
+SERVICE_PROTOCOL = "MCP-1.0"
 
 # Metadata field names that should be separated from content fields
 METADATA_FIELD_NAMES = [
@@ -417,6 +422,34 @@ async def _generate_embedding(content: Dict[str, Any]) -> List[float]:
 
         # Raise ValueError to signal failure (caller handles gracefully)
         raise ValueError(f"Embedding generation failed: {e}")
+
+
+# Simple cache for health_detailed() to reduce load on metrics endpoint
+_health_detailed_cache: Dict[str, Any] = {}
+_health_detailed_cache_time: float = 0.0
+
+
+async def get_cached_health_detailed() -> Dict[str, Any]:
+    """
+    Get cached health_detailed() result to avoid expensive backend queries.
+
+    Caches for METRICS_CACHE_TTL_SECONDS (default 10 seconds) to reduce load
+    when Prometheus scrapes metrics frequently.
+    """
+    global _health_detailed_cache, _health_detailed_cache_time
+
+    current_time = time.time()
+    cache_age = current_time - _health_detailed_cache_time
+
+    # Return cached result if still valid
+    if _health_detailed_cache and cache_age < METRICS_CACHE_TTL_SECONDS:
+        return _health_detailed_cache
+
+    # Cache expired or empty, fetch new data
+    _health_detailed_cache = await health_detailed()
+    _health_detailed_cache_time = current_time
+
+    return _health_detailed_cache
 
 
 app = FastAPI(
@@ -1437,12 +1470,14 @@ async def prometheus_metrics() -> PlainTextResponse:
 
     Returns metrics in Prometheus text format for scraping by monitoring tools.
     Includes request counts, latencies, error rates, and service health.
+
+    Uses cached health_detailed() with 10-second TTL to reduce backend load.
     """
     # Use lightweight health check to avoid expensive backend queries
     health_status = await health()
 
-    # Get detailed status for service-level metrics (cached/less frequent)
-    detailed_status = await health_detailed()
+    # Get detailed status for service-level metrics (cached to reduce load)
+    detailed_status = await get_cached_health_detailed()
 
     metrics_lines = [
         "# HELP veris_memory_health_status Service health status (1=healthy, 0=unhealthy)",
@@ -1458,7 +1493,7 @@ async def prometheus_metrics() -> PlainTextResponse:
         "",
         "# HELP veris_memory_info Service information",
         "# TYPE veris_memory_info gauge",
-        "veris_memory_info{version=\"0.9.0\",protocol=\"MCP-1.0\"} 1",
+        f"veris_memory_info{{version=\"{SERVICE_VERSION}\",protocol=\"{SERVICE_PROTOCOL}\"}} 1",
     ]
 
     return PlainTextResponse("\n".join(metrics_lines))
@@ -1473,8 +1508,29 @@ async def database_status() -> Dict[str, Any]:
     - Neo4j graph database status and connection pool
     - Qdrant vector database status and collection info
     - Connection latencies and health checks
+
+    Note: URLs are masked in production for security (DEBUG mode shows full URLs).
     """
-    health_status = await health()
+    health_status = await get_cached_health_detailed()
+
+    # Mask URLs in production for security
+    debug_mode = os.getenv("DEBUG", "false").lower() == "true"
+
+    def mask_url(url: str) -> str:
+        """Mask sensitive parts of URL for security."""
+        if debug_mode:
+            return url
+        # Replace host details with service name only
+        if "://" in url:
+            protocol, rest = url.split("://", 1)
+            service_name = rest.split(":")[0].split("/")[0]
+            return f"{protocol}://{service_name}:****"
+        return "****"
+
+    # Get URLs from environment variables with fallbacks
+    neo4j_url = os.getenv("NEO4J_BOLT", "bolt://neo4j:7687")
+    qdrant_url = os.getenv("QDRANT_URL", "http://qdrant:6333")
+    redis_url = os.getenv("REDIS_URL", "redis://redis:6379")
 
     return {
         "status": "healthy" if health_status["status"] == "healthy" else "degraded",
@@ -1483,22 +1539,22 @@ async def database_status() -> Dict[str, Any]:
                 "status": health_status["services"]["neo4j"],
                 "type": "graph",
                 "connected": health_status["services"]["neo4j"] == "healthy",
-                "url": config.neo4j.uri if hasattr(config, 'neo4j') else "bolt://neo4j:7687",
+                "url": mask_url(neo4j_url),
             },
             "qdrant": {
                 "status": health_status["services"]["qdrant"],
                 "type": "vector",
                 "connected": health_status["services"]["qdrant"] == "healthy",
-                "url": config.qdrant.url if hasattr(config, 'qdrant') else "http://qdrant:6333",
+                "url": mask_url(qdrant_url),
             },
             "redis": {
                 "status": health_status["services"]["redis"],
                 "type": "cache",
                 "connected": health_status["services"]["redis"] == "healthy",
-                "url": config.redis.url if hasattr(config, 'redis') else "redis://redis:6379",
+                "url": mask_url(redis_url),
             },
         },
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -1512,7 +1568,7 @@ async def storage_status() -> Dict[str, Any]:
     - Graph storage (Neo4j) health and node counts
     - Cache storage (Redis) health and memory usage
     """
-    health_status = await health()
+    health_status = await get_cached_health_detailed()
 
     storage_info = {
         "status": "healthy" if health_status["status"] == "healthy" else "degraded",
@@ -1536,7 +1592,7 @@ async def storage_status() -> Dict[str, Any]:
                 "type": "key_value_store",
             },
         },
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
     return storage_info
