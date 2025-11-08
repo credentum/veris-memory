@@ -162,7 +162,13 @@ class EmbeddingService:
         """
         start_time = time.time()
 
-        logger.info("🔧 Starting embedding service initialization...")
+        # Use consistent log prefix function (will be available after module loads)
+        use_emoji = os.getenv("EMBEDDING_SERVICE_EMOJI_LOGGING", "true").lower() == "true"
+
+        def log_prefix(emoji: str, text: str) -> str:
+            return emoji if use_emoji else text
+
+        logger.info(f"{log_prefix('🔧', '[INIT]')} Starting embedding service initialization...")
         logger.info(f"   Model: {self.config.model.value[0]}")
         logger.info(f"   Target dimensions: {self.config.target_dimensions}")
         logger.info(f"   Max retries: {self.config.max_retries}")
@@ -170,24 +176,24 @@ class EmbeddingService:
 
         try:
             # Try to import sentence-transformers
-            logger.info("📦 Attempting to import sentence-transformers...")
+            logger.info(f"{log_prefix('📦', '[IMPORT]')} Attempting to import sentence-transformers...")
             try:
                 from sentence_transformers import SentenceTransformer
-                logger.info("✅ sentence-transformers package is available")
+                logger.info(f"{log_prefix('✅', '[SUCCESS]')} sentence-transformers package is available")
             except ImportError as import_error:
-                logger.error(f"❌ sentence-transformers not installed: {import_error}")
+                logger.error(f"{log_prefix('❌', '[ERROR]')} sentence-transformers not installed: {import_error}")
                 logger.error("   Install with: pip install sentence-transformers")
                 raise ModelLoadError("sentence-transformers package not installed")
 
             # Load the model
             model_name = self.config.model.value[0]
-            logger.info(f"📥 Loading model '{model_name}' (this may download ~80MB on first use)...")
+            logger.info(f"{log_prefix('📥', '[LOAD]')} Loading model '{model_name}' (this may download ~80MB on first use)...")
 
             try:
                 self._model = SentenceTransformer(model_name)
-                logger.info(f"✅ Model loaded successfully")
+                logger.info(f"{log_prefix('✅', '[SUCCESS]')} Model loaded successfully")
             except Exception as model_error:
-                logger.error(f"❌ Failed to load model: {model_error}", exc_info=True)
+                logger.error(f"{log_prefix('❌', '[ERROR]')} Failed to load model: {model_error}", exc_info=True)
                 logger.error(f"   Model name: {model_name}")
                 logger.error(f"   This might be a network issue or model name typo")
                 raise ModelLoadError(f"Failed to load model '{model_name}': {model_error}")
@@ -197,27 +203,27 @@ class EmbeddingService:
             # Verify model dimensions
             try:
                 actual_dims = self.get_model_dimensions()
-                logger.info(f"📊 Model dimensions: {actual_dims}")
+                logger.info(f"{log_prefix('📊', '[DIMS]')} Model dimensions: {actual_dims}")
 
                 if actual_dims != self.config.target_dimensions:
                     logger.warning(
-                        f"⚠️ Model produces {actual_dims}D but target is {self.config.target_dimensions}D. "
+                        f"{log_prefix('⚠️', '[WARN]')} Model produces {actual_dims}D but target is {self.config.target_dimensions}D. "
                         f"Dimension adjustment will be applied."
                     )
             except Exception as dim_error:
-                logger.warning(f"⚠️ Could not verify model dimensions: {dim_error}")
+                logger.warning(f"{log_prefix('⚠️', '[WARN]')} Could not verify model dimensions: {dim_error}")
 
             load_time = time.time() - start_time
             self._metrics["model_load_time"] = load_time
 
-            logger.info(f"✅ Embedding service fully initialized in {load_time:.2f}s")
+            logger.info(f"{log_prefix('✅', '[SUCCESS]')} Embedding service fully initialized in {load_time:.2f}s")
             return True
 
         except ModelLoadError:
             # Re-raise ModelLoadError as-is
             raise
         except Exception as e:
-            logger.error(f"❌ Unexpected error during initialization: {e}", exc_info=True)
+            logger.error(f"{log_prefix('❌', '[ERROR]')} Unexpected error during initialization: {e}", exc_info=True)
             raise ModelLoadError(f"Model initialization failed: {e}")
     
     def get_model_dimensions(self) -> int:
@@ -560,6 +566,22 @@ class EmbeddingService:
 # Global service instance
 _embedding_service: Optional[EmbeddingService] = None
 
+# Enable/disable emoji in logging (set via environment variable)
+_USE_EMOJI_LOGGING = os.getenv("EMBEDDING_SERVICE_EMOJI_LOGGING", "true").lower() == "true"
+
+def _log_prefix(emoji: str, text_prefix: str) -> str:
+    """Get log prefix with optional emoji based on configuration."""
+    return emoji if _USE_EMOJI_LOGGING else text_prefix
+
+# Model name mapping for exact matching (avoids ambiguous substring matches)
+_MODEL_NAME_MAP: Dict[str, EmbeddingModel] = {
+    "all-MiniLM-L6-v2": EmbeddingModel.MINI_LM_L6_V2,
+    "sentence-transformers/all-MiniLM-L6-v2": EmbeddingModel.MINI_LM_L6_V2,
+    "text-embedding-ada-002": EmbeddingModel.OPENAI_ADA_002,
+    "text-embedding-3-small": EmbeddingModel.OPENAI_3_SMALL,
+    "text-embedding-3-large": EmbeddingModel.OPENAI_3_LARGE,
+}
+
 def _load_config_from_file() -> Optional[EmbeddingConfig]:
     """
     Load embedding configuration from .ctxrc.yaml file.
@@ -571,8 +593,11 @@ def _load_config_from_file() -> Optional[EmbeddingConfig]:
 
     Returns:
         EmbeddingConfig if file found and valid, None otherwise
+
+    Raises:
+        No exceptions raised - all errors are logged and None is returned
     """
-    config_candidates = [
+    config_candidates: List[Optional[str]] = [
         os.getenv("CTX_CONFIG_PATH"),
         "config/.ctxrc.yaml",
         ".ctxrc.yaml",
@@ -584,41 +609,62 @@ def _load_config_from_file() -> Optional[EmbeddingConfig]:
 
         try:
             import yaml
-            logger.info(f"📁 Loading embedding config from: {candidate}")
+            logger.info(f"{_log_prefix('📁', '[CONFIG]')} Loading embedding config from: {candidate}")
 
-            with open(candidate, 'r') as f:
+            with open(candidate, 'r', encoding='utf-8') as f:
                 yaml_config = yaml.safe_load(f)
+
+            if not isinstance(yaml_config, dict):
+                logger.warning(f"Config file {candidate} did not parse to a dictionary")
+                continue
 
             # Extract embedding configuration
             embedding_cfg = yaml_config.get('embeddings', yaml_config.get('embedding', {}))
 
-            if not embedding_cfg:
+            if not embedding_cfg or not isinstance(embedding_cfg, dict):
                 logger.warning(f"No 'embeddings' section found in {candidate}")
                 continue
 
-            # Map model name to EmbeddingModel enum
+            # Map model name to EmbeddingModel enum using exact matching
             model_name = embedding_cfg.get('model', 'all-MiniLM-L6-v2')
 
-            # Find matching model
-            model = EmbeddingModel.MINI_LM_L6_V2  # default
-            for em in EmbeddingModel:
-                if model_name in em.value[0] or em.value[0] in model_name:
-                    model = em
-                    break
+            # Try exact match first
+            if model_name in _MODEL_NAME_MAP:
+                model = _MODEL_NAME_MAP[model_name]
+            else:
+                # Fallback: try to find by checking enum values
+                model = EmbeddingModel.MINI_LM_L6_V2  # default
+                for em in EmbeddingModel:
+                    if model_name == em.value[0]:
+                        model = em
+                        break
+                logger.warning(
+                    f"Model name '{model_name}' not in standard mapping, using fallback: {model.value[0]}"
+                )
 
             config = EmbeddingConfig(
                 model=model,
-                target_dimensions=embedding_cfg.get('dimensions', 384),
-                max_retries=embedding_cfg.get('max_retries', 3),
+                target_dimensions=int(embedding_cfg.get('dimensions', 384)),
+                max_retries=int(embedding_cfg.get('max_retries', 3)),
                 timeout_seconds=float(embedding_cfg.get('timeout', 30.0)),
-                batch_size=embedding_cfg.get('batch_size', 100),
+                batch_size=int(embedding_cfg.get('batch_size', 100)),
             )
 
-            logger.info(f"✅ Loaded embedding config: model={model.value[0]}, dims={config.target_dimensions}")
+            logger.info(
+                f"{_log_prefix('✅', '[SUCCESS]')} Loaded embedding config: "
+                f"model={model.value[0]}, dims={config.target_dimensions}"
+            )
             return config
 
+        except (yaml.YAMLError, IOError, OSError) as e:
+            logger.error(f"Failed to load/parse config from {candidate}: {e}")
+            continue
+        except (KeyError, ValueError, TypeError) as e:
+            logger.error(f"Invalid config structure in {candidate}: {e}")
+            continue
         except Exception as e:
-            logger.error(f"Failed to load config from {candidate}: {e}")
+            # Catch any other unexpected errors but log them specifically
+            logger.error(f"Unexpected error loading config from {candidate}: {type(e).__name__}: {e}")
             continue
 
     logger.warning("No valid config file found, using defaults")
