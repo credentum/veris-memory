@@ -490,6 +490,14 @@ if HEALTH_ENDPOINTS_AVAILABLE:
 else:
     logger.warning("Health check endpoints not registered (module not available)")
 
+# Register REST API compatibility layer for sentinel monitoring
+try:
+    from .rest_compatibility import router as rest_compat_router
+    app.include_router(rest_compat_router)
+    logger.info("REST API compatibility layer registered: /api/v1/contexts/*, /api/admin/*")
+except ImportError as e:
+    logger.warning(f"REST API compatibility layer not registered: {e}")
+
 
 # Global exception handler for production security with request tracking
 @app.exception_handler(Exception)
