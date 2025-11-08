@@ -1,0 +1,99 @@
+version: "3.8"
+
+# TeamAI Voice Platform Extension
+# Use with main docker-compose.yml:
+# docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d
+
+services:
+  # LiveKit Server for Real-Time Voice
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: livekit-server
+    ports:
+      - "7880:7880"  # WebRTC
+      - "7881:7881"  # TURN/TLS
+      - "7882:7882"  # Metrics
+    environment:
+      - LIVEKIT_KEYS=${LIVEKIT_API_KEY}:${LIVEKIT_API_SECRET}
+      - LIVEKIT_WEBHOOK_URLS=${LIVEKIT_WEBHOOK_URLS:-}
+      - LIVEKIT_TURN_ENABLED=true
+      - LIVEKIT_PORT=7880
+      - LIVEKIT_RTC_PORT=7881
+    volumes:
+      - ./docker/livekit/config.yaml:/etc/livekit.yaml:ro
+    networks:
+      - context-store-network
+      - voice-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7880/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # Voice Bot Service - Integrates LiveKit with MCP Memory
+  voice-bot:
+    build:
+      context: ./voice-bot
+      dockerfile: Dockerfile
+    container_name: voice-bot
+    environment:
+      # LiveKit Configuration
+      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+
+      # MCP Server Connection (using existing context-store)
+      - MCP_SERVER_URL=http://context-store:8000
+      - MCP_API_KEY=${MCP_API_KEY:-}
+
+      # Redis for Session State
+      - REDIS_URL=redis://redis:6379
+
+      # Service Configuration
+      - SERVICE_NAME=voice-bot
+      - HOST=0.0.0.0
+      - PORT=8002
+      - LOG_LEVEL=info
+
+      # Voice Configuration
+      - STT_PROVIDER=${STT_PROVIDER:-deepgram}
+      - TTS_PROVIDER=${TTS_PROVIDER:-elevenlabs}
+      - STT_API_KEY=${STT_API_KEY:-}
+      - TTS_API_KEY=${TTS_API_KEY:-}
+    ports:
+      - "8002:8002"
+    depends_on:
+      context-store:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      livekit:
+        condition: service_healthy
+    networks:
+      - context-store-network
+      - voice-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    volumes:
+      - ./voice-bot/app:/app/app:ro
+      - voice-bot-logs:/app/logs
+
+# Volumes for voice services
+volumes:
+  voice-bot-logs:
+    driver: local
+
+# Networks
+networks:
+  voice-network:
+    driver: bridge
+  context-store-network:
+    external: false
+    name: veris-memory_context-store-network
