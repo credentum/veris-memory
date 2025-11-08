@@ -2,9 +2,12 @@
 TeamAI Voice Bot - Main FastAPI Application
 Integrates LiveKit voice with Veris MCP memory system
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from datetime import datetime
 from .config import settings
 import logging
@@ -18,16 +21,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="TeamAI Voice Bot",
     description="Voice-enabled AI teammate with persistent memory",
     version="1.0.0"
 )
 
-# CORS middleware
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS middleware - configured via CORS_ORIGINS environment variable
+# For production, set CORS_ORIGINS to specific domains: "https://app.example.com,https://admin.example.com"
+# For development, can use "*" but not recommended for production
+cors_origins = settings.CORS_ORIGINS.split(",") if settings.CORS_ORIGINS != "*" else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -181,10 +194,13 @@ async def detailed_health_check():
 
 
 @app.post("/api/v1/voice/session")
-async def create_voice_session(user_id: str):
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+async def create_voice_session(request: Request, user_id: str):
     """
     Create a new voice session for user
     Returns LiveKit connection details
+
+    Rate limited to prevent abuse of voice session creation.
     """
     if not voice_handler:
         raise HTTPException(status_code=503, detail="Voice handler not initialized")
@@ -199,10 +215,13 @@ async def create_voice_session(user_id: str):
 
 
 @app.post("/api/v1/voice/echo-test")
-async def echo_test(user_id: str, message: str):
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+async def echo_test(request: Request, user_id: str, message: str):
     """
     Echo test endpoint for Sprint 1 validation
     Tests fact storage and retrieval without full voice pipeline
+
+    Rate limited to prevent abuse.
     """
     if not memory_client:
         raise HTTPException(status_code=503, detail="Memory client not initialized")
@@ -234,10 +253,35 @@ async def echo_test(user_id: str, message: str):
 
 
 @app.post("/api/v1/facts/store")
-async def store_fact(user_id: str, key: str, value: str):
-    """Store a fact about a user"""
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+async def store_fact(request: Request, user_id: str, key: str, value: str):
+    """
+    Store a fact about a user
+
+    Rate limited to prevent abuse of fact storage.
+    Input validation prevents injection attacks.
+    """
     if not memory_client:
         raise HTTPException(status_code=503, detail="Memory client not initialized")
+
+    # Input validation to prevent injection attacks
+    if not user_id or len(user_id) > 100 or not user_id.replace("_", "").replace("-", "").isalnum():
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid user_id. Must be alphanumeric with optional hyphens/underscores, max 100 chars"
+        )
+
+    if not key or len(key) > 100 or not key.replace("_", "").isalnum():
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid key. Must be alphanumeric with optional underscores, max 100 chars"
+        )
+
+    if not value or len(value) > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid value. Must be non-empty and max 1000 chars"
+        )
 
     try:
         success = await memory_client.store_fact(user_id, key, value)

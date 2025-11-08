@@ -12,6 +12,17 @@ class Settings(BaseSettings):
     PORT: int = 8002
     LOG_LEVEL: str = "info"
 
+    # CORS Configuration
+    # Comma-separated list of allowed origins for production
+    # Example: "https://app.example.com,https://admin.example.com"
+    # Use "*" only for development (not recommended for production)
+    CORS_ORIGINS: str = "*"
+
+    # Rate Limiting Configuration
+    # Maximum requests per minute per IP address
+    # Prevents abuse of voice session creation and fact storage endpoints
+    RATE_LIMIT_PER_MINUTE: int = 60  # 60 requests per minute per IP
+
     # LiveKit Config
     LIVEKIT_URL: str = "ws://livekit:7880"
     LIVEKIT_API_KEY: str

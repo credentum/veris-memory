@@ -299,6 +299,7 @@ services:
       - HOST=0.0.0.0
       - PORT=8002
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
 
       # Voice Configuration (OpenAI Whisper + TTS)
       - STT_PROVIDER=${STT_PROVIDER:-whisper}

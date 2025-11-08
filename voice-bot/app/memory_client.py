@@ -129,7 +129,15 @@ class MemoryClient:
 
         # Use correct MCP endpoint format (not wrapped in call_tool)
         payload = {
-            "type": "log",  # Changed from 'fact' to allowed type 'log'
+            # Type is hardcoded to 'log' for voice-bot fact storage
+            # Rationale:
+            # - 'log' type is the appropriate MCP context type for conversational facts
+            # - Voice conversations are temporal/sequential (log-like) rather than hierarchical
+            # - MCP server's allowed types: design, decision, task, log, code, test, doc, discussion
+            # - 'log' best represents voice interaction facts (vs 'decision', 'design', etc.)
+            # - Enables semantic search across voice conversation history
+            # Alternative considered: 'discussion' - but 'log' is more accurate for factual storage
+            "type": "log",
             "content": {
                 "namespace": namespace,
                 "user_id": user_id,
