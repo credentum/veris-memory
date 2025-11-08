@@ -29,17 +29,37 @@ fi
 
 echo "✅ Required environment variables are set"
 
-# Pass the password directly to the remote server
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 $HETZNER_USER@$HETZNER_HOST << 'EOSSH'
+# Pass environment variables and execute deployment on remote server
+# NOTE: Using unquoted heredoc to allow variable expansion
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 $HETZNER_USER@$HETZNER_HOST << EOSSH
   set -e
 
   echo "🔵 DEVELOPMENT DEPLOYMENT STARTING"
-  echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S UTC')"
-  echo "Host: $(hostname)"
-  echo "User: $(whoami)"
+  echo "Timestamp: \$(date '+%Y-%m-%d %H:%M:%S UTC')"
+  echo "Host: \$(hostname)"
+  echo "User: \$(whoami)"
+
+  # Export all secrets as environment variables for scripts to use
+  export NEO4J_PASSWORD='$NEO4J_PASSWORD'
+  export TELEGRAM_BOT_TOKEN='$TELEGRAM_BOT_TOKEN'
+  export TELEGRAM_CHAT_ID='$TELEGRAM_CHAT_ID'
+  export API_KEY_MCP='$API_KEY_MCP'
+  export LIVEKIT_API_KEY='$LIVEKIT_API_KEY'
+  export LIVEKIT_API_SECRET='$LIVEKIT_API_SECRET'
+  export LIVEKIT_API_WEBSOCKET='$LIVEKIT_API_WEBSOCKET'
+  export API_KEY_VOICEBOT='$API_KEY_VOICEBOT'
+  export OPENAI_API_KEY='$OPENAI_API_KEY'
+  export ENVIRONMENT=dev
+
+  # Verify critical environment variables
+  if [ -z "\$NEO4J_PASSWORD" ]; then
+    echo "❌ ERROR: NEO4J_PASSWORD not exported to remote server!"
+    exit 1
+  fi
+  echo "✅ Environment variables exported successfully"
 
   # Check if running as root
-  if [ "$(id -u)" -eq 0 ]; then
+  if [ "\$(id -u)" -eq 0 ]; then
     echo "⚠️  WARNING: Running as root. Consider using a non-root user for deployments."
   fi
 
@@ -47,7 +67,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
 
   # Backup current state before deployment
   echo "📦 Creating pre-deployment backup..."
-  BACKUP_DIR="/opt/veris-memory-backups/$(date +%Y%m%d-%H%M%S)"
+  BACKUP_DIR="/opt/veris-memory-backups/\$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$BACKUP_DIR"
 
   # Backup .env file (contains secrets)
@@ -66,7 +86,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   git fetch origin
   git checkout main
   git reset --hard origin/main
-  echo "✅ Code updated to latest version: $(git rev-parse --short HEAD)"
+  echo "✅ Code updated to latest version: \$(git rev-parse --short HEAD)"
 
   # Show what changed
   echo "📝 Recent commits:"
@@ -86,11 +106,11 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
 
   # Stop containers by port (more aggressive)
   for port in 8000 8001 8080 6333 7474 7687 6379; do
-    container=$(docker ps --filter "publish=$port" --format "{{.Names}}" 2>/dev/null | head -1)
-    if [ -n "$container" ]; then
-      echo "Stopping container on port $port: $container"
-      docker stop "$container" 2>/dev/null || true
-      docker rm "$container" 2>/dev/null || true
+    container=\$(docker ps --filter "publish=\$port" --format "{{.Names}}" 2>/dev/null | head -1)
+    if [ -n "\$container" ]; then
+      echo "Stopping container on port \$port: \$container"
+      docker stop "\$container" 2>/dev/null || true
+      docker rm "\$container" 2>/dev/null || true
     fi
   done
 
@@ -103,14 +123,14 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   sleep 5
 
   # Verify cleanup
-  remaining_containers=$(docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | wc -l)
-  remaining_volumes=$(docker volume ls --filter "name=veris-memory" --format "{{.Name}}" | wc -l)
+  remaining_containers=\$(docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | wc -l)
+  remaining_volumes=\$(docker volume ls --filter "name=veris-memory" --format "{{.Name}}" | wc -l)
 
   echo "📊 Cleanup summary:"
-  echo "  - Remaining containers: $remaining_containers"
-  echo "  - Remaining volumes: $remaining_volumes"
+  echo "  - Remaining containers: \$remaining_containers"
+  echo "  - Remaining volumes: \$remaining_volumes"
 
-  if [ "$remaining_containers" -eq 0 ] && [ "$remaining_volumes" -eq 0 ]; then
+  if [ "\$remaining_containers" -eq 0 ] && [ "\$remaining_volumes" -eq 0 ]; then
     echo "🎉 Complete cleanup achieved!"
   else
     echo "⚠️  Some resources may still exist, but deployment will continue"
@@ -131,11 +151,11 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
 
     # Stop containers on dev ports (standard ports we test with)
     for port in 8000 6333 7474 7687 6379 6334; do
-      containers=$(docker ps --filter "publish=$port" --format "{{.Names}}" 2>/dev/null || true)
-      if [ -n "$containers" ]; then
-        echo "Stopping containers on port $port: $containers"
-        docker stop $containers 2>/dev/null || true
-        docker rm $containers 2>/dev/null || true
+      containers=\$(docker ps --filter "publish=\$port" --format "{{.Names}}" 2>/dev/null || true)
+      if [ -n "\$containers" ]; then
+        echo "Stopping containers on port \$port: \$containers"
+        docker stop \$containers 2>/dev/null || true
+        docker rm \$containers 2>/dev/null || true
       fi
     done
 
@@ -176,69 +196,69 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     # Write secrets to .env without echoing them
     # Note: Secrets are passed as environment variables from GitHub Actions
     {
-      printf "NEO4J_PASSWORD=%s\n" "$NEO4J_PASSWORD"
-      printf "NEO4J_AUTH=neo4j/%s\n" "$NEO4J_PASSWORD"
+      printf "NEO4J_PASSWORD=%s\\n" "\$NEO4J_PASSWORD"
+      printf "NEO4J_AUTH=neo4j/%s\\n" "\$NEO4J_PASSWORD"
 
       # Add Telegram configuration if available
-      if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
-        printf "TELEGRAM_BOT_TOKEN=%s\n" "$TELEGRAM_BOT_TOKEN"
+      if [ -n "\$TELEGRAM_BOT_TOKEN" ]; then
+        printf "TELEGRAM_BOT_TOKEN=%s\\n" "\$TELEGRAM_BOT_TOKEN"
       fi
-      if [ -n "$TELEGRAM_CHAT_ID" ]; then
-        printf "TELEGRAM_CHAT_ID=%s\n" "$TELEGRAM_CHAT_ID"
+      if [ -n "\$TELEGRAM_CHAT_ID" ]; then
+        printf "TELEGRAM_CHAT_ID=%s\\n" "\$TELEGRAM_CHAT_ID"
       fi
 
       # Sprint 13: MCP API Key Authentication
-      printf "\n# MCP Server Authentication (Sprint 13)\n"
-      if [ -n "$API_KEY_MCP" ]; then
-        printf "API_KEY_MCP=%s\n" "$API_KEY_MCP"
-        printf "AUTH_REQUIRED=true\n"
-        printf "ENVIRONMENT=production\n"
+      printf "\\n# MCP Server Authentication (Sprint 13)\\n"
+      if [ -n "\$API_KEY_MCP" ]; then
+        printf "API_KEY_MCP=%s\\n" "\$API_KEY_MCP"
+        printf "AUTH_REQUIRED=true\\n"
+        printf "ENVIRONMENT=production\\n"
       else
         # Development fallback - use test key
-        printf "API_KEY_MCP=vmk_mcp_test:mcp_server:writer:true\n"
-        printf "AUTH_REQUIRED=false\n"
-        printf "ENVIRONMENT=development\n"
+        printf "API_KEY_MCP=vmk_mcp_test:mcp_server:writer:true\\n"
+        printf "AUTH_REQUIRED=false\\n"
+        printf "ENVIRONMENT=development\\n"
       fi
 
       # PR #170: Cache and Embedding Configuration
-      printf "\n# Veris Memory Cache Configuration (PR #170)\n"
-      printf "VERIS_CACHE_TTL_SECONDS=300\n"
-      printf "STRICT_EMBEDDINGS=false\n"
-      printf "EMBEDDING_DIM=384\n"
+      printf "\\n# Veris Memory Cache Configuration (PR #170)\\n"
+      printf "VERIS_CACHE_TTL_SECONDS=300\\n"
+      printf "STRICT_EMBEDDINGS=false\\n"
+      printf "EMBEDDING_DIM=384\\n"
 
       # Voice Platform Configuration
-      printf "\n# TeamAI Voice Platform Configuration\n"
-      if [ -n "$LIVEKIT_API_KEY" ]; then
-        printf "LIVEKIT_API_KEY=%s\n" "$LIVEKIT_API_KEY"
+      printf "\\n# TeamAI Voice Platform Configuration\\n"
+      if [ -n "\$LIVEKIT_API_KEY" ]; then
+        printf "LIVEKIT_API_KEY=%s\\n" "\$LIVEKIT_API_KEY"
       fi
-      if [ -n "$LIVEKIT_API_SECRET" ]; then
-        printf "LIVEKIT_API_SECRET=%s\n" "$LIVEKIT_API_SECRET"
+      if [ -n "\$LIVEKIT_API_SECRET" ]; then
+        printf "LIVEKIT_API_SECRET=%s\\n" "\$LIVEKIT_API_SECRET"
       fi
-      if [ -n "$LIVEKIT_API_WEBSOCKET" ]; then
-        printf "LIVEKIT_API_WEBSOCKET=%s\n" "$LIVEKIT_API_WEBSOCKET"
+      if [ -n "\$LIVEKIT_API_WEBSOCKET" ]; then
+        printf "LIVEKIT_API_WEBSOCKET=%s\\n" "\$LIVEKIT_API_WEBSOCKET"
       fi
-      if [ -n "$API_KEY_VOICEBOT" ]; then
-        printf "API_KEY_VOICEBOT=%s\n" "$API_KEY_VOICEBOT"
+      if [ -n "\$API_KEY_VOICEBOT" ]; then
+        printf "API_KEY_VOICEBOT=%s\\n" "\$API_KEY_VOICEBOT"
       fi
 
       # Voice Bot Sprint 13 Configuration
-      printf "VOICE_BOT_AUTHOR_PREFIX=voice_bot\n"
-      printf "ENABLE_MCP_RETRY=true\n"
-      printf "MCP_RETRY_ATTEMPTS=3\n"
+      printf "VOICE_BOT_AUTHOR_PREFIX=voice_bot\\n"
+      printf "ENABLE_MCP_RETRY=true\\n"
+      printf "MCP_RETRY_ATTEMPTS=3\\n"
 
       # OpenAI for STT/TTS (Whisper + TTS)
-      if [ -n "$OPENAI_API_KEY" ]; then
-        printf "OPENAI_API_KEY=%s\n" "$OPENAI_API_KEY"
-        printf "STT_PROVIDER=whisper\n"
-        printf "STT_API_KEY=%s\n" "$OPENAI_API_KEY"
-        printf "TTS_PROVIDER=openai\n"
-        printf "TTS_API_KEY=%s\n" "$OPENAI_API_KEY"
+      if [ -n "\$OPENAI_API_KEY" ]; then
+        printf "OPENAI_API_KEY=%s\\n" "\$OPENAI_API_KEY"
+        printf "STT_PROVIDER=whisper\\n"
+        printf "STT_API_KEY=%s\\n" "\$OPENAI_API_KEY"
+        printf "TTS_PROVIDER=openai\\n"
+        printf "TTS_API_KEY=%s\\n" "\$OPENAI_API_KEY"
       fi
 
       # Voice Bot Feature Flags
-      printf "ENABLE_VOICE_COMMANDS=true\n"
-      printf "ENABLE_FACT_STORAGE=true\n"
-      printf "ENABLE_CONVERSATION_TRACE=true\n"
+      printf "ENABLE_VOICE_COMMANDS=true\\n"
+      printf "ENABLE_FACT_STORAGE=true\\n"
+      printf "ENABLE_CONVERSATION_TRACE=true\\n"
     } >> .env 2>/dev/null
 
     # Verify configuration was written correctly
