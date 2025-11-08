@@ -13,6 +13,8 @@ on:
       - 'docker-compose*.yml'
       - '.env*'
       - 'scripts/deploy-dev.sh'
+      - 'scripts/init-neo4j-schema.sh'
+      - 'deployments/**'
       - '.github/workflows/deploy-dev.yml'
   workflow_dispatch:
     inputs:

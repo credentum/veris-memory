@@ -292,6 +292,32 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     echo "📊 Service Status:"
     docker compose ps
 
+    # Initialize Neo4j schema
+    echo ""
+    echo "🔧 Initializing Neo4j schema..."
+    if [ -f "scripts/init-neo4j-schema.sh" ]; then
+      chmod +x scripts/init-neo4j-schema.sh
+      # Run schema initialization
+      ./scripts/init-neo4j-schema.sh || echo "⚠️  Schema initialization encountered warnings (may be non-critical)"
+    else
+      echo "⚠️  Neo4j schema initialization script not found"
+      echo "   Attempting manual initialization..."
+
+      # Fallback: Run schema init via docker exec
+      NEO4J_CONTAINER=\$(docker ps --filter "name=neo4j" --format "{{.Names}}" | head -1)
+      if [ -n "\$NEO4J_CONTAINER" ]; then
+        echo "   Found Neo4j container: \$NEO4J_CONTAINER"
+        docker exec "\$NEO4J_CONTAINER" cypher-shell -u neo4j -p "\$NEO4J_PASSWORD" \
+          "CREATE CONSTRAINT context_id_unique IF NOT EXISTS FOR (c:Context) REQUIRE c.id IS UNIQUE" || true
+        docker exec "\$NEO4J_CONTAINER" cypher-shell -u neo4j -p "\$NEO4J_PASSWORD" \
+          "CREATE INDEX context_type_idx IF NOT EXISTS FOR (c:Context) ON (c.type)" || true
+        echo "   ✅ Basic schema constraints created"
+      else
+        echo "   ⚠️  Neo4j container not found, skipping schema init"
+      fi
+    fi
+
+    echo ""
     echo "✅ Development deployment completed!"
   fi
 EOSSH
