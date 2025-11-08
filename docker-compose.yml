@@ -245,7 +245,8 @@ services:
       - context-store-network
 
   # TeamAI Voice Platform Services
-  # LiveKit Server for Real-Time Voice
+  # LiveKit Server for Real-Time Voice (local development/testing)
+  # Note: Production uses LiveKit Cloud (LIVEKIT_API_WEBSOCKET)
   livekit:
     build:
       context: .
@@ -253,15 +254,13 @@ services:
     image: veris-memory/livekit:latest-healthcheck
     container_name: livekit-server
     ports:
-      - "7880:7880"  # WebRTC
-      - "7881:7881"  # TURN/TLS
+      - "7880:7880"  # WebRTC/HTTP API (matches config.yaml)
       - "7882:7882"  # Metrics
+      - "3478:3478/udp"  # TURN UDP (matches config.yaml udp_port)
+      - "5349:5349"  # TURN TLS (matches config.yaml tls_port)
     environment:
       - "LIVEKIT_KEYS=${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
       - LIVEKIT_WEBHOOK_URLS=${LIVEKIT_WEBHOOK_URLS:-}
-      - LIVEKIT_TURN_ENABLED=true
-      - LIVEKIT_PORT=7880
-      - LIVEKIT_RTC_PORT=7881
     volumes:
       - ./docker/livekit/config.yaml:/etc/livekit.yaml:ro
     networks:
