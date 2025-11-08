@@ -27,21 +27,21 @@ class TestVoiceHandlerInit:
         assert voice_handler.livekit_url == "ws://test-livekit:7880"
         assert voice_handler.api_key == "test_api_key"
         assert voice_handler.api_secret == "test_api_secret"
-        assert voice_handler.room_service is None
+        assert voice_handler.lk_api is None
 
     @pytest.mark.asyncio
     async def test_initialize_success(self, voice_handler):
         """Test successful initialization"""
-        with patch('app.voice_handler.api.RoomService') as mock_room_service:
+        with patch('app.voice_handler.api.LiveKitAPI') as mock_livekit_api:
             result = await voice_handler.initialize()
 
             assert result is True
-            assert voice_handler.room_service is not None
+            assert voice_handler.lk_api is not None
             # Should convert ws:// to http:// for API
-            mock_room_service.assert_called_once_with(
-                "http://test-livekit:7880",
-                "test_api_key",
-                "test_api_secret"
+            mock_livekit_api.assert_called_once_with(
+                url="http://test-livekit:7880",
+                api_key="test_api_key",
+                api_secret="test_api_secret"
             )
 
     @pytest.mark.asyncio
@@ -53,20 +53,20 @@ class TestVoiceHandlerInit:
             api_secret="secret"
         )
 
-        with patch('app.voice_handler.api.RoomService') as mock_room_service:
+        with patch('app.voice_handler.api.LiveKitAPI') as mock_livekit_api:
             await handler.initialize()
 
             # Should convert wss:// to https://
-            mock_room_service.assert_called_once_with(
-                "https://test-livekit:7880",
-                "key",
-                "secret"
+            mock_livekit_api.assert_called_once_with(
+                url="https://test-livekit:7880",
+                api_key="key",
+                api_secret="secret"
             )
 
     @pytest.mark.asyncio
     async def test_initialize_failure(self, voice_handler):
         """Test initialization failure"""
-        with patch('app.voice_handler.api.RoomService', side_effect=Exception("Connection failed")):
+        with patch('app.voice_handler.api.LiveKitAPI', side_effect=Exception("Connection failed")):
             result = await voice_handler.initialize()
 
             assert result is False
@@ -115,9 +115,10 @@ class TestVoiceSessionCreation:
     @pytest.mark.asyncio
     async def test_create_voice_session_success(self, voice_handler):
         """Test successful voice session creation"""
-        mock_room_service = MagicMock()
-        mock_room_service.create_room = AsyncMock()
-        voice_handler.room_service = mock_room_service
+        mock_lk_api = MagicMock()
+        mock_lk_api.room = MagicMock()
+        mock_lk_api.room.create_room = AsyncMock()
+        voice_handler.lk_api = mock_lk_api
 
         with patch.object(voice_handler, 'create_token', return_value="test_token"):
             with patch('app.voice_handler.datetime') as mock_datetime:
@@ -133,8 +134,8 @@ class TestVoiceSessionCreation:
         assert session["created_at"] == "2025-01-01T00:00:00"
 
         # Verify room was created with correct parameters
-        mock_room_service.create_room.assert_called_once()
-        call_args = mock_room_service.create_room.call_args[0][0]
+        mock_lk_api.room.create_room.assert_called_once()
+        call_args = mock_lk_api.room.create_room.call_args[0][0]
         assert call_args.name == "voice_test_user_1234567890"
         assert call_args.max_participants == 2
         assert call_args.empty_timeout == 300
@@ -142,9 +143,10 @@ class TestVoiceSessionCreation:
     @pytest.mark.asyncio
     async def test_create_voice_session_failure(self, voice_handler):
         """Test voice session creation failure"""
-        mock_room_service = MagicMock()
-        mock_room_service.create_room = AsyncMock(side_effect=Exception("Room creation failed"))
-        voice_handler.room_service = mock_room_service
+        mock_lk_api = MagicMock()
+        mock_lk_api.room = MagicMock()
+        mock_lk_api.room.create_room = AsyncMock(side_effect=Exception("Room creation failed"))
+        voice_handler.lk_api = mock_lk_api
 
         with pytest.raises(Exception) as exc_info:
             await voice_handler.create_voice_session("test_user")
@@ -154,9 +156,10 @@ class TestVoiceSessionCreation:
     @pytest.mark.asyncio
     async def test_create_voice_session_unique_names(self, voice_handler):
         """Test that each session gets a unique room name"""
-        mock_room_service = MagicMock()
-        mock_room_service.create_room = AsyncMock()
-        voice_handler.room_service = mock_room_service
+        mock_lk_api = MagicMock()
+        mock_lk_api.room = MagicMock()
+        mock_lk_api.room.create_room = AsyncMock()
+        voice_handler.lk_api = mock_lk_api
 
         with patch.object(voice_handler, 'create_token', return_value="token"):
             session1 = await voice_handler.create_voice_session("user1")
@@ -172,19 +175,20 @@ class TestHealthCheck:
     @pytest.mark.asyncio
     async def test_check_health_success(self, voice_handler):
         """Test successful health check"""
-        mock_room_service = MagicMock()
-        mock_room_service.list_rooms = AsyncMock()
-        voice_handler.room_service = mock_room_service
+        mock_lk_api = MagicMock()
+        mock_lk_api.room = MagicMock()
+        mock_lk_api.room.list_rooms = AsyncMock()
+        voice_handler.lk_api = mock_lk_api
 
         result = await voice_handler.check_health()
 
         assert result is True
-        mock_room_service.list_rooms.assert_called_once()
+        mock_lk_api.room.list_rooms.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_check_health_no_service(self, voice_handler):
         """Test health check when service not initialized"""
-        voice_handler.room_service = None
+        voice_handler.lk_api = None
 
         result = await voice_handler.check_health()
 
@@ -193,9 +197,10 @@ class TestHealthCheck:
     @pytest.mark.asyncio
     async def test_check_health_failure(self, voice_handler):
         """Test health check with service failure"""
-        mock_room_service = MagicMock()
-        mock_room_service.list_rooms = AsyncMock(side_effect=Exception("Connection error"))
-        voice_handler.room_service = mock_room_service
+        mock_lk_api = MagicMock()
+        mock_lk_api.room = MagicMock()
+        mock_lk_api.room.list_rooms = AsyncMock(side_effect=Exception("Connection error"))
+        voice_handler.lk_api = mock_lk_api
 
         result = await voice_handler.check_health()
 
@@ -221,9 +226,10 @@ class TestListActiveSessions:
         mock_response = MagicMock()
         mock_response.rooms = [mock_room1, mock_room2]
 
-        mock_room_service = MagicMock()
-        mock_room_service.list_rooms = AsyncMock(return_value=mock_response)
-        voice_handler.room_service = mock_room_service
+        mock_lk_api = MagicMock()
+        mock_lk_api.room = MagicMock()
+        mock_lk_api.room.list_rooms = AsyncMock(return_value=mock_response)
+        voice_handler.lk_api = mock_lk_api
 
         sessions = await voice_handler.list_active_sessions()
 
@@ -238,9 +244,10 @@ class TestListActiveSessions:
         mock_response = MagicMock()
         mock_response.rooms = []
 
-        mock_room_service = MagicMock()
-        mock_room_service.list_rooms = AsyncMock(return_value=mock_response)
-        voice_handler.room_service = mock_room_service
+        mock_lk_api = MagicMock()
+        mock_lk_api.room = MagicMock()
+        mock_lk_api.room.list_rooms = AsyncMock(return_value=mock_response)
+        voice_handler.lk_api = mock_lk_api
 
         sessions = await voice_handler.list_active_sessions()
 
@@ -249,7 +256,7 @@ class TestListActiveSessions:
     @pytest.mark.asyncio
     async def test_list_active_sessions_no_service(self, voice_handler):
         """Test listing sessions when service not initialized"""
-        voice_handler.room_service = None
+        voice_handler.lk_api = None
 
         sessions = await voice_handler.list_active_sessions()
 
@@ -258,9 +265,10 @@ class TestListActiveSessions:
     @pytest.mark.asyncio
     async def test_list_active_sessions_failure(self, voice_handler):
         """Test listing sessions with error"""
-        mock_room_service = MagicMock()
-        mock_room_service.list_rooms = AsyncMock(side_effect=Exception("API error"))
-        voice_handler.room_service = mock_room_service
+        mock_lk_api = MagicMock()
+        mock_lk_api.room = MagicMock()
+        mock_lk_api.room.list_rooms = AsyncMock(side_effect=Exception("API error"))
+        voice_handler.lk_api = mock_lk_api
 
         sessions = await voice_handler.list_active_sessions()
 
@@ -273,19 +281,20 @@ class TestEndSession:
     @pytest.mark.asyncio
     async def test_end_session_success(self, voice_handler):
         """Test successful session termination"""
-        mock_room_service = MagicMock()
-        mock_room_service.delete_room = AsyncMock()
-        voice_handler.room_service = mock_room_service
+        mock_lk_api = MagicMock()
+        mock_lk_api.room = MagicMock()
+        mock_lk_api.room.delete_room = AsyncMock()
+        voice_handler.lk_api = mock_lk_api
 
         result = await voice_handler.end_session("voice_test_123")
 
         assert result is True
-        mock_room_service.delete_room.assert_called_once()
+        mock_lk_api.room.delete_room.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_end_session_no_service(self, voice_handler):
         """Test ending session when service not initialized"""
-        voice_handler.room_service = None
+        voice_handler.lk_api = None
 
         result = await voice_handler.end_session("voice_test_123")
 
@@ -294,9 +303,10 @@ class TestEndSession:
     @pytest.mark.asyncio
     async def test_end_session_failure(self, voice_handler):
         """Test ending session with error"""
-        mock_room_service = MagicMock()
-        mock_room_service.delete_room = AsyncMock(side_effect=Exception("Delete failed"))
-        voice_handler.room_service = mock_room_service
+        mock_lk_api = MagicMock()
+        mock_lk_api.room = MagicMock()
+        mock_lk_api.room.delete_room = AsyncMock(side_effect=Exception("Delete failed"))
+        voice_handler.lk_api = mock_lk_api
 
         result = await voice_handler.end_session("voice_test_123")
 
@@ -309,9 +319,10 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_create_session_with_special_characters(self, voice_handler):
         """Test session creation with special characters in user_id"""
-        mock_room_service = MagicMock()
-        mock_room_service.create_room = AsyncMock()
-        voice_handler.room_service = mock_room_service
+        mock_lk_api = MagicMock()
+        mock_lk_api.room = MagicMock()
+        mock_lk_api.room.create_room = AsyncMock()
+        voice_handler.lk_api = mock_lk_api
 
         with patch.object(voice_handler, 'create_token', return_value="token"):
             session = await voice_handler.create_voice_session("user@test.com")
@@ -322,9 +333,10 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_create_session_with_empty_user_id(self, voice_handler):
         """Test session creation with empty user_id"""
-        mock_room_service = MagicMock()
-        mock_room_service.create_room = AsyncMock()
-        voice_handler.room_service = mock_room_service
+        mock_lk_api = MagicMock()
+        mock_lk_api.room = MagicMock()
+        mock_lk_api.room.create_room = AsyncMock()
+        voice_handler.lk_api = mock_lk_api
 
         with patch.object(voice_handler, 'create_token', return_value="token"):
             session = await voice_handler.create_voice_session("")
