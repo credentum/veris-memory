@@ -17,7 +17,7 @@ services:
       - "7881:7881"     # TURN/TLS (if needed)
       - "50000-50100:50000-50100/udp"  # RTC UDP port range (limited for dev)
     environment:
-      - LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}:${LIVEKIT_API_SECRET:-devsecret}
+      - LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecret}
       - LIVEKIT_WEBHOOK_URLS=${LIVEKIT_WEBHOOK_URLS:-}
     volumes:
       - ./docker/livekit/config.yaml:/etc/livekit.yaml:ro
