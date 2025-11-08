@@ -219,29 +219,42 @@ class APITestMixin:
             # Include API key authentication header with validation
             # Try SENTINEL_API_KEY first (dedicated monitoring key), fall back to API_KEY_MCP
             headers = {}
-            api_key = os.getenv("SENTINEL_API_KEY") or os.getenv("API_KEY_MCP")
-            if api_key:
-                # Validate API key format
-                api_key = api_key.strip()
-                if not api_key:
+            api_key_env = os.getenv("SENTINEL_API_KEY") or os.getenv("API_KEY_MCP")
+            if api_key_env:
+                # Validate and extract key
+                api_key_env = api_key_env.strip()
+                if not api_key_env:
                     logger.warning("SENTINEL_API_KEY/API_KEY_MCP is empty after stripping whitespace.")
                 else:
-                    # Validate format: should start with vmk_ and follow expected pattern
-                    # Pattern: vmk_{prefix}_{hash}:user_id:role:is_agent
-                    api_key_pattern = re.compile(r'^vmk_[a-zA-Z0-9]+_[a-zA-Z0-9]+:[^:]+:[^:]+:(true|false)$')
+                    # Extract key portion from format: vmk_{prefix}_{hash}:user_id:role:is_agent
+                    # Context-store expects only the key portion (before first colon)
+                    # This matches how context-store's api_key_auth.py parses the env var
+                    api_key_parts = api_key_env.split(":")
+                    api_key = api_key_parts[0]  # Extract key portion only
 
-                    if not api_key_pattern.match(api_key):
-                        # Redact key for security - show only prefix for debugging
-                        redacted_key = api_key[:8] + "..." if len(api_key) > 8 else "***"
-                        logger.warning(
-                            f"SENTINEL_API_KEY/API_KEY_MCP format invalid. Expected format: vmk_{{prefix}}_{{hash}}:user_id:role:is_agent. "
-                            f"Got: {redacted_key}"
-                        )
-                    else:
+                    # Validate format: should start with vmk_
+                    # Full pattern: vmk_{prefix}_{hash}:user_id:role:is_agent (but we only send the key part)
+                    api_key_pattern = re.compile(r'^vmk_[a-zA-Z0-9]+_[a-zA-Z0-9]+$')
+                    full_pattern = re.compile(r'^vmk_[a-zA-Z0-9]+_[a-zA-Z0-9]+:[^:]+:[^:]+:(true|false)$')
+
+                    # Check if env var has full format (preferred) or just key
+                    if full_pattern.match(api_key_env):
+                        # Full format detected, extracted key portion
                         headers["X-API-Key"] = api_key
-                        # Log success with redacted key
+                        redacted_key = api_key[:12] + "..." if len(api_key) > 12 else "***"
+                        logger.debug(f"Using API key (extracted from full format): {redacted_key}")
+                    elif api_key_pattern.match(api_key):
+                        # Key-only format
+                        headers["X-API-Key"] = api_key
                         redacted_key = api_key[:12] + "..." if len(api_key) > 12 else "***"
                         logger.debug(f"Using API key: {redacted_key}")
+                    else:
+                        # Invalid format
+                        redacted_key = api_key_env[:8] + "..." if len(api_key_env) > 8 else "***"
+                        logger.warning(
+                            f"SENTINEL_API_KEY/API_KEY_MCP format invalid. Expected: vmk_{{prefix}}_{{hash}} or vmk_{{prefix}}_{{hash}}:user_id:role:is_agent. "
+                            f"Got: {redacted_key}"
+                        )
             else:
                 logger.warning(
                     "SENTINEL_API_KEY/API_KEY_MCP not found in environment. API calls may fail with authentication errors. "
