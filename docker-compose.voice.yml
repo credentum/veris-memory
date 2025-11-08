@@ -7,7 +7,10 @@ version: "3.8"
 services:
   # LiveKit Server for Real-Time Voice
   livekit:
-    image: livekit/livekit-server:latest
+    build:
+      context: ./dockerfiles
+      dockerfile: Dockerfile.livekit
+    image: veris-memory/livekit:v1.7.0-healthcheck
     container_name: livekit-server
     ports:
       - "7880:7880"  # WebRTC
@@ -26,7 +29,7 @@ services:
       - voice-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7880/"]
+      test: ["CMD", "curl", "-f", "http://localhost:7880/"]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -57,9 +60,11 @@ services:
       - PORT=8002
       - LOG_LEVEL=info
 
-      # SSL Configuration
-      - SSL_KEYFILE=/app/certs/key.pem
-      - SSL_CERTFILE=/app/certs/cert.pem
+      # SSL Configuration (configurable via environment variables)
+      # Default paths for containerized deployment
+      # Override via: export SSL_KEYFILE=/custom/path/key.pem SSL_CERTFILE=/custom/path/cert.pem
+      - SSL_KEYFILE=${SSL_KEYFILE:-/app/certs/key.pem}
+      - SSL_CERTFILE=${SSL_CERTFILE:-/app/certs/cert.pem}
 
       # Voice Configuration
       - STT_PROVIDER=${STT_PROVIDER:-deepgram}
