@@ -12,7 +12,8 @@ import asyncio
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional, Union, OrderedDict
+import yaml
+from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
 from enum import Enum
 from collections import OrderedDict
@@ -608,7 +609,6 @@ def _load_config_from_file() -> Optional[EmbeddingConfig]:
             continue
 
         try:
-            import yaml
             logger.info(f"{_log_prefix('📁', '[CONFIG]')} Loading embedding config from: {candidate}")
 
             with open(candidate, 'r', encoding='utf-8') as f:
