@@ -10,12 +10,9 @@ rtc:
 # Keys are set via LIVEKIT_KEYS environment variable
 # Format: LIVEKIT_KEYS=<api_key>:<api_secret>
 
-# Enable TURN for NAT traversal
+# TURN disabled for local dev (using LiveKit Cloud for production)
 turn:
-  enabled: true
-  domain: localhost
-  tls_port: 5349
-  udp_port: 3478
+  enabled: false
 
 # Webhook configuration (optional)
 # webhook:

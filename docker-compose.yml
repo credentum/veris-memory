@@ -259,9 +259,6 @@ services:
     environment:
       - "LIVEKIT_KEYS=${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
       - LIVEKIT_WEBHOOK_URLS=${LIVEKIT_WEBHOOK_URLS:-}
-      - LIVEKIT_TURN_ENABLED=true
-      - LIVEKIT_PORT=7880
-      - LIVEKIT_RTC_PORT=7881
     volumes:
       - ./docker/livekit/config.yaml:/etc/livekit.yaml:ro
     networks:
