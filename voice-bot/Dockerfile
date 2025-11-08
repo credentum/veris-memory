@@ -15,6 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ ./app/
 
+# Copy startup script
+COPY scripts/start.sh ./start.sh
+RUN chmod +x ./start.sh
+
 # Create non-root user
 RUN useradd -m -u 1000 voicebot && \
     chown -R voicebot:voicebot /app && \
@@ -29,4 +33,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 EXPOSE 8002
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["./start.sh"]

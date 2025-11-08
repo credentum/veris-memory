@@ -412,9 +412,24 @@ async def get_facts(request: Request, user_id: str, keys: Optional[str] = None) 
 
 if __name__ == "__main__":
     import uvicorn
+
+    # Configure SSL if certificates are provided
+    ssl_kwargs = {}
+    if settings.SSL_KEYFILE and settings.SSL_CERTFILE:
+        ssl_kwargs["ssl_keyfile"] = settings.SSL_KEYFILE
+        ssl_kwargs["ssl_certfile"] = settings.SSL_CERTFILE
+        logger.info(f"🔐 Starting voice-bot with HTTPS enabled")
+        logger.info(f"   Key: {settings.SSL_KEYFILE}")
+        logger.info(f"   Cert: {settings.SSL_CERTFILE}")
+    else:
+        logger.warning("⚠️  Starting voice-bot with HTTP (not HTTPS)")
+        logger.warning("   Microphone access requires HTTPS in most browsers")
+        logger.warning("   Set SSL_KEYFILE and SSL_CERTFILE to enable HTTPS")
+
     uvicorn.run(
         "app.main:app",
         host=settings.HOST,
         port=settings.PORT,
-        reload=True
+        reload=True,
+        **ssl_kwargs
     )
