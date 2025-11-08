@@ -419,6 +419,66 @@ else
     echo -e "${YELLOW}⚠️  Bootstrap script not found, skipping${NC}"
 fi
 
+# Initialize Neo4j schema (constraints and indexes)
+echo ""
+echo -e "${BLUE}🔧 Initializing Neo4j schema...${NC}"
+if [ -f "scripts/init-neo4j-schema.sh" ]; then
+    chmod +x scripts/init-neo4j-schema.sh
+    # Set environment variables for the script
+    export NEO4J_CONTAINER="${PROJECT_NAME}-neo4j-1"
+    export NEO4J_HOST="localhost"
+    export NEO4J_PORT=$NEO4J_BOLT_PORT
+    export NEO4J_USER="neo4j"
+    # NEO4J_PASSWORD already set from environment
+
+    if ./scripts/init-neo4j-schema.sh; then
+        echo -e "${GREEN}✅ Schema initialization completed successfully${NC}"
+    else
+        SCHEMA_EXIT_CODE=$?
+        echo -e "${YELLOW}⚠️  Schema initialization exited with code $SCHEMA_EXIT_CODE${NC}"
+        echo -e "${YELLOW}   Deployment will continue, but verify schema manually if needed${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠️  Neo4j schema initialization script not found${NC}"
+    echo -e "${YELLOW}   Attempting manual initialization...${NC}"
+
+    # Fallback: Run schema init via docker exec
+    NEO4J_CONTAINER=$(docker ps --filter "name=${PROJECT_NAME}-neo4j" --format "{{.Names}}" | head -1)
+    if [ -n "$NEO4J_CONTAINER" ]; then
+        echo "   Found Neo4j container: $NEO4J_CONTAINER"
+
+        # Create constraint with proper error handling
+        CONSTRAINT_OUTPUT=$(docker exec -e NEO4J_PASSWORD="$NEO4J_PASSWORD" "$NEO4J_CONTAINER" \
+            sh -c 'cypher-shell -u neo4j -p "$NEO4J_PASSWORD" "CREATE CONSTRAINT context_id_unique IF NOT EXISTS FOR (c:Context) REQUIRE c.id IS UNIQUE"' 2>&1)
+        CONSTRAINT_RESULT=$?
+
+        if [ $CONSTRAINT_RESULT -eq 0 ]; then
+            echo -e "${GREEN}   ✅ Context constraint created${NC}"
+        elif echo "$CONSTRAINT_OUTPUT" | grep -qi "already exists"; then
+            echo "   ℹ️  Context constraint already exists (idempotent)"
+        else
+            echo -e "${YELLOW}   ⚠️  Constraint creation failed: $CONSTRAINT_OUTPUT${NC}"
+        fi
+
+        # Create index with proper error handling
+        INDEX_OUTPUT=$(docker exec -e NEO4J_PASSWORD="$NEO4J_PASSWORD" "$NEO4J_CONTAINER" \
+            sh -c 'cypher-shell -u neo4j -p "$NEO4J_PASSWORD" "CREATE INDEX context_type_idx IF NOT EXISTS FOR (c:Context) ON (c.type)"' 2>&1)
+        INDEX_RESULT=$?
+
+        if [ $INDEX_RESULT -eq 0 ]; then
+            echo -e "${GREEN}   ✅ Context index created${NC}"
+        elif echo "$INDEX_OUTPUT" | grep -qi "already exists"; then
+            echo "   ℹ️  Context index already exists (idempotent)"
+        else
+            echo -e "${YELLOW}   ⚠️  Index creation failed: $INDEX_OUTPUT${NC}"
+        fi
+
+        echo -e "${GREEN}   ✅ Basic schema initialization attempted${NC}"
+    else
+        echo -e "${YELLOW}   ⚠️  Neo4j container not found, skipping schema init${NC}"
+    fi
+fi
+
 # Run environment-specific health checks
 echo -e "${BLUE}🏥 Running $ENVIRONMENT health checks...${NC}"
 echo -n "  → Redis (port $REDIS_PORT): "
