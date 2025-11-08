@@ -133,7 +133,9 @@ class TestAPITestMixin:
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value={"result": "success"})
 
-        with patch.dict(os.environ, {"API_KEY_MCP": "test_api_key_123"}):
+        # Use valid vmk_ format key
+        valid_key = "vmk_test_abc123def456"
+        with patch.dict(os.environ, {"API_KEY_MCP": valid_key}):
             with patch("aiohttp.ClientSession") as mock_session_class:
                 mock_session = AsyncMock()
                 mock_session_class.return_value.__aenter__.return_value = mock_session
@@ -152,7 +154,7 @@ class TestAPITestMixin:
                 # Verify the call was made with correct headers
                 mock_session.get.assert_called_once()
                 call_args = mock_session.get.call_args
-                assert call_args[1]["headers"]["X-API-Key"] == "test_api_key_123"
+                assert call_args[1]["headers"]["X-API-Key"] == valid_key
                 assert success is True
                 assert data == {"result": "success"}
 
@@ -196,7 +198,9 @@ class TestAPITestMixin:
         mock_response.status = 201
         mock_response.json = AsyncMock(return_value={"created": True})
 
-        with patch.dict(os.environ, {"API_KEY_MCP": "test_key"}):
+        # Use valid vmk_ format key
+        valid_key = "vmk_post_xyz789uvw012"
+        with patch.dict(os.environ, {"API_KEY_MCP": valid_key}):
             with patch("aiohttp.ClientSession") as mock_session_class:
                 mock_session = AsyncMock()
                 mock_session_class.return_value.__aenter__.return_value = mock_session
@@ -219,7 +223,7 @@ class TestAPITestMixin:
                 mock_session.post.assert_called_once()
                 call_args = mock_session.post.call_args
                 assert call_args[1]["json"] == test_data
-                assert call_args[1]["headers"]["X-API-Key"] == "test_key"
+                assert call_args[1]["headers"]["X-API-Key"] == valid_key
                 assert success is True
 
     @pytest.mark.asyncio
@@ -289,6 +293,110 @@ class TestAPITestMixin:
             assert success is False
             assert "404" in message
             assert data == {"error": "Not found"}
+
+    @pytest.mark.asyncio
+    async def test_api_call_with_full_format_key(self, api_check):
+        """Test that API key is extracted from full format vmk_xxx:user:role:agent."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"result": "success"})
+
+        # Set full format API key
+        full_format_key = "vmk_mcp_903e1bcb70d704da4fbf207722c471ba:mcp_server:writer:true"
+        expected_extracted_key = "vmk_mcp_903e1bcb70d704da4fbf207722c471ba"
+
+        with patch.dict(os.environ, {"API_KEY_MCP": full_format_key}):
+            with patch("aiohttp.ClientSession") as mock_session_class:
+                mock_session = AsyncMock()
+                mock_session_class.return_value.__aenter__.return_value = mock_session
+
+                # Create a mock for the HTTP method
+                mock_method = AsyncMock()
+                mock_method.__aenter__.return_value = mock_response
+                mock_session.get = Mock(return_value=mock_method)
+
+                success, message, latency, data = await api_check.test_api_call(
+                    mock_session,
+                    "GET",
+                    "http://test.example.com/api"
+                )
+
+                # Verify the extracted key (not full value) is sent in header
+                mock_session.get.assert_called_once()
+                call_args = mock_session.get.call_args
+                assert call_args[1]["headers"]["X-API-Key"] == expected_extracted_key
+                assert success is True
+                assert data == {"result": "success"}
+
+    @pytest.mark.asyncio
+    async def test_api_call_with_invalid_full_format(self, api_check, caplog):
+        """Test that invalid full format (wrong number of parts) logs a warning."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"result": "success"})
+
+        # Set invalid format (only 2 parts instead of 4)
+        invalid_format_key = "vmk_test:incomplete"
+
+        with patch.dict(os.environ, {"API_KEY_MCP": invalid_format_key}):
+            with patch("aiohttp.ClientSession") as mock_session_class:
+                mock_session = AsyncMock()
+                mock_session_class.return_value.__aenter__.return_value = mock_session
+
+                # Create a mock for the HTTP method
+                mock_method = AsyncMock()
+                mock_method.__aenter__.return_value = mock_response
+                mock_session.get = Mock(return_value=mock_method)
+
+                success, message, latency, data = await api_check.test_api_call(
+                    mock_session,
+                    "GET",
+                    "http://test.example.com/api"
+                )
+
+                # Verify warning was logged for invalid format
+                assert any("format invalid" in record.message.lower() for record in caplog.records)
+                # The call should still succeed (API doesn't require auth in test)
+                assert success is True
+
+    @pytest.mark.asyncio
+    async def test_sentinel_api_key_precedence_with_full_format(self, api_check):
+        """Test that SENTINEL_API_KEY takes precedence over API_KEY_MCP with full format extraction."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"result": "success"})
+
+        # Set both keys with full format
+        sentinel_key_full = "vmk_sentinel_abc123def456:sentinel_monitor:reader:true"
+        mcp_key_full = "vmk_mcp_xyz789uvw012:mcp_server:writer:true"
+        expected_sentinel_key = "vmk_sentinel_abc123def456"
+
+        with patch.dict(os.environ, {
+            "SENTINEL_API_KEY": sentinel_key_full,
+            "API_KEY_MCP": mcp_key_full
+        }):
+            with patch("aiohttp.ClientSession") as mock_session_class:
+                mock_session = AsyncMock()
+                mock_session_class.return_value.__aenter__.return_value = mock_session
+
+                # Create a mock for the HTTP method
+                mock_method = AsyncMock()
+                mock_method.__aenter__.return_value = mock_response
+                mock_session.get = Mock(return_value=mock_method)
+
+                success, message, latency, data = await api_check.test_api_call(
+                    mock_session,
+                    "GET",
+                    "http://test.example.com/api"
+                )
+
+                # Verify SENTINEL_API_KEY was used (not API_KEY_MCP)
+                mock_session.get.assert_called_once()
+                call_args = mock_session.get.call_args
+                assert call_args[1]["headers"]["X-API-Key"] == expected_sentinel_key
+                # Should NOT be the MCP key
+                assert call_args[1]["headers"]["X-API-Key"] != "vmk_mcp_xyz789uvw012"
+                assert success is True
 
 
 if __name__ == "__main__":
