@@ -10,12 +10,13 @@ Tests all phases of the embedding fix implementation:
 import pytest
 import asyncio
 import time
+import sys
 from unittest.mock import Mock, patch, AsyncMock
 from typing import List, Dict, Any
 
 from src.embedding import (
     EmbeddingService,
-    EmbeddingConfig, 
+    EmbeddingConfig,
     EmbeddingModel,
     EmbeddingError,
     ModelLoadError,
@@ -30,22 +31,39 @@ class TestInitializationFailures:
     async def test_sentence_transformers_not_installed(self):
         """Test behavior when sentence-transformers is not installed."""
         config = EmbeddingConfig()
-        
-        with patch('sentence_transformers.SentenceTransformer', side_effect=ImportError("No module named 'sentence_transformers'")):
-            service = EmbeddingService(config)
-            
-            with pytest.raises(ModelLoadError, match="sentence-transformers package not installed"):
-                await service.initialize()
+        service = EmbeddingService(config)
+
+        # Simulate sentence_transformers module not being available by patching sys.modules
+        # Remove the module if it exists, then restore it after the test
+        original_module = sys.modules.get('sentence_transformers')
+
+        try:
+            # Remove sentence_transformers from sys.modules to simulate it not being installed
+            if 'sentence_transformers' in sys.modules:
+                del sys.modules['sentence_transformers']
+
+            # Mock the import to raise ImportError
+            with patch.dict('sys.modules', {'sentence_transformers': None}):
+                def failing_import(*args, **kwargs):
+                    raise ImportError("No module named 'sentence_transformers'")
+
+                with patch('builtins.__import__', side_effect=failing_import):
+                    with pytest.raises(ModelLoadError, match="sentence-transformers package not installed"):
+                        await service.initialize()
+        finally:
+            # Restore original module state
+            if original_module is not None:
+                sys.modules['sentence_transformers'] = original_module
     
-    @pytest.mark.asyncio 
+    @pytest.mark.asyncio
     async def test_model_loading_failure(self):
         """Test behavior when model fails to load."""
         config = EmbeddingConfig()
-        
+
         with patch('sentence_transformers.SentenceTransformer', side_effect=RuntimeError("Model loading failed")):
             service = EmbeddingService(config)
-            
-            with pytest.raises(ModelLoadError, match="Model initialization failed"):
+
+            with pytest.raises(ModelLoadError, match="Failed to load model .* Model loading failed"):
                 await service.initialize()
     
     @pytest.mark.asyncio
