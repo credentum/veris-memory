@@ -328,6 +328,57 @@ if [ "$all_ports_free" = false ]; then
     exit 1
 fi
 
+# Generate SSL certificates for voice-bot if they don't exist
+echo -e "${BLUE}🔐 Checking SSL certificates for voice-bot...${NC}"
+CERT_DIR="/opt/veris-memory/voice-bot/certs"
+if [ ! -d "$CERT_DIR" ]; then
+    echo "  → Creating certs directory..."
+    mkdir -p "$CERT_DIR"
+fi
+
+if [ ! -f "$CERT_DIR/key.pem" ] || [ ! -f "$CERT_DIR/cert.pem" ]; then
+    echo "  → Generating self-signed SSL certificate..."
+    openssl req -x509 -newkey rsa:4096 -nodes \
+        -keyout "$CERT_DIR/key.pem" \
+        -out "$CERT_DIR/cert.pem" \
+        -days 365 \
+        -subj "/C=US/ST=State/L=City/O=Personal/CN=$(hostname -I | awk '{print $1}')" \
+        2>/dev/null || echo "⚠️  Certificate generation failed, voice-bot will use HTTP"
+
+    if [ -f "$CERT_DIR/key.pem" ] && [ -f "$CERT_DIR/cert.pem" ]; then
+        echo -e "${GREEN}  ✓ SSL certificates generated successfully${NC}"
+        chmod 600 "$CERT_DIR/key.pem"
+        chmod 644 "$CERT_DIR/cert.pem"
+    fi
+else
+    echo -e "${GREEN}  ✓ SSL certificates already exist${NC}"
+    # Check certificate expiry (warn if less than 30 days)
+    CERT_EXPIRY=$(openssl x509 -enddate -noout -in "$CERT_DIR/cert.pem" 2>/dev/null | cut -d= -f2)
+    if [ -n "$CERT_EXPIRY" ]; then
+        EXPIRY_EPOCH=$(date -d "$CERT_EXPIRY" +%s 2>/dev/null || echo 0)
+        NOW_EPOCH=$(date +%s)
+        DAYS_LEFT=$(( ($EXPIRY_EPOCH - $NOW_EPOCH) / 86400 ))
+
+        if [ $DAYS_LEFT -lt 30 ] && [ $DAYS_LEFT -gt 0 ]; then
+            echo -e "${YELLOW}  ⚠️  SSL certificate expires in $DAYS_LEFT days${NC}"
+            echo "     Consider regenerating: rm -rf $CERT_DIR && redeploy"
+        elif [ $DAYS_LEFT -le 0 ]; then
+            echo -e "${YELLOW}  ⚠️  SSL certificate has EXPIRED! Regenerating...${NC}"
+            rm -f "$CERT_DIR/key.pem" "$CERT_DIR/cert.pem"
+            openssl req -x509 -newkey rsa:4096 -nodes \
+                -keyout "$CERT_DIR/key.pem" \
+                -out "$CERT_DIR/cert.pem" \
+                -days 365 \
+                -subj "/C=US/ST=State/L=City/O=Personal/CN=$(hostname -I | awk '{print $1}')" \
+                2>/dev/null && echo -e "${GREEN}  ✓ SSL certificate regenerated${NC}"
+            chmod 600 "$CERT_DIR/key.pem" 2>/dev/null
+            chmod 644 "$CERT_DIR/cert.pem" 2>/dev/null
+        else
+            echo "     Valid for $DAYS_LEFT more days"
+        fi
+    fi
+fi
+
 # Build and start services
 echo -e "${GREEN}🚀 Starting $ENVIRONMENT services...${NC}"
 echo -e "${BLUE}🔍 DEBUG: Using docker compose command with:${NC}"
@@ -386,6 +437,16 @@ if [ $COMPOSE_EXIT -ne 0 ]; then
 else
     echo "$COMPOSE_OUTPUT"
     echo -e "${GREEN}✅ Docker Compose completed successfully${NC}"
+fi
+
+# Deploy voice platform services (voice-bot + livekit)
+if [ -f "docker-compose.voice.yml" ]; then
+    echo ""
+    echo -e "${CYAN}🎙️  Deploying voice platform...${NC}"
+    docker compose -p "$PROJECT_NAME" -f docker-compose.yml -f docker-compose.voice.yml up -d --build voice-bot livekit 2>&1
+    echo -e "${GREEN}✅ Voice platform deployed${NC}"
+else
+    echo -e "${YELLOW}⚠️  docker-compose.voice.yml not found, skipping voice-bot deployment${NC}"
 fi
 
 # Wait for services to be healthy
@@ -509,6 +570,22 @@ else
     echo -e "${RED}✗ Failed${NC}"
 fi
 
+echo -n "  → Voice-Bot (port 8002): "
+if curl -k -s https://localhost:8002/health > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Healthy (HTTPS)${NC}"
+elif curl -s http://localhost:8002/health > /dev/null 2>&1; then
+    echo -e "${YELLOW}✓ Healthy (HTTP - HTTPS not configured)${NC}"
+else
+    echo -e "${YELLOW}⚠ Not running${NC}"
+fi
+
+echo -n "  → LiveKit (port 7880): "
+if curl -s http://localhost:7880/ > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Healthy${NC}"
+else
+    echo -e "${YELLOW}⚠ Not running${NC}"
+fi
+
 # Update firewall rules to ensure all service ports are accessible
 echo ""
 echo -e "${BLUE}🔥 Updating firewall rules for service ports...${NC}"
@@ -571,16 +648,18 @@ if [ "$ENVIRONMENT" = "dev" ]; then
     echo "Development services available at:"
     echo "  • MCP Server: http://localhost:8000"
     echo "  • REST API: http://localhost:8001"
-    echo "  • Voice-Bot: http://localhost:8002"
+    echo "  • Voice-Bot: https://localhost:8002 (HTTPS with self-signed cert)"
     echo "  • Dashboard: http://localhost:8080"
     echo "  • Sentinel: http://localhost:9090"
     echo "  • Qdrant: http://localhost:$QDRANT_PORT"
     echo "  • Neo4j: http://localhost:$NEO4J_HTTP_PORT"
     echo "  • Redis: localhost:$REDIS_PORT"
+    echo "  • LiveKit: http://localhost:7880"
     echo ""
     echo "External access (if firewall configured):"
     echo "  • API Docs: http://$(hostname -I | awk '{print $1}'):8001/docs"
-    echo "  • Voice Docs: http://$(hostname -I | awk '{print $1}'):8002/docs"
+    echo "  • Voice UI: https://$(hostname -I | awk '{print $1}'):8002/ui (accept SSL warning)"
+    echo "  • Voice Docs: https://$(hostname -I | awk '{print $1}'):8002/docs"
     echo "  • Dashboard: http://$(hostname -I | awk '{print $1}'):8080"
     echo ""
     echo "Run tests with:"
@@ -589,12 +668,13 @@ else
     echo "Production services available at:"
     echo "  • MCP Server: http://localhost:8000"
     echo "  • REST API: http://localhost:8001"
-    echo "  • Voice-Bot: http://localhost:8002"
+    echo "  • Voice-Bot: https://localhost:8002 (HTTPS with self-signed cert)"
     echo "  • Dashboard: http://localhost:8080"
     echo "  • Sentinel: http://localhost:9090"
     echo "  • Qdrant: http://localhost:$QDRANT_PORT"
     echo "  • Neo4j: http://localhost:$NEO4J_HTTP_PORT"
     echo "  • Redis: localhost:$REDIS_PORT"
+    echo "  • LiveKit: http://localhost:7880"
     echo ""
     echo "Run tests with:"
     echo "  python ops/smoke/smoke_runner.py"
