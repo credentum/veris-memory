@@ -1,0 +1,32 @@
+# LiveKit Server Configuration
+# For development environment
+
+port: 7880
+rtc:
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: false
+
+# Keys are set via LIVEKIT_KEYS environment variable
+# Format: LIVEKIT_KEYS=<api_key>:<api_secret>
+
+# Enable TURN for NAT traversal
+turn:
+  enabled: true
+  domain: localhost
+  tls_port: 5349
+  udp_port: 3478
+
+# Webhook configuration (optional)
+# webhook:
+#   urls: []
+
+# Logging
+logging:
+  level: info
+
+# Room settings
+room:
+  auto_create: true
+  empty_timeout: 300  # 5 minutes
+  max_participants: 100
