@@ -337,9 +337,19 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
       fi
     fi
 
-    # Build and start services
+    # Build and start services (including voice-bot)
     echo "🏗️  Building and starting services..."
+
+    # Deploy main services
     docker compose up -d --build
+
+    # Deploy voice platform services (voice-bot + livekit)
+    if [ -f "docker-compose.voice.yml" ]; then
+      echo "🎙️  Deploying voice platform..."
+      docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build voice-bot livekit
+    else
+      echo "⚠️  docker-compose.voice.yml not found, skipping voice-bot deployment"
+    fi
 
     echo "⏳ Waiting for services to start..."
     sleep 10
@@ -403,6 +413,11 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
         echo "   ⚠️  Neo4j container not found, skipping schema init"
       fi
     fi
+
+    # Show voice-bot status specifically
+    echo ""
+    echo "🎙️  Voice Platform Status:"
+    docker compose -f docker-compose.yml -f docker-compose.voice.yml ps voice-bot livekit 2>/dev/null || echo "Voice services not running"
 
     echo ""
     echo "✅ Development deployment completed!"
