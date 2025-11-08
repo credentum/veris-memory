@@ -2,7 +2,7 @@
 LiveKit Voice Handler for real-time voice interaction
 """
 import asyncio
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from livekit import api
 import logging
 from datetime import datetime
@@ -82,16 +82,28 @@ class VoiceHandler:
             raise
 
     async def check_health(self) -> bool:
-        """Check LiveKit server health"""
+        """
+        Check LiveKit server health
+
+        Returns True if LiveKit server is reachable and responding.
+        This is a simple connectivity check that doesn't depend on room state.
+        """
         try:
-            if self.room_service:
-                # Try to list rooms as health check
-                await self.room_service.list_rooms(api.ListRoomsRequest())
-                return True
+            if not self.room_service:
+                logger.warning("LiveKit room_service not initialized")
+                return False
+
+            # List rooms as health check - works even with empty room list
+            # This verifies connectivity to LiveKit server without depending on room state
+            result = await self.room_service.list_rooms(api.ListRoomsRequest())
+
+            # If we got a response (even empty list), LiveKit is healthy
+            logger.debug(f"LiveKit health check: {len(result.rooms)} active rooms")
+            return True
+
         except Exception as e:
             logger.error(f"LiveKit health check failed: {e}")
             return False
-        return False
 
     async def list_active_sessions(self) -> List[Dict[str, Any]]:
         """List all active voice sessions"""

@@ -49,12 +49,13 @@ app.add_middleware(
 # Global clients (initialized on startup)
 memory_client = None
 voice_handler = None
+redis_client = None
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize connections on startup"""
-    global memory_client, voice_handler
+    global memory_client, voice_handler, redis_client
 
     logger.info(f"Starting {settings.SERVICE_NAME}...")
 
@@ -86,14 +87,40 @@ async def startup_event():
     except Exception as e:
         logger.error(f"❌ Failed to initialize voice handler: {e}")
 
+    # Initialize Redis client for session state
+    try:
+        import redis.asyncio as redis
+        redis_client = redis.from_url(
+            settings.REDIS_URL,
+            encoding="utf-8",
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_keepalive=True
+        )
+        # Test connection
+        await redis_client.ping()
+        logger.info("✅ Redis client initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize Redis client: {e}")
+        logger.warning("⚠️  Voice-bot will continue without Redis (session state disabled)")
+        redis_client = None
+
     logger.info(f"✅ {settings.SERVICE_NAME} started successfully on port {settings.PORT}")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
+    global redis_client
     logger.info(f"Shutting down {settings.SERVICE_NAME}...")
-    # Add cleanup code here if needed
+
+    # Close Redis connection
+    if redis_client:
+        try:
+            await redis_client.close()
+            logger.info("✅ Redis connection closed")
+        except Exception as e:
+            logger.error(f"❌ Error closing Redis connection: {e}")
 
 
 @app.get("/")
@@ -295,8 +322,13 @@ async def store_fact(request: Request, user_id: str, key: str, value: str):
 
 
 @app.get("/api/v1/facts/{user_id}")
-async def get_facts(user_id: str, keys: str = None):
-    """Retrieve facts about a user"""
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+async def get_facts(request: Request, user_id: str, keys: str = None):
+    """
+    Retrieve facts about a user
+
+    Rate limited to prevent abuse of fact retrieval.
+    """
     if not memory_client:
         raise HTTPException(status_code=503, detail="Memory client not initialized")
 
