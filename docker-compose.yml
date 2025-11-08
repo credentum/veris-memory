@@ -247,7 +247,10 @@ services:
   # TeamAI Voice Platform Services
   # LiveKit Server for Real-Time Voice
   livekit:
-    image: livekit/livekit-server:latest
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.livekit
+    image: veris-memory/livekit:latest-healthcheck
     container_name: livekit-server
     ports:
       - "7880:7880"  # WebRTC
@@ -266,9 +269,9 @@ services:
       - voice-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "netstat -tuln | grep :7880 || ss -tuln | grep :7880"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "curl", "-f", "http://localhost:7880"]
+      interval: 20s
+      timeout: 3s
       retries: 5
       start_period: 30s
 
@@ -318,8 +321,6 @@ services:
       context-store:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      livekit:
         condition: service_healthy
     networks:
       - context-store-network

@@ -1,0 +1,11 @@
+# Custom LiveKit Server image with health check tools
+# Based on Alpine Linux
+FROM livekit/livekit-server:latest
+
+# Install curl for health checks
+# LiveKit is based on Alpine Linux
+USER root
+RUN apk add --no-cache curl
+
+# Switch back to livekit user if it exists, otherwise stay as root
+# (livekit-server doesn't create a specific user by default)
