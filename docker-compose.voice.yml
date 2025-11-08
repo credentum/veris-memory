@@ -57,6 +57,10 @@ services:
       - PORT=8002
       - LOG_LEVEL=info
 
+      # SSL Configuration
+      - SSL_KEYFILE=/app/certs/key.pem
+      - SSL_CERTFILE=/app/certs/cert.pem
+
       # Voice Configuration
       - STT_PROVIDER=${STT_PROVIDER:-deepgram}
       - TTS_PROVIDER=${TTS_PROVIDER:-elevenlabs}
@@ -83,6 +87,7 @@ services:
       start_period: 60s
     volumes:
       - ./voice-bot/app:/app/app:ro
+      - ./voice-bot/certs:/app/certs:ro
       - voice-bot-logs:/app/logs
 
 # Volumes for voice services

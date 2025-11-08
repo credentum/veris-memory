@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     STT_API_KEY: Optional[str] = None
     TTS_API_KEY: Optional[str] = None
 
+    # SSL Configuration
+    # Optional: Enable HTTPS by providing SSL certificate paths
+    # For self-signed certificates: openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365
+    SSL_KEYFILE: Optional[str] = None  # Path to SSL private key file
+    SSL_CERTFILE: Optional[str] = None  # Path to SSL certificate file
+
     # Feature Flags
     ENABLE_VOICE_COMMANDS: bool = True
     ENABLE_FACT_STORAGE: bool = True
