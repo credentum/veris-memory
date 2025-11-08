@@ -347,11 +347,15 @@ if [ ! -f "$CERT_DIR/key.pem" ] || [ ! -f "$CERT_DIR/cert.pem" ]; then
 
     if [ -f "$CERT_DIR/key.pem" ] && [ -f "$CERT_DIR/cert.pem" ]; then
         echo -e "${GREEN}  ✓ SSL certificates generated successfully${NC}"
-        chmod 600 "$CERT_DIR/key.pem"
+        # Set permissions readable by container user (voicebot runs as UID 1000)
+        chmod 644 "$CERT_DIR/key.pem"
         chmod 644 "$CERT_DIR/cert.pem"
     fi
 else
     echo -e "${GREEN}  ✓ SSL certificates already exist${NC}"
+    # Ensure correct permissions on existing certificates
+    chmod 644 "$CERT_DIR/key.pem" 2>/dev/null
+    chmod 644 "$CERT_DIR/cert.pem" 2>/dev/null
     # Check certificate expiry (warn if less than 30 days)
     CERT_EXPIRY=$(openssl x509 -enddate -noout -in "$CERT_DIR/cert.pem" 2>/dev/null | cut -d= -f2)
     if [ -n "$CERT_EXPIRY" ]; then
@@ -371,7 +375,8 @@ else
                 -days 365 \
                 -subj "/C=US/ST=State/L=City/O=Personal/CN=$(hostname -I | awk '{print $1}')" \
                 2>/dev/null && echo -e "${GREEN}  ✓ SSL certificate regenerated${NC}"
-            chmod 600 "$CERT_DIR/key.pem" 2>/dev/null
+            # Set permissions readable by container user (voicebot runs as UID 1000)
+            chmod 644 "$CERT_DIR/key.pem" 2>/dev/null
             chmod 644 "$CERT_DIR/cert.pem" 2>/dev/null
         else
             echo "     Valid for $DAYS_LEFT more days"

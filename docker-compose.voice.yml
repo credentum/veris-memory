@@ -82,7 +82,7 @@ services:
       - voice-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:8002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
