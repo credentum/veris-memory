@@ -100,7 +100,8 @@ async def startup_event():
         voice_handler = VoiceHandler(
             settings.LIVEKIT_URL,
             settings.LIVEKIT_API_KEY,
-            settings.LIVEKIT_API_SECRET
+            settings.LIVEKIT_API_SECRET,
+            settings.LIVEKIT_WS_URL
         )
         await voice_handler.initialize()
         logger.info("✅ Voice handler initialized")

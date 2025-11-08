@@ -41,6 +41,7 @@ services:
     environment:
       # LiveKit Configuration
       - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_WS_URL=${LIVEKIT_WS_URL:-ws://135.181.4.118:7880}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devsecret}
 
