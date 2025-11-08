@@ -247,7 +247,10 @@ services:
   # TeamAI Voice Platform Services
   # LiveKit Server for Real-Time Voice
   livekit:
-    image: livekit/livekit-server:latest
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.livekit
+    image: veris-memory/livekit:latest-healthcheck
     container_name: livekit-server
     ports:
       - "7880:7880"  # WebRTC
