@@ -48,12 +48,26 @@ class ConfigParity(BaseCheck):
             "LOG_LEVEL",
             "ENVIRONMENT"
         ])
-        # Expected versions updated to match actual deployment (Phase 4)
-        # Python 3.10 (from system), FastAPI 0.115, Uvicorn 0.32
+        # Expected versions - Phase 4 Update (2025-11-08)
+        #
+        # These versions were determined by inspecting the actual running deployment:
+        # - Python 3.10: System Python version on Ubuntu 22.04 LTS (verified with `python3 --version`)
+        # - FastAPI 0.115: From requirements.txt and verified via `pip show fastapi`
+        # - Uvicorn 0.32: From requirements.txt and verified via `pip show uvicorn`
+        #
+        # Update Strategy:
+        # 1. When updating dependencies in requirements.txt, update these expected versions
+        # 2. Run S7 check after deployment to verify version parity
+        # 3. Consider fetching actual versions dynamically from /health or /metrics endpoint
+        #    to reduce manual updates (future enhancement)
+        #
+        # Version History:
+        # - 2025-11-08: Updated from 3.11/0.100/0.20 to 3.10/0.115/0.32 (PR #208)
+        # - Original: Python 3.11, FastAPI 0.100, Uvicorn 0.20
         self.expected_versions = config.get("s7_expected_versions", {
-            "python": "3.10",
-            "fastapi": "0.115",
-            "uvicorn": "0.32"
+            "python": "3.10",    # Ubuntu 22.04 LTS system Python
+            "fastapi": "0.115",  # From requirements.txt
+            "uvicorn": "0.32"    # From requirements.txt
         })
         
     async def run_check(self) -> CheckResult:

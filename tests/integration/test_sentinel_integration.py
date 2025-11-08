@@ -36,7 +36,7 @@ class TestSentinelIntegration:
     async def config(self) -> SentinelConfig:
         """Create test configuration."""
         return SentinelConfig({
-            "veris_memory_url": os.getenv("SENTINEL_TARGET_URL", "http://localhost:8000"),
+            "veris_memory_url": os.getenv("TARGET_BASE_URL", "http://localhost:8000"),
             "check_interval_seconds": 5,  # Fast interval for testing
             "alert_threshold_failures": 2,  # Alert after 2 failures
             "telegram_bot_token": os.getenv("TELEGRAM_BOT_TOKEN", "test_token"),

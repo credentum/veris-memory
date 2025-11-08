@@ -14,7 +14,7 @@ if project_root not in sys.path:
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test_token")
 os.environ.setdefault("TELEGRAM_CHAT_ID", "test_chat")
 os.environ.setdefault("SENTINEL_CHECK_INTERVAL", "60")
-os.environ.setdefault("SENTINEL_TARGET_URL", "http://localhost:8000")
+os.environ.setdefault("TARGET_BASE_URL", "http://localhost:8000")
 os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USER", "neo4j")
 os.environ.setdefault("NEO4J_PASSWORD", "test_password")

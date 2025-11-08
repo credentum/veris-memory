@@ -108,18 +108,29 @@ class TestSentinelConfig:
     """Test SentinelConfig dataclass."""
     
     def test_config_defaults(self):
-        """Test default configuration values."""
-        config = SentinelConfig()
-        
-        assert config.target_base_url == "http://veris-memory-dev-context-store-1:8000"
-        assert config.redis_url == "redis://veris-memory-dev-redis-1:6379"
-        assert config.schedule_cadence_sec == 60
-        assert config.max_jitter_pct == 20
-        assert config.per_check_timeout_sec == 10
-        assert config.cycle_budget_sec == 45
-        assert config.max_parallel_checks == 4
-        assert config.alert_webhook is None
-        assert config.github_repo is None
+        """Test default configuration values (localhost fallbacks when env vars not set)."""
+        import os
+        # Ensure environment variables are not set for this test
+        with patch.dict(os.environ, {}, clear=False):
+            # Remove any potentially set variables
+            for key in ['TARGET_BASE_URL', 'REDIS_URL', 'QDRANT_URL', 'NEO4J_BOLT', 'NEO4J_USER']:
+                os.environ.pop(key, None)
+
+            config = SentinelConfig()
+
+            # Verify localhost defaults are used when environment variables not set
+            assert config.target_base_url == "http://localhost:8000"
+            assert config.redis_url == "redis://localhost:6379"
+            assert config.qdrant_url == "http://localhost:6333"
+            assert config.neo4j_bolt == "bolt://localhost:7687"
+            assert config.neo4j_user == "veris_ro"
+            assert config.schedule_cadence_sec == 60
+            assert config.max_jitter_pct == 20
+            assert config.per_check_timeout_sec == 10
+            assert config.cycle_budget_sec == 45
+            assert config.max_parallel_checks == 4
+            assert config.alert_webhook is None
+            assert config.github_repo is None
     
     def test_config_custom_values(self):
         """Test custom configuration values."""
@@ -130,12 +141,72 @@ class TestSentinelConfig:
             alert_webhook="https://hooks.slack.com/test",
             github_repo="test/repo"
         )
-        
+
         assert config.target_base_url == "http://localhost:8000"
         assert config.schedule_cadence_sec == 30
         assert config.max_parallel_checks == 8
         assert config.alert_webhook == "https://hooks.slack.com/test"
         assert config.github_repo == "test/repo"
+
+    def test_config_environment_variables(self):
+        """Test that environment variables are properly read by __post_init__()."""
+        import os
+
+        # Set environment variables for Docker deployment
+        with patch.dict(os.environ, {
+            'TARGET_BASE_URL': 'http://context-store:8000',
+            'REDIS_URL': 'redis://redis:6379',
+            'QDRANT_URL': 'http://qdrant:6333',
+            'NEO4J_BOLT': 'bolt://neo4j:7687',
+            'NEO4J_USER': 'custom_user'
+        }):
+            config = SentinelConfig()
+
+            # Verify environment variables are used
+            assert config.target_base_url == "http://context-store:8000"
+            assert config.redis_url == "redis://redis:6379"
+            assert config.qdrant_url == "http://qdrant:6333"
+            assert config.neo4j_bolt == "bolt://neo4j:7687"
+            assert config.neo4j_user == "custom_user"
+
+    def test_config_explicit_override_env_vars(self):
+        """Test that explicit parameters override environment variables."""
+        import os
+
+        # Set environment variables
+        with patch.dict(os.environ, {
+            'TARGET_BASE_URL': 'http://context-store:8000',
+            'REDIS_URL': 'redis://redis:6379'
+        }):
+            # Override with explicit values
+            config = SentinelConfig(
+                target_base_url="http://custom:9000",
+                redis_url="redis://custom-redis:7000"
+            )
+
+            # Verify explicit values take precedence
+            assert config.target_base_url == "http://custom:9000"
+            assert config.redis_url == "redis://custom-redis:7000"
+
+    def test_config_partial_env_vars(self):
+        """Test that partial environment variables work with defaults."""
+        import os
+
+        # Set only some environment variables
+        with patch.dict(os.environ, {
+            'TARGET_BASE_URL': 'http://context-store:8000'
+        }, clear=False):
+            # Remove other variables to ensure fallback
+            for key in ['REDIS_URL', 'QDRANT_URL', 'NEO4J_BOLT']:
+                os.environ.pop(key, None)
+
+            config = SentinelConfig()
+
+            # Verify mixed behavior: env var used for target_base_url, defaults for others
+            assert config.target_base_url == "http://context-store:8000"  # From env
+            assert config.redis_url == "redis://localhost:6379"  # Default
+            assert config.qdrant_url == "http://localhost:6333"  # Default
+            assert config.neo4j_bolt == "bolt://localhost:7687"  # Default
 
 
 class TestVerisHealthProbe:

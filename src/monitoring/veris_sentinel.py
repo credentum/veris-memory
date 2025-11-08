@@ -81,12 +81,23 @@ class CheckResult:
 
 @dataclass
 class SentinelConfig:
-    """Configuration for Veris Sentinel."""
-    target_base_url: str = "http://veris-memory-dev-context-store-1:8000"
-    redis_url: str = "redis://veris-memory-dev-redis-1:6379"
-    qdrant_url: str = "http://veris-memory-dev-qdrant-1:6333"
-    neo4j_bolt: str = "bolt://veris-memory-dev-neo4j-1:7687"
-    neo4j_user: str = "veris_ro"
+    """
+    Configuration for Veris Sentinel.
+
+    Uses environment variables for Docker deployments:
+    - TARGET_BASE_URL: Base URL for Veris Memory API (default: http://localhost:8000)
+    - REDIS_URL: Redis connection URL (default: redis://localhost:6379)
+    - QDRANT_URL: Qdrant connection URL (default: http://localhost:6333)
+    - NEO4J_BOLT: Neo4j bolt URL (default: bolt://localhost:7687)
+    - NEO4J_USER: Neo4j username (default: veris_ro)
+
+    Falls back to localhost URLs for local development when environment variables are not set.
+    """
+    target_base_url: Optional[str] = None
+    redis_url: Optional[str] = None
+    qdrant_url: Optional[str] = None
+    neo4j_bolt: Optional[str] = None
+    neo4j_user: Optional[str] = None
     schedule_cadence_sec: int = 60
     max_jitter_pct: int = 20
     per_check_timeout_sec: int = 10
@@ -95,6 +106,29 @@ class SentinelConfig:
     burst_test_timeout_sec: int = 30  # Timeout for burst testing operations
     alert_webhook: Optional[str] = None
     github_repo: Optional[str] = None
+
+    def __post_init__(self):
+        """Set defaults from environment variables if not specified."""
+        # Set target_base_url from environment (Docker) or use localhost (local dev)
+        # Note: Default port is 8000 to match context-store default port
+        if self.target_base_url is None:
+            self.target_base_url = os.getenv('TARGET_BASE_URL', 'http://localhost:8000')
+
+        # Set redis_url from environment or use localhost
+        if self.redis_url is None:
+            self.redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+
+        # Set qdrant_url from environment or use localhost
+        if self.qdrant_url is None:
+            self.qdrant_url = os.getenv('QDRANT_URL', 'http://localhost:6333')
+
+        # Set neo4j_bolt from environment or use localhost
+        if self.neo4j_bolt is None:
+            self.neo4j_bolt = os.getenv('NEO4J_BOLT', 'bolt://localhost:7687')
+
+        # Set neo4j_user from environment or use default
+        if self.neo4j_user is None:
+            self.neo4j_user = os.getenv('NEO4J_USER', 'veris_ro')
 
 
 class VerisHealthProbe:

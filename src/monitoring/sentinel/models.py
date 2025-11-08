@@ -115,11 +115,15 @@ class SentinelConfig:
     
     @classmethod
     def from_env(cls) -> 'SentinelConfig':
-        """Create configuration from environment variables."""
+        """Create configuration from environment variables.
+
+        Uses TARGET_BASE_URL (consistent with __post_init__ and docker-compose)
+        instead of SENTINEL_TARGET_URL for better compatibility.
+        """
         import os
-        
+
         return cls(
-            target_base_url=os.getenv('SENTINEL_TARGET_URL', 'http://localhost:8000'),
+            target_base_url=os.getenv('TARGET_BASE_URL', 'http://localhost:8000'),
             check_interval_seconds=int(os.getenv('SENTINEL_CHECK_INTERVAL', '60')),
             alert_threshold_failures=int(os.getenv('SENTINEL_ALERT_THRESHOLD', '3')),
             webhook_url=os.getenv('SENTINEL_WEBHOOK_URL'),
