@@ -1,6 +1,8 @@
 # Custom LiveKit Server image with health check tools
 # Based on Alpine Linux
-FROM livekit/livekit-server:latest
+# Pinned to v1.6.1 for security and stability
+# TODO: Add SHA256 digest after verifying the image
+FROM livekit/livekit-server:v1.6.1
 
 # Install curl for health checks
 # LiveKit is based on Alpine Linux
