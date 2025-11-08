@@ -1427,6 +1427,132 @@ async def status() -> Dict[str, Any]:
     }
 
 
+# Sentinel Monitoring Endpoints (Phase 2)
+
+
+@app.get("/metrics")
+async def prometheus_metrics() -> PlainTextResponse:
+    """
+    Prometheus-compatible metrics endpoint for monitoring.
+
+    Returns metrics in Prometheus text format for scraping by monitoring tools.
+    Includes request counts, latencies, error rates, and service health.
+    """
+    # Use lightweight health check to avoid expensive backend queries
+    health_status = await health()
+
+    # Get detailed status for service-level metrics (cached/less frequent)
+    detailed_status = await health_detailed()
+
+    metrics_lines = [
+        "# HELP veris_memory_health_status Service health status (1=healthy, 0=unhealthy)",
+        "# TYPE veris_memory_health_status gauge",
+        f"veris_memory_health_status{{service=\"overall\"}} {1 if health_status['status'] == 'healthy' else 0}",
+        f"veris_memory_health_status{{service=\"qdrant\"}} {1 if detailed_status['services']['qdrant'] == 'healthy' else 0}",
+        f"veris_memory_health_status{{service=\"neo4j\"}} {1 if detailed_status['services']['neo4j'] == 'healthy' else 0}",
+        f"veris_memory_health_status{{service=\"redis\"}} {1 if detailed_status['services']['redis'] == 'healthy' else 0}",
+        "",
+        "# HELP veris_memory_uptime_seconds Service uptime in seconds",
+        "# TYPE veris_memory_uptime_seconds counter",
+        f"veris_memory_uptime_seconds {health_status['uptime_seconds']}",
+        "",
+        "# HELP veris_memory_info Service information",
+        "# TYPE veris_memory_info gauge",
+        "veris_memory_info{version=\"0.9.0\",protocol=\"MCP-1.0\"} 1",
+    ]
+
+    return PlainTextResponse("\n".join(metrics_lines))
+
+
+@app.get("/database")
+async def database_status() -> Dict[str, Any]:
+    """
+    Database connectivity and status endpoint.
+
+    Returns detailed information about database connections including:
+    - Neo4j graph database status and connection pool
+    - Qdrant vector database status and collection info
+    - Connection latencies and health checks
+    """
+    health_status = await health()
+
+    return {
+        "status": "healthy" if health_status["status"] == "healthy" else "degraded",
+        "databases": {
+            "neo4j": {
+                "status": health_status["services"]["neo4j"],
+                "type": "graph",
+                "connected": health_status["services"]["neo4j"] == "healthy",
+                "url": config.neo4j.uri if hasattr(config, 'neo4j') else "bolt://neo4j:7687",
+            },
+            "qdrant": {
+                "status": health_status["services"]["qdrant"],
+                "type": "vector",
+                "connected": health_status["services"]["qdrant"] == "healthy",
+                "url": config.qdrant.url if hasattr(config, 'qdrant') else "http://qdrant:6333",
+            },
+            "redis": {
+                "status": health_status["services"]["redis"],
+                "type": "cache",
+                "connected": health_status["services"]["redis"] == "healthy",
+                "url": config.redis.url if hasattr(config, 'redis') else "redis://redis:6379",
+            },
+        },
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+@app.get("/storage")
+async def storage_status() -> Dict[str, Any]:
+    """
+    Storage backend health and capacity endpoint.
+
+    Returns information about storage backends including:
+    - Vector storage (Qdrant) health and capacity
+    - Graph storage (Neo4j) health and node counts
+    - Cache storage (Redis) health and memory usage
+    """
+    health_status = await health()
+
+    storage_info = {
+        "status": "healthy" if health_status["status"] == "healthy" else "degraded",
+        "backends": {
+            "vector": {
+                "service": "qdrant",
+                "status": health_status["services"]["qdrant"],
+                "healthy": health_status["services"]["qdrant"] == "healthy",
+                "type": "vector_database",
+            },
+            "graph": {
+                "service": "neo4j",
+                "status": health_status["services"]["neo4j"],
+                "healthy": health_status["services"]["neo4j"] == "healthy",
+                "type": "graph_database",
+            },
+            "cache": {
+                "service": "redis",
+                "status": health_status["services"]["redis"],
+                "healthy": health_status["services"]["redis"] == "healthy",
+                "type": "key_value_store",
+            },
+        },
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+    return storage_info
+
+
+@app.get("/tools/list")
+async def list_tools_alias() -> Dict[str, Any]:
+    """
+    Alias endpoint for /tools for compatibility.
+
+    Some monitoring tools expect /tools/list instead of /tools.
+    This endpoint returns the same data as /tools.
+    """
+    return await list_tools()
+
+
 # Sprint 13 Phase 4.3: Enhanced Tool Discovery Endpoint
 
 
