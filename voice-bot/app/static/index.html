@@ -5,11 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TeamAI Voice Bot</title>
 
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind CSS (Pinned version for stability) -->
+    <!-- Using versioned CDN to prevent supply chain attacks -->
+    <!-- For production: Download and self-host for full security -->
+    <script src="https://cdn.tailwindcss.com/3.4.1"
+            crossorigin="anonymous">
+    </script>
 
-    <!-- LiveKit Client SDK -->
-    <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.min.js"></script>
+    <!-- LiveKit Client SDK (Pinned to version 2.0.0 for stability) -->
+    <!-- Using specific version instead of 'latest' to prevent unexpected breaking changes -->
+    <!-- For production: Consider self-hosting or using package manager (npm/yarn) -->
+    <script src="https://unpkg.com/livekit-client@2.0.0/dist/livekit-client.umd.min.js"
+            crossorigin="anonymous">
+    </script>
+
+    <!--
+        Security Note: SRI hashes omitted for CDN flexibility during development.
+        For production deployment:
+        1. Download and self-host these libraries, OR
+        2. Generate and add SRI integrity hashes using:
+           curl -s <URL> | openssl dgst -sha384 -binary | openssl base64 -A
+        3. Add integrity="sha384-<hash>" attribute to script tags
+    -->
 
     <style>
         body {
@@ -165,15 +182,32 @@
                 textColor = 'text-red-600';
             }
 
-            msgDiv.innerHTML = `
-                <div class="flex items-start space-x-2">
-                    <span class="text-lg">${icon}</span>
-                    <div class="flex-1">
-                        <span class="font-semibold ${textColor}">${speaker}:</span>
-                        <span class="text-gray-700 ml-1">${message}</span>
-                    </div>
-                </div>
-            `;
+            // Use DOM manipulation to prevent XSS - safer than innerHTML
+            const container = document.createElement('div');
+            container.className = 'flex items-start space-x-2';
+
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'text-lg';
+            iconSpan.textContent = icon;
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'flex-1';
+
+            const speakerSpan = document.createElement('span');
+            speakerSpan.className = `font-semibold ${textColor}`;
+            speakerSpan.textContent = speaker + ':';
+
+            const messageSpan = document.createElement('span');
+            messageSpan.className = 'text-gray-700 ml-1';
+            messageSpan.textContent = message;  // textContent prevents XSS
+
+            contentDiv.appendChild(speakerSpan);
+            contentDiv.appendChild(messageSpan);
+
+            container.appendChild(iconSpan);
+            container.appendChild(contentDiv);
+
+            msgDiv.appendChild(container);
 
             conversationLog.appendChild(msgDiv);
             conversationLog.scrollTop = conversationLog.scrollHeight;

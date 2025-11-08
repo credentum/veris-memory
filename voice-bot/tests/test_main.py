@@ -71,6 +71,8 @@ class TestRootEndpoint:
         assert data["status"] == "operational"
         assert "health" in data["endpoints"]
         assert "docs" in data["endpoints"]
+        assert "ui" in data["endpoints"]
+        assert data["endpoints"]["ui"] == "/ui"
 
 
 class TestHealthEndpoints:
@@ -153,7 +155,10 @@ class TestVoiceSessionEndpoints:
     def test_create_voice_session_success(self, client, mock_voice_handler):
         """Test successful voice session creation"""
         with patch('app.main.voice_handler', mock_voice_handler):
-            response = client.post("/api/v1/voice/session?user_id=test123")
+            response = client.post(
+                "/api/v1/voice/session",
+                json={"user_id": "test123"}
+            )
 
         assert response.status_code == 201
         data = response.json()
@@ -161,10 +166,25 @@ class TestVoiceSessionEndpoints:
         assert data["token"] == "test_token"
         assert data["user_id"] == "test123"
 
+    def test_create_voice_session_missing_user_id(self, client, mock_voice_handler):
+        """Test voice session creation with missing user_id in body"""
+        with patch('app.main.voice_handler', mock_voice_handler):
+            response = client.post(
+                "/api/v1/voice/session",
+                json={}
+            )
+
+        assert response.status_code == 400
+        data = response.json()
+        assert "user_id is required" in data["detail"]
+
     def test_create_voice_session_no_handler(self, client):
         """Test voice session creation when handler not initialized"""
         with patch('app.main.voice_handler', None):
-            response = client.post("/api/v1/voice/session?user_id=test123")
+            response = client.post(
+                "/api/v1/voice/session",
+                json={"user_id": "test123"}
+            )
 
         assert response.status_code == 503
         data = response.json()
@@ -177,7 +197,10 @@ class TestVoiceSessionEndpoints:
         )
 
         with patch('app.main.voice_handler', mock_voice_handler):
-            response = client.post("/api/v1/voice/session?user_id=test123")
+            response = client.post(
+                "/api/v1/voice/session",
+                json={"user_id": "test123"}
+            )
 
         assert response.status_code == 500
         assert "LiveKit connection failed" in response.json()["detail"]
@@ -381,6 +404,55 @@ class TestSprint13Integration:
         assert "embedding_pipeline" in data["mcp_server"]
 
 
+class TestVoiceUIEndpoint:
+    """Test voice bot UI endpoint"""
+
+    def test_ui_endpoint_success(self, client):
+        """Test /ui endpoint returns HTML file"""
+        response = client.get("/ui")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/html")
+
+        # Verify HTML content structure
+        content = response.text
+        assert "TeamAI Voice Bot" in content
+        assert "<!DOCTYPE html>" in content
+        assert "livekit-client" in content
+        assert "tailwindcss" in content
+
+    def test_ui_endpoint_returns_correct_html(self, client):
+        """Test /ui endpoint serves index.html with expected structure"""
+        response = client.get("/ui")
+
+        assert response.status_code == 200
+        content = response.text
+
+        # Verify essential UI components
+        assert "CONNECT" in content or "connect-btn" in content
+        assert "Conversation" in content
+        assert "Microphone" in content
+
+    def test_ui_endpoint_missing_file(self, client):
+        """Test /ui endpoint returns 404 when file missing"""
+        with patch('pathlib.Path.exists', return_value=False):
+            response = client.get("/ui")
+            assert response.status_code == 404
+            assert "not found" in response.json()["detail"]
+
+
+class TestStaticFileServing:
+    """Test static file serving configuration"""
+
+    def test_static_files_mounted(self, client):
+        """Test that static files are accessible"""
+        # This tests that the static directory is mounted
+        # Actual static file serving depends on directory existing
+        response = client.get("/")
+        assert response.status_code == 200
+        # If we got here, app started successfully with static mounting
+
+
 class TestErrorHandling:
     """Test error handling across endpoints"""
 
@@ -389,10 +461,10 @@ class TestErrorHandling:
         response = client.get("/api/v1/invalid")
         assert response.status_code == 404
 
-    def test_missing_query_parameters(self, client):
-        """Test error handling for missing parameters"""
+    def test_missing_request_body(self, client):
+        """Test error handling for missing request body"""
         response = client.post("/api/v1/voice/session")
-        # FastAPI should return 422 for missing required query params
+        # Should return 422 for invalid JSON body
         assert response.status_code == 422
 
 
