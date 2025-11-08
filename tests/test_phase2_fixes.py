@@ -169,47 +169,56 @@ class TestMetadataFiltering:
 
     def test_strict_metadata_post_filtering(self):
         """Test that post-processing metadata filtering works strictly."""
-        # Mock results with various metadata
+        # Mock results with correct structure (metadata is nested in payload)
         results = [
             {
                 'id': 'ctx_1',
-                'content': {'title': 'Test 1'},
-                'metadata': {'project': 'api-v2', 'priority': 'high'}
+                'payload': {
+                    'content': {'title': 'Test 1'},
+                    'metadata': {'project': 'api-v2', 'priority': 'high'}
+                }
             },
             {
-                'id': 'ctx_2', 
-                'content': {'title': 'Test 2'},
-                'metadata': {'project': 'api-v2', 'priority': 'low'}  # Won't match
+                'id': 'ctx_2',
+                'payload': {
+                    'content': {'title': 'Test 2'},
+                    'metadata': {'project': 'api-v2', 'priority': 'low'}  # Won't match
+                }
             },
             {
                 'id': 'ctx_3',
-                'content': {'title': 'Test 3'},
-                'metadata': {'project': 'web-app', 'priority': 'high'}  # Won't match
+                'payload': {
+                    'content': {'title': 'Test 3'},
+                    'metadata': {'project': 'web-app', 'priority': 'high'}  # Won't match
+                }
             },
             {
                 'id': 'ctx_4',
-                'content': {'title': 'Test 4'},
-                'metadata': {'project': 'api-v2', 'priority': 'high'}  # Will match
+                'payload': {
+                    'content': {'title': 'Test 4'},
+                    'metadata': {'project': 'api-v2', 'priority': 'high'}  # Will match
+                }
             }
         ]
-        
+
         metadata_filters = {"project": "api-v2", "priority": "high"}
-        
-        # Apply the same filtering logic as in the server
+
+        # Apply the same filtering logic as in the server (with fix)
         filtered_results = []
         for result in results:
-            metadata = result.get('metadata', {})
-            
+            # Fix: Access metadata from correct nesting level in payload structure
+            metadata = result.get('payload', {}).get('metadata', {})
+
             # Check if all metadata filters match exactly
             match = True
             for filter_key, filter_value in metadata_filters.items():
                 if metadata.get(filter_key) != filter_value:
                     match = False
                     break
-            
+
             if match:
                 filtered_results.append(result)
-        
+
         # Should only match ctx_1 and ctx_4
         assert len(filtered_results) == 2
         assert filtered_results[0]['id'] == 'ctx_1'
@@ -218,25 +227,32 @@ class TestMetadataFiltering:
     def test_empty_metadata_filtering(self):
         """Test filtering behavior with empty metadata."""
         results = [
-            {'id': 'ctx_1', 'content': {'title': 'Test 1'}, 'metadata': {}},
-            {'id': 'ctx_2', 'content': {'title': 'Test 2'}},  # No metadata key
+            {
+                'id': 'ctx_1',
+                'payload': {'content': {'title': 'Test 1'}, 'metadata': {}}
+            },
+            {
+                'id': 'ctx_2',
+                'payload': {'content': {'title': 'Test 2'}}  # No metadata key
+            },
         ]
-        
+
         metadata_filters = {"project": "api-v2"}
-        
+
         filtered_results = []
         for result in results:
-            metadata = result.get('metadata', {})
-            
+            # Fix: Access metadata from correct nesting level in payload structure
+            metadata = result.get('payload', {}).get('metadata', {})
+
             match = True
             for filter_key, filter_value in metadata_filters.items():
                 if metadata.get(filter_key) != filter_value:
                     match = False
                     break
-            
+
             if match:
                 filtered_results.append(result)
-        
+
         # No results should match since metadata is empty/missing
         assert len(filtered_results) == 0
 
