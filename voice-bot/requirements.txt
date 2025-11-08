@@ -10,7 +10,7 @@ httpx==0.25.1
 
 # LiveKit Integration
 livekit==0.10.0
-livekit-server-sdk==0.12.0
+livekit-api==1.0.7  # Replaced deprecated livekit-server-sdk
 
 # Redis for Session State
 redis==5.0.1
