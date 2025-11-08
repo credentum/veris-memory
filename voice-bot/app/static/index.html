@@ -276,21 +276,21 @@
                 addToConversation('System', `Session created: ${session.room_name}`, 'system');
 
                 // Connect to LiveKit room
-                room = new LivekitClient.Room({
+                room = new LiveKit.Room({
                     adaptiveStream: true,
                     dynacast: true,
                 });
 
                 // Set up room event handlers
-                room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
-                    if (track.kind === LivekitClient.Track.Kind.Audio) {
+                room.on(LiveKit.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                    if (track.kind === LiveKit.Track.Kind.Audio) {
                         const audioElement = track.attach();
                         document.body.appendChild(audioElement);
                         addToConversation('Bot', 'Connected and listening...', 'system');
                     }
                 });
 
-                room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
+                room.on(LiveKit.RoomEvent.DataReceived, (payload, participant) => {
                     const data = JSON.parse(new TextDecoder().decode(payload));
                     if (data.type === 'transcription') {
                         addToConversation('You', data.text);
@@ -299,7 +299,7 @@
                     }
                 });
 
-                room.on(LivekitClient.RoomEvent.Disconnected, () => {
+                room.on(LiveKit.RoomEvent.Disconnected, () => {
                     disconnect();
                 });
 
