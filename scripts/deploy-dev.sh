@@ -264,6 +264,11 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
       printf "ENABLE_FACT_STORAGE=true\\n"
       printf "ENABLE_CONVERSATION_TRACE=true\\n"
 
+      # Voice Bot SSL Configuration (auto-generated)
+      printf "\\n# SSL Configuration for Voice Bot\\n"
+      printf "SSL_KEYFILE=/app/certs/key.pem\\n"
+      printf "SSL_CERTFILE=/app/certs/cert.pem\\n"
+
       # Sentinel Monitoring Configuration
       printf "\\n# Sentinel Monitoring Authentication\\n"
       if [ -n "\$SENTINEL_API_KEY" ]; then
@@ -280,6 +285,57 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
       exit 1
     fi
     echo "✅ Configuration file created successfully"
+
+    # Generate SSL certificates for voice-bot if they don't exist
+    echo "🔐 Checking SSL certificates for voice-bot..."
+    CERT_DIR="/opt/veris-memory/voice-bot/certs"
+    if [ ! -d "\$CERT_DIR" ]; then
+      echo "📁 Creating certs directory..."
+      mkdir -p "\$CERT_DIR"
+    fi
+
+    if [ ! -f "\$CERT_DIR/key.pem" ] || [ ! -f "\$CERT_DIR/cert.pem" ]; then
+      echo "📜 Generating self-signed SSL certificate..."
+      openssl req -x509 -newkey rsa:4096 -nodes \
+        -keyout "\$CERT_DIR/key.pem" \
+        -out "\$CERT_DIR/cert.pem" \
+        -days 365 \
+        -subj "/C=US/ST=State/L=City/O=Personal/CN=\$(hostname -I | awk '{print \$1}')" \
+        2>/dev/null || echo "⚠️  Certificate generation failed, voice-bot will use HTTP"
+
+      if [ -f "\$CERT_DIR/key.pem" ] && [ -f "\$CERT_DIR/cert.pem" ]; then
+        echo "✅ SSL certificates generated successfully"
+        chmod 600 "\$CERT_DIR/key.pem"
+        chmod 644 "\$CERT_DIR/cert.pem"
+      fi
+    else
+      echo "✅ SSL certificates already exist"
+      # Check certificate expiry (warn if less than 30 days)
+      CERT_EXPIRY=\$(openssl x509 -enddate -noout -in "\$CERT_DIR/cert.pem" 2>/dev/null | cut -d= -f2)
+      if [ -n "\$CERT_EXPIRY" ]; then
+        EXPIRY_EPOCH=\$(date -d "\$CERT_EXPIRY" +%s 2>/dev/null || echo 0)
+        NOW_EPOCH=\$(date +%s)
+        DAYS_LEFT=\$(( (\$EXPIRY_EPOCH - \$NOW_EPOCH) / 86400 ))
+
+        if [ \$DAYS_LEFT -lt 30 ] && [ \$DAYS_LEFT -gt 0 ]; then
+          echo "⚠️  SSL certificate expires in \$DAYS_LEFT days"
+          echo "   Consider regenerating: rm -rf \$CERT_DIR && redeploy"
+        elif [ \$DAYS_LEFT -le 0 ]; then
+          echo "⚠️  SSL certificate has EXPIRED! Regenerating..."
+          rm -f "\$CERT_DIR/key.pem" "\$CERT_DIR/cert.pem"
+          openssl req -x509 -newkey rsa:4096 -nodes \
+            -keyout "\$CERT_DIR/key.pem" \
+            -out "\$CERT_DIR/cert.pem" \
+            -days 365 \
+            -subj "/C=US/ST=State/L=City/O=Personal/CN=\$(hostname -I | awk '{print \$1}')" \
+            2>/dev/null && echo "✅ SSL certificate regenerated"
+          chmod 600 "\$CERT_DIR/key.pem" 2>/dev/null
+          chmod 644 "\$CERT_DIR/cert.pem" 2>/dev/null
+        else
+          echo "   Valid for \$DAYS_LEFT more days"
+        fi
+      fi
+    fi
 
     # Build and start services
     echo "🏗️  Building and starting services..."
