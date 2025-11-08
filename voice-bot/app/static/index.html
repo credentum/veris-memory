@@ -149,6 +149,17 @@
                 <li>Tap "DISCONNECT" when done</li>
             </ol>
         </div>
+
+        <!-- HTTPS Warning -->
+        <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4" id="https-warning" style="display: none;">
+            <h3 class="text-sm font-semibold text-yellow-900 mb-2">⚠️ HTTPS Required</h3>
+            <p class="text-xs text-yellow-800 mb-2">
+                Microphone access requires a secure HTTPS connection. This page is currently accessed over HTTP.
+            </p>
+            <p class="text-xs text-yellow-800">
+                <strong>To fix:</strong> Access this page using HTTPS or configure SSL/TLS on the server.
+            </p>
+        </div>
     </div>
 
     <script>
@@ -162,6 +173,38 @@
         } else {
             console.error('❌ LivekitClient SDK failed to load!');
             console.error('Check browser console for script loading errors');
+        }
+
+        // Check browser compatibility
+        console.log('=== Browser Compatibility Checks ===');
+        console.log('Protocol:', window.location.protocol);
+        console.log('Is HTTPS:', window.location.protocol === 'https:');
+        console.log('Is localhost:', window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+        console.log('navigator.mediaDevices:', typeof navigator.mediaDevices !== 'undefined');
+        console.log('getUserMedia:', typeof navigator.mediaDevices?.getUserMedia === 'function');
+
+        // Warn about HTTPS requirement
+        const isSecure = window.location.protocol === 'https:' ||
+                        window.location.hostname === 'localhost' ||
+                        window.location.hostname === '127.0.0.1';
+
+        if (!isSecure) {
+            console.warn('⚠️ WARNING: Page loaded over HTTP (not HTTPS)');
+            console.warn('⚠️ Microphone access requires HTTPS in most browsers');
+            console.warn('⚠️ Voice connections may fail. Use HTTPS for production.');
+        }
+
+        if (typeof navigator.mediaDevices === 'undefined') {
+            console.error('❌ navigator.mediaDevices not available');
+            console.error('❌ This browser may not support WebRTC or requires HTTPS');
+        }
+
+        // Show HTTPS warning if not secure
+        if (!isSecure && typeof navigator.mediaDevices === 'undefined') {
+            const httpsWarning = document.getElementById('https-warning');
+            if (httpsWarning) {
+                httpsWarning.style.display = 'block';
+            }
         }
 
         // State
@@ -272,6 +315,25 @@
                     throw new Error('LivekitClient SDK failed to load. Please refresh the page.');
                 }
                 console.log('✅ LivekitClient SDK verified, starting connection...');
+
+                // Check browser media support
+                if (typeof navigator.mediaDevices === 'undefined') {
+                    const isSecure = window.location.protocol === 'https:' ||
+                                   window.location.hostname === 'localhost' ||
+                                   window.location.hostname === '127.0.0.1';
+
+                    if (!isSecure) {
+                        throw new Error('HTTPS required for microphone access. Current URL: ' + window.location.protocol + '//' + window.location.host);
+                    } else {
+                        throw new Error('Your browser does not support WebRTC or microphone access. Please use a modern browser like Chrome, Firefox, or Safari.');
+                    }
+                }
+
+                if (typeof navigator.mediaDevices.getUserMedia !== 'function') {
+                    throw new Error('getUserMedia not supported in this browser. Please use a modern browser.');
+                }
+
+                console.log('✅ Browser media support verified');
 
                 addToConversation('System', 'Creating voice session...', 'system');
                 updateConnectionStatus('Connecting...');
