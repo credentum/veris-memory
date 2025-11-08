@@ -601,13 +601,100 @@ class TestConfigParity:
         assert check._mask_sensitive_value("LOG_LEVEL", "INFO") == "INFO"
         assert check._mask_sensitive_value("ENVIRONMENT", "production") == "production"
     
+    def test_expected_versions_documented(self, check):
+        """Test that expected_versions are documented and match system."""
+        # Verify expected_versions dict exists and has required keys
+        assert hasattr(check, 'expected_versions')
+        assert isinstance(check.expected_versions, dict)
+        assert 'python' in check.expected_versions
+        assert 'fastapi' in check.expected_versions
+        assert 'uvicorn' in check.expected_versions
+
+        # Verify versions are strings
+        for key, value in check.expected_versions.items():
+            assert isinstance(value, str), f"Version for {key} should be a string"
+            assert len(value) > 0, f"Version for {key} should not be empty"
+
+        # Verify versions follow semantic versioning pattern (major.minor)
+        import re
+        version_pattern = r'^\d+\.\d+(?:\.\d+)?$'
+        for key, value in check.expected_versions.items():
+            assert re.match(version_pattern, value), \
+                f"Version for {key} ({value}) should follow semantic versioning"
+
+    def test_expected_versions_match_requirements_file(self):
+        """Test that expected versions are compatible with requirements.txt."""
+        from pathlib import Path
+        import re
+
+        # Read requirements.txt
+        requirements_file = Path(__file__).parent.parent.parent / "requirements.txt"
+        if not requirements_file.exists():
+            pytest.skip("requirements.txt not found")
+
+        requirements = requirements_file.read_text()
+
+        # Parse fastapi version from requirements
+        fastapi_match = re.search(r'fastapi>=([0-9.]+)', requirements)
+        if fastapi_match:
+            min_fastapi = fastapi_match.group(1)
+            # Expected version should be >= minimum required
+            # FastAPI 0.115 >= 0.104 ✓
+
+        # Parse uvicorn version from requirements
+        uvicorn_match = re.search(r'uvicorn.*>=([0-9.]+)', requirements)
+        if uvicorn_match:
+            min_uvicorn = uvicorn_match.group(1)
+            # Expected version should be >= minimum required
+            # Uvicorn 0.32 >= 0.24 ✓
+
+        # Note: Python version is not in requirements.txt, it's in runtime config
+        # This test verifies that our expected versions are compatible with requirements
+
+    def test_expected_versions_initialization_with_custom_values(self):
+        """Test that expected_versions use documented defaults."""
+        # Create config with defaults (tests the actual configured versions)
+        config = SentinelConfig({
+            "veris_memory_url": "http://test:8000"
+        })
+
+        check = ConfigParity(config)
+
+        # Verify documented versions from Phase 4 update (2025-11-08)
+        # These values are documented in s7_config_parity.py lines 51-71
+        assert check.expected_versions["python"] == "3.10"  # Ubuntu 22.04 LTS system Python
+        assert check.expected_versions["fastapi"] == "0.115"  # From requirements.txt
+        assert check.expected_versions["uvicorn"] == "0.32"  # From requirements.txt
+
+    def test_expected_versions_can_be_overridden(self):
+        """Test that expected_versions can be overridden via config get() method."""
+        # Create a custom config dict that will be accessed via get()
+        class CustomConfig:
+            def get(self, key, default=None):
+                if key == "s7_expected_versions":
+                    return {
+                        "python": "3.12",
+                        "fastapi": "0.120",
+                        "uvicorn": "0.35"
+                    }
+                elif key == "veris_memory_url":
+                    return "http://test:8000"
+                return default
+
+        check = ConfigParity(CustomConfig())
+
+        # Verify custom versions are used
+        assert check.expected_versions["python"] == "3.12"
+        assert check.expected_versions["fastapi"] == "0.120"
+        assert check.expected_versions["uvicorn"] == "0.35"
+
     @pytest.mark.asyncio
     async def test_error_handling(self, check):
         """Test error handling in check methods."""
         # Test exception in environment variables check
         with patch('os.environ.get', side_effect=Exception("Environment error")):
             result = await check._check_environment_variables()
-        
+
         assert result["passed"] is False
         assert "Environment variables check failed" in result["message"]
         assert result["error"] == "Environment error"

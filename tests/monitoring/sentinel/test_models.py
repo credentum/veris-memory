@@ -241,6 +241,115 @@ class TestSentinelConfig:
         assert config.webhook_url == "https://hooks.slack.com/test"
         assert config.enabled_checks == ['S1-probes']
 
+    # Edge Case Tests for __post_init__()
+
+    def test_config_empty_string_env_var(self):
+        """Test that empty string env vars are handled correctly."""
+        with patch.dict(os.environ, {
+            'TARGET_BASE_URL': ''  # Empty string
+        }):
+            config = SentinelConfig()
+
+            # Empty string should be used (not replaced with default)
+            # This matches __post_init__ behavior: only None triggers default
+            assert config.target_base_url == ''
+
+    def test_config_whitespace_only_env_var(self):
+        """Test that whitespace-only env vars are preserved."""
+        with patch.dict(os.environ, {
+            'TARGET_BASE_URL': '   '  # Whitespace only
+        }):
+            config = SentinelConfig()
+
+            # Whitespace is preserved (validation happens elsewhere)
+            assert config.target_base_url == '   '
+
+    def test_config_malformed_url_in_env_var(self):
+        """Test that malformed URLs are accepted (validation happens at usage)."""
+        with patch.dict(os.environ, {
+            'TARGET_BASE_URL': 'not-a-valid-url'
+        }):
+            config = SentinelConfig()
+
+            # Malformed URL is accepted (validation happens when URL is used)
+            assert config.target_base_url == 'not-a-valid-url'
+
+    def test_config_special_characters_in_env_var(self):
+        """Test that special characters in env vars are preserved."""
+        with patch.dict(os.environ, {
+            'TARGET_BASE_URL': 'http://test:8000/path?query=value&foo=bar#fragment'
+        }):
+            config = SentinelConfig()
+
+            # Special characters should be preserved
+            assert config.target_base_url == 'http://test:8000/path?query=value&foo=bar#fragment'
+
+    def test_config_very_long_url(self):
+        """Test that very long URLs are handled correctly."""
+        long_url = 'http://' + 'a' * 2000 + '.com'
+        with patch.dict(os.environ, {
+            'TARGET_BASE_URL': long_url
+        }):
+            config = SentinelConfig()
+
+            # Very long URL should be preserved
+            assert config.target_base_url == long_url
+            assert len(config.target_base_url) > 2000
+
+    def test_config_unicode_in_env_var(self):
+        """Test that Unicode characters in env vars are handled."""
+        with patch.dict(os.environ, {
+            'TARGET_BASE_URL': 'http://test.com/путь/файл'  # Cyrillic characters
+        }):
+            config = SentinelConfig()
+
+            # Unicode should be preserved
+            assert config.target_base_url == 'http://test.com/путь/файл'
+
+    def test_config_none_vs_missing_env_var(self):
+        """Test difference between None and missing env var."""
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('TARGET_BASE_URL', None)
+
+            # When env var is missing, __post_init__ sets default
+            config = SentinelConfig()
+            assert config.target_base_url == 'http://localhost:8000'
+
+            # When explicitly set to None in constructor, it still triggers __post_init__
+            config2 = SentinelConfig(target_base_url=None)
+            assert config2.target_base_url == 'http://localhost:8000'
+
+    def test_config_enabled_checks_empty_list(self):
+        """Test that empty enabled_checks list is preserved."""
+        config = SentinelConfig(enabled_checks=[])
+
+        # Empty list should be preserved (not replaced with defaults)
+        assert config.enabled_checks == []
+
+    def test_config_enabled_checks_none_triggers_defaults(self):
+        """Test that None enabled_checks triggers default list."""
+        config = SentinelConfig(enabled_checks=None)
+
+        # None should trigger default list in __post_init__
+        assert config.enabled_checks is not None
+        assert len(config.enabled_checks) == 11
+        assert 'S1-probes' in config.enabled_checks
+
+    def test_config_multiple_none_values(self):
+        """Test that multiple None values all trigger defaults."""
+        with patch.dict(os.environ, {}, clear=False):
+            for key in ['TARGET_BASE_URL', 'SENTINEL_CHECK_INTERVAL']:
+                os.environ.pop(key, None)
+
+            config = SentinelConfig(
+                target_base_url=None,
+                enabled_checks=None
+            )
+
+            # All None values should trigger defaults
+            assert config.target_base_url == 'http://localhost:8000'
+            assert len(config.enabled_checks) == 11
+
 
 class TestCheckResult:
     """Test CheckResult model."""

@@ -117,17 +117,29 @@ class SentinelConfig:
     def from_env(cls) -> 'SentinelConfig':
         """Create configuration from environment variables.
 
-        Uses TARGET_BASE_URL (consistent with __post_init__ and docker-compose)
-        instead of SENTINEL_TARGET_URL for better compatibility.
+        Reads Sentinel-specific environment variables and creates a SentinelConfig instance.
+        TARGET_BASE_URL and enabled_checks are handled by __post_init__() to avoid duplication.
+
+        Environment variables:
+            SENTINEL_CHECK_INTERVAL: Check interval in seconds (default: 60)
+            SENTINEL_ALERT_THRESHOLD: Number of failures before alerting (default: 3)
+            SENTINEL_WEBHOOK_URL: Webhook URL for alerts
+            GITHUB_TOKEN: GitHub token for creating issues
+            SENTINEL_GITHUB_REPO: GitHub repository for issue creation
+            SENTINEL_ENABLED_CHECKS: Comma-separated list of enabled checks
+            TARGET_BASE_URL: Base URL for Veris Memory (handled by __post_init__)
         """
         import os
 
+        # Let __post_init__() handle target_base_url and enabled_checks to avoid duplication
+        # Only read Sentinel-specific env vars here
         return cls(
-            target_base_url=os.getenv('TARGET_BASE_URL', 'http://localhost:8000'),
+            # target_base_url=None handled by __post_init__() reading TARGET_BASE_URL
             check_interval_seconds=int(os.getenv('SENTINEL_CHECK_INTERVAL', '60')),
             alert_threshold_failures=int(os.getenv('SENTINEL_ALERT_THRESHOLD', '3')),
             webhook_url=os.getenv('SENTINEL_WEBHOOK_URL'),
             github_token=os.getenv('GITHUB_TOKEN'),
             github_repo=os.getenv('SENTINEL_GITHUB_REPO'),
+            # enabled_checks=None handled by __post_init__() with SENTINEL_ENABLED_CHECKS fallback
             enabled_checks=os.getenv('SENTINEL_ENABLED_CHECKS', '').split(',') if os.getenv('SENTINEL_ENABLED_CHECKS') else None
         )
