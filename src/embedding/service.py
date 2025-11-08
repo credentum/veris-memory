@@ -10,6 +10,7 @@ Provides a robust, configurable embedding generation service that handles:
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any, Dict, List, Optional, Union, OrderedDict
 from dataclasses import dataclass
@@ -151,41 +152,72 @@ class EmbeddingService:
         
     async def initialize(self) -> bool:
         """
-        Initialize the embedding service.
-        
+        Initialize the embedding service with detailed logging.
+
         Returns:
             bool: True if initialization successful
-            
+
         Raises:
             ModelLoadError: If model cannot be loaded
         """
         start_time = time.time()
-        
+
+        logger.info("🔧 Starting embedding service initialization...")
+        logger.info(f"   Model: {self.config.model.value[0]}")
+        logger.info(f"   Target dimensions: {self.config.target_dimensions}")
+        logger.info(f"   Max retries: {self.config.max_retries}")
+        logger.info(f"   Timeout: {self.config.timeout_seconds}s")
+
         try:
-            logger.info(f"Loading embedding model: {self.config.model.value[0]}")
-            
-            # Try to load sentence-transformers
+            # Try to import sentence-transformers
+            logger.info("📦 Attempting to import sentence-transformers...")
             try:
                 from sentence_transformers import SentenceTransformer
-                model_name = self.config.model.value[0]
-                self._model = SentenceTransformer(model_name)
-                self._model_loaded = True
-                
-                load_time = time.time() - start_time
-                self._metrics["model_load_time"] = load_time
-                
-                logger.info(
-                    f"Successfully loaded model {model_name} "
-                    f"in {load_time:.2f}s with {self.get_model_dimensions()} dimensions"
-                )
-                return True
-                
-            except ImportError as e:
-                logger.error(f"sentence-transformers not available: {e}")
+                logger.info("✅ sentence-transformers package is available")
+            except ImportError as import_error:
+                logger.error(f"❌ sentence-transformers not installed: {import_error}")
+                logger.error("   Install with: pip install sentence-transformers")
                 raise ModelLoadError("sentence-transformers package not installed")
-                
+
+            # Load the model
+            model_name = self.config.model.value[0]
+            logger.info(f"📥 Loading model '{model_name}' (this may download ~80MB on first use)...")
+
+            try:
+                self._model = SentenceTransformer(model_name)
+                logger.info(f"✅ Model loaded successfully")
+            except Exception as model_error:
+                logger.error(f"❌ Failed to load model: {model_error}", exc_info=True)
+                logger.error(f"   Model name: {model_name}")
+                logger.error(f"   This might be a network issue or model name typo")
+                raise ModelLoadError(f"Failed to load model '{model_name}': {model_error}")
+
+            self._model_loaded = True
+
+            # Verify model dimensions
+            try:
+                actual_dims = self.get_model_dimensions()
+                logger.info(f"📊 Model dimensions: {actual_dims}")
+
+                if actual_dims != self.config.target_dimensions:
+                    logger.warning(
+                        f"⚠️ Model produces {actual_dims}D but target is {self.config.target_dimensions}D. "
+                        f"Dimension adjustment will be applied."
+                    )
+            except Exception as dim_error:
+                logger.warning(f"⚠️ Could not verify model dimensions: {dim_error}")
+
+            load_time = time.time() - start_time
+            self._metrics["model_load_time"] = load_time
+
+            logger.info(f"✅ Embedding service fully initialized in {load_time:.2f}s")
+            return True
+
+        except ModelLoadError:
+            # Re-raise ModelLoadError as-is
+            raise
         except Exception as e:
-            logger.error(f"Failed to initialize embedding service: {e}")
+            logger.error(f"❌ Unexpected error during initialization: {e}", exc_info=True)
             raise ModelLoadError(f"Model initialization failed: {e}")
     
     def get_model_dimensions(self) -> int:
@@ -528,14 +560,98 @@ class EmbeddingService:
 # Global service instance
 _embedding_service: Optional[EmbeddingService] = None
 
+def _load_config_from_file() -> Optional[EmbeddingConfig]:
+    """
+    Load embedding configuration from .ctxrc.yaml file.
+
+    Searches in priority order:
+    1. CTX_CONFIG_PATH environment variable
+    2. config/.ctxrc.yaml
+    3. .ctxrc.yaml
+
+    Returns:
+        EmbeddingConfig if file found and valid, None otherwise
+    """
+    config_candidates = [
+        os.getenv("CTX_CONFIG_PATH"),
+        "config/.ctxrc.yaml",
+        ".ctxrc.yaml",
+    ]
+
+    for candidate in config_candidates:
+        if not candidate or not os.path.exists(candidate):
+            continue
+
+        try:
+            import yaml
+            logger.info(f"📁 Loading embedding config from: {candidate}")
+
+            with open(candidate, 'r') as f:
+                yaml_config = yaml.safe_load(f)
+
+            # Extract embedding configuration
+            embedding_cfg = yaml_config.get('embeddings', yaml_config.get('embedding', {}))
+
+            if not embedding_cfg:
+                logger.warning(f"No 'embeddings' section found in {candidate}")
+                continue
+
+            # Map model name to EmbeddingModel enum
+            model_name = embedding_cfg.get('model', 'all-MiniLM-L6-v2')
+
+            # Find matching model
+            model = EmbeddingModel.MINI_LM_L6_V2  # default
+            for em in EmbeddingModel:
+                if model_name in em.value[0] or em.value[0] in model_name:
+                    model = em
+                    break
+
+            config = EmbeddingConfig(
+                model=model,
+                target_dimensions=embedding_cfg.get('dimensions', 384),
+                max_retries=embedding_cfg.get('max_retries', 3),
+                timeout_seconds=float(embedding_cfg.get('timeout', 30.0)),
+                batch_size=embedding_cfg.get('batch_size', 100),
+            )
+
+            logger.info(f"✅ Loaded embedding config: model={model.value[0]}, dims={config.target_dimensions}")
+            return config
+
+        except Exception as e:
+            logger.error(f"Failed to load config from {candidate}: {e}")
+            continue
+
+    logger.warning("No valid config file found, using defaults")
+    return None
+
 async def get_embedding_service() -> EmbeddingService:
-    """Get or create the global embedding service instance."""
+    """Get or create the global embedding service instance with config loading."""
     global _embedding_service
-    
+
     if _embedding_service is None:
-        _embedding_service = EmbeddingService()
-        await _embedding_service.initialize()
-    
+        logger.info("Initializing embedding service...")
+
+        # Try to load config from file
+        config = _load_config_from_file()
+
+        if config:
+            logger.info(f"Creating EmbeddingService with loaded config")
+            _embedding_service = EmbeddingService(config)
+        else:
+            logger.warning("Creating EmbeddingService with default config")
+            _embedding_service = EmbeddingService()
+
+        # Initialize the service
+        try:
+            success = await _embedding_service.initialize()
+            if success:
+                logger.info("✅ Embedding service initialized successfully")
+            else:
+                logger.error("❌ Embedding service initialization returned False")
+        except Exception as init_error:
+            logger.error(f"❌ Embedding service initialization failed: {init_error}", exc_info=True)
+            raise
+
     return _embedding_service
 
 async def generate_embedding(
