@@ -14,22 +14,27 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 
+# Import app at module level for better test performance and discovery
+from src.mcp_server.main import app
 
-# Mock the health check functions before importing main
+
 @pytest.fixture
 def mock_health():
-    """Mock health check response."""
+    """Mock health check response with dynamic timestamp."""
+    current_time = datetime.now(timezone.utc).timestamp()
     return {
         "status": "healthy",
         "uptime_seconds": 3600,
-        "timestamp": 1699564800.0,
+        "timestamp": current_time,
         "message": "Server is running",
     }
 
 
 @pytest.fixture
 def mock_health_detailed():
-    """Mock detailed health check response."""
+    """Mock detailed health check response with dynamic timestamps."""
+    current_time = datetime.now(timezone.utc).timestamp()
+    startup_time = current_time - 3600  # Started 1 hour ago
     return {
         "status": "healthy",
         "services": {
@@ -38,7 +43,7 @@ def mock_health_detailed():
             "redis": "healthy",
             "embeddings": "healthy",
         },
-        "startup_time": 1699561200.0,
+        "startup_time": startup_time,
         "uptime_seconds": 3600,
         "grace_period_active": False,
     }
@@ -52,7 +57,6 @@ class TestPrometheusMetricsEndpoint:
     @pytest.mark.asyncio
     async def test_metrics_returns_prometheus_format(self, mock_health, mock_health_detailed):
         """Test that /metrics returns valid Prometheus text format."""
-        from src.mcp_server.main import app
 
         with patch("src.mcp_server.main.health", return_value=mock_health):
             with patch("src.mcp_server.main.get_cached_health_detailed", return_value=mock_health_detailed):
@@ -71,7 +75,6 @@ class TestPrometheusMetricsEndpoint:
     @pytest.mark.asyncio
     async def test_metrics_includes_all_services(self, mock_health, mock_health_detailed):
         """Test that metrics include all service health statuses."""
-        from src.mcp_server.main import app
 
         with patch("src.mcp_server.main.health", return_value=mock_health):
             with patch("src.mcp_server.main.get_cached_health_detailed", return_value=mock_health_detailed):
@@ -88,7 +91,6 @@ class TestPrometheusMetricsEndpoint:
     @pytest.mark.asyncio
     async def test_metrics_reports_unhealthy_services(self, mock_health, mock_health_detailed):
         """Test that unhealthy services are reported as 0."""
-        from src.mcp_server.main import app
 
         # Create a copy to avoid modifying the fixture
         unhealthy_detailed = mock_health_detailed.copy()
@@ -110,7 +112,6 @@ class TestPrometheusMetricsEndpoint:
     @pytest.mark.asyncio
     async def test_metrics_includes_uptime(self, mock_health, mock_health_detailed):
         """Test that metrics include uptime counter."""
-        from src.mcp_server.main import app
 
         with patch("src.mcp_server.main.health", return_value=mock_health):
             with patch("src.mcp_server.main.get_cached_health_detailed", return_value=mock_health_detailed):
@@ -127,7 +128,6 @@ class TestPrometheusMetricsEndpoint:
     @pytest.mark.asyncio
     async def test_metrics_includes_service_info(self, mock_health, mock_health_detailed):
         """Test that metrics include service information."""
-        from src.mcp_server.main import app
 
         with patch("src.mcp_server.main.health", return_value=mock_health):
             with patch("src.mcp_server.main.get_cached_health_detailed", return_value=mock_health_detailed):
@@ -149,7 +149,6 @@ class TestDatabaseStatusEndpoint:
     @pytest.mark.asyncio
     async def test_database_returns_json(self, mock_health_detailed):
         """Test that /database returns valid JSON structure."""
-        from src.mcp_server.main import app
 
         with patch("src.mcp_server.main.get_cached_health_detailed", return_value=mock_health_detailed):
             client = TestClient(app)
@@ -166,7 +165,6 @@ class TestDatabaseStatusEndpoint:
     @pytest.mark.asyncio
     async def test_database_includes_all_databases(self, mock_health_detailed):
         """Test that all databases are included in response."""
-        from src.mcp_server.main import app
 
         with patch("src.mcp_server.main.get_cached_health_detailed", return_value=mock_health_detailed):
             client = TestClient(app)
@@ -191,7 +189,6 @@ class TestDatabaseStatusEndpoint:
     @pytest.mark.asyncio
     async def test_database_status_mapping(self, mock_health_detailed):
         """Test that database status is correctly mapped."""
-        from src.mcp_server.main import app
 
         with patch("src.mcp_server.main.get_cached_health_detailed", return_value=mock_health_detailed):
             client = TestClient(app)
@@ -209,7 +206,6 @@ class TestDatabaseStatusEndpoint:
     @pytest.mark.asyncio
     async def test_database_degraded_status(self, mock_health_detailed):
         """Test that degraded status is reported when service unhealthy."""
-        from src.mcp_server.main import app
 
         # Create a copy to avoid modifying the fixture
         degraded_health = mock_health_detailed.copy()
@@ -233,7 +229,6 @@ class TestDatabaseStatusEndpoint:
     async def test_database_fallback_urls(self, mock_health_detailed):
         """Test that fallback URLs work when environment variables not set."""
         import os
-        from src.mcp_server.main import app
 
         # Test with empty environment (fallback URLs should be used)
         with patch("src.mcp_server.main.get_cached_health_detailed", return_value=mock_health_detailed):
@@ -255,7 +250,6 @@ class TestStorageStatusEndpoint:
     @pytest.mark.asyncio
     async def test_storage_returns_json(self, mock_health_detailed):
         """Test that /storage returns valid JSON structure."""
-        from src.mcp_server.main import app
 
         with patch("src.mcp_server.main.get_cached_health_detailed", return_value=mock_health_detailed):
             client = TestClient(app)
@@ -272,7 +266,6 @@ class TestStorageStatusEndpoint:
     @pytest.mark.asyncio
     async def test_storage_includes_all_backends(self, mock_health_detailed):
         """Test that all storage backends are included."""
-        from src.mcp_server.main import app
 
         with patch("src.mcp_server.main.get_cached_health_detailed", return_value=mock_health_detailed):
             client = TestClient(app)
@@ -297,7 +290,6 @@ class TestStorageStatusEndpoint:
     @pytest.mark.asyncio
     async def test_storage_backend_types(self, mock_health_detailed):
         """Test that backend types are correctly assigned."""
-        from src.mcp_server.main import app
 
         with patch("src.mcp_server.main.get_cached_health_detailed", return_value=mock_health_detailed):
             client = TestClient(app)
@@ -319,7 +311,6 @@ class TestStorageStatusEndpoint:
     @pytest.mark.asyncio
     async def test_storage_health_mapping(self, mock_health_detailed):
         """Test that storage health is correctly mapped."""
-        from src.mcp_server.main import app
 
         with patch("src.mcp_server.main.get_cached_health_detailed", return_value=mock_health_detailed):
             client = TestClient(app)
@@ -339,7 +330,6 @@ class TestToolsListAliasEndpoint:
     @pytest.mark.asyncio
     async def test_tools_list_alias_returns_json(self):
         """Test that /tools/list returns JSON."""
-        from src.mcp_server.main import app
 
         # Mock the list_tools function
         mock_tools_response = {
@@ -357,7 +347,6 @@ class TestToolsListAliasEndpoint:
     @pytest.mark.asyncio
     async def test_tools_list_calls_list_tools(self):
         """Test that /tools/list calls list_tools() function."""
-        from src.mcp_server.main import app
 
         mock_tools_response = {
             "tools": ["store_context", "retrieve_context"],
@@ -377,7 +366,6 @@ class TestToolsListAliasEndpoint:
     @pytest.mark.asyncio
     async def test_tools_list_alias_identical_to_tools(self):
         """Test that /tools/list returns valid tools listing."""
-        from src.mcp_server.main import app
 
         client = TestClient(app)
 
