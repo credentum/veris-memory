@@ -49,6 +49,8 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   export LIVEKIT_API_WEBSOCKET='$LIVEKIT_API_WEBSOCKET'
   export API_KEY_VOICEBOT='$API_KEY_VOICEBOT'
   export OPENAI_API_KEY='$OPENAI_API_KEY'
+  export SENTINEL_API_KEY='$SENTINEL_API_KEY'
+  export HOST_CHECK_SECRET='$HOST_CHECK_SECRET'
   export ENVIRONMENT=dev
 
   # Verify critical environment variables
@@ -175,7 +177,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     # Remove ALL managed variables to ensure clean state (no duplicates)
     echo "🗑️  Removing managed variables from .env to prevent duplicates..."
     if [ -f .env ]; then
-      # Remove NEO4J, TELEGRAM, API keys, PR #170, and Voice Platform variables
+      # Remove NEO4J, TELEGRAM, API keys, PR #170, Voice Platform, and Sentinel variables
       grep -v "^NEO4J" .env > .env.tmp || true
       grep -v "^TELEGRAM" .env.tmp > .env.tmp2 || true
       grep -v "^API_KEY_MCP" .env.tmp2 > .env.tmp3 || true
@@ -189,8 +191,10 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
       grep -v "^TTS_" .env.tmp10 > .env.tmp11 || true
       grep -v "^OPENAI_API_KEY" .env.tmp11 > .env.tmp12 || true
       grep -v "^ENABLE_MCP_RETRY" .env.tmp12 > .env.tmp13 || true
-      grep -v "^MCP_RETRY_ATTEMPTS" .env.tmp13 > .env || true
-      rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13
+      grep -v "^MCP_RETRY_ATTEMPTS" .env.tmp13 > .env.tmp14 || true
+      grep -v "^SENTINEL_API_KEY" .env.tmp14 > .env.tmp15 || true
+      grep -v "^HOST_CHECK_SECRET" .env.tmp15 > .env || true
+      rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13 .env.tmp14 .env.tmp15
     fi
 
     # Write secrets to .env without echoing them
@@ -259,6 +263,15 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
       printf "ENABLE_VOICE_COMMANDS=true\\n"
       printf "ENABLE_FACT_STORAGE=true\\n"
       printf "ENABLE_CONVERSATION_TRACE=true\\n"
+
+      # Sentinel Monitoring Configuration
+      printf "\\n# Sentinel Monitoring Authentication\\n"
+      if [ -n "\$SENTINEL_API_KEY" ]; then
+        printf "SENTINEL_API_KEY=%s\\n" "\$SENTINEL_API_KEY"
+      fi
+      if [ -n "\$HOST_CHECK_SECRET" ]; then
+        printf "HOST_CHECK_SECRET=%s\\n" "\$HOST_CHECK_SECRET"
+      fi
     } >> .env 2>/dev/null
 
     # Verify configuration was written correctly

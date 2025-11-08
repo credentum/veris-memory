@@ -217,13 +217,14 @@ class APITestMixin:
         
         try:
             # Include API key authentication header with validation
+            # Try SENTINEL_API_KEY first (dedicated monitoring key), fall back to API_KEY_MCP
             headers = {}
-            api_key = os.getenv("API_KEY_MCP")
+            api_key = os.getenv("SENTINEL_API_KEY") or os.getenv("API_KEY_MCP")
             if api_key:
                 # Validate API key format
                 api_key = api_key.strip()
                 if not api_key:
-                    logger.warning("API_KEY_MCP is empty after stripping whitespace.")
+                    logger.warning("SENTINEL_API_KEY/API_KEY_MCP is empty after stripping whitespace.")
                 else:
                     # Validate format: should start with vmk_ and follow expected pattern
                     # Pattern: vmk_{prefix}_{hash}:user_id:role:is_agent
@@ -233,7 +234,7 @@ class APITestMixin:
                         # Redact key for security - show only prefix for debugging
                         redacted_key = api_key[:8] + "..." if len(api_key) > 8 else "***"
                         logger.warning(
-                            f"API_KEY_MCP format invalid. Expected format: vmk_{{prefix}}_{{hash}}:user_id:role:is_agent. "
+                            f"SENTINEL_API_KEY/API_KEY_MCP format invalid. Expected format: vmk_{{prefix}}_{{hash}}:user_id:role:is_agent. "
                             f"Got: {redacted_key}"
                         )
                     else:
@@ -243,8 +244,8 @@ class APITestMixin:
                         logger.debug(f"Using API key: {redacted_key}")
             else:
                 logger.warning(
-                    "API_KEY_MCP not found in environment. API calls may fail with authentication errors. "
-                    "Please set API_KEY_MCP environment variable."
+                    "SENTINEL_API_KEY/API_KEY_MCP not found in environment. API calls may fail with authentication errors. "
+                    "Please set SENTINEL_API_KEY or API_KEY_MCP environment variable."
                 )
 
             request_kwargs = {
