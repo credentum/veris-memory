@@ -335,20 +335,42 @@ echo "  → Project: $PROJECT_NAME"
 echo "  → Compose file: $COMPOSE_FILE"
 echo "  → Full command: docker compose -p \"$PROJECT_NAME\" -f \"$COMPOSE_FILE\" up -d --build"
 
-# Try modern docker compose syntax first, fallback to legacy if needed
-if ! docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build; then
-    echo -e "${YELLOW}⚠️  Modern docker compose failed, trying legacy docker-compose...${NC}"
-    if ! docker-compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build; then
-        echo -e "${RED}❌ Both docker compose and docker-compose failed!${NC}"
-        echo "Debugging information:"
-        echo "  → Docker version: $(docker --version 2>/dev/null || echo 'Not found')"
-        echo "  → Docker compose version: $(docker compose version 2>/dev/null || echo 'Not found')"
-        echo "  → Legacy docker-compose version: $(docker-compose --version 2>/dev/null || echo 'Not found')"
-        echo "  → Current directory: $(pwd)"
-        echo "  → Compose file exists: $(test -f "$COMPOSE_FILE" && echo 'Yes' || echo 'No')"
-        echo "  → Dockerfile exists: $(test -f 'dockerfiles/Dockerfile' && echo 'Yes' || echo 'No')"
-        exit 1
+# Try modern docker compose syntax first, capture full output for debugging
+echo -e "${BLUE}Running: docker compose -p \"$PROJECT_NAME\" -f \"$COMPOSE_FILE\" up -d --build${NC}"
+
+# Capture output to show actual errors
+COMPOSE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build 2>&1)
+COMPOSE_EXIT=$?
+
+if [ $COMPOSE_EXIT -ne 0 ]; then
+    echo -e "${RED}❌ Docker compose failed with exit code $COMPOSE_EXIT${NC}"
+    echo ""
+    echo -e "${YELLOW}==================== Docker Compose Error Output ====================${NC}"
+    echo "$COMPOSE_OUTPUT"
+    echo -e "${YELLOW}=====================================================================${NC}"
+    echo ""
+    echo -e "${BLUE}Debugging information:${NC}"
+    echo "  → Docker version: $(docker --version 2>/dev/null || echo 'Not found')"
+    echo "  → Docker compose version: $(docker compose version 2>/dev/null || echo 'Not found')"
+    echo "  → Current directory: $(pwd)"
+    echo "  → Compose file: $COMPOSE_FILE"
+    echo "  → Compose file exists: $(test -f "$COMPOSE_FILE" && echo 'Yes' || echo 'No')"
+    echo "  → Dockerfile exists: $(test -f 'dockerfiles/Dockerfile' && echo 'Yes' || echo 'No')"
+    echo ""
+    echo -e "${BLUE}Validating compose file syntax:${NC}"
+    docker compose -f "$COMPOSE_FILE" config --quiet 2>&1 || docker compose -f "$COMPOSE_FILE" config 2>&1 | head -50
+    echo ""
+    echo -e "${BLUE}Checking .env file:${NC}"
+    if [ -f .env ]; then
+        echo "  → .env file exists"
+        echo "  → NEO4J_PASSWORD set: $(grep -q '^NEO4J_PASSWORD=' .env && echo 'Yes' || echo 'No')"
+        echo "  → .env file size: $(wc -l < .env) lines"
+    else
+        echo "  → .env file missing!"
     fi
+    exit 1
+else
+    echo "$COMPOSE_OUTPUT"
 fi
 
 # Wait for services to be healthy
