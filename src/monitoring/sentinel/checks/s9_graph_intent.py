@@ -224,16 +224,17 @@ class GraphIntentValidation(BaseCheck):
                     
                     # Store contexts for relationship testing
                     for i, context_text in enumerate(contexts):
+                        # PR #241: Fixed REST API payload format to prevent 422 errors
+                        # - content_type not context_type
+                        # - content must be string, not dict
+                        # - title should be in metadata, not top level
                         store_data = {
-                            "context_type": "graph_intent_test",
-                            "content": {
-                                "text": context_text,
-                                "scenario": scenario_name,
-                                "index": i
-                            },
-                            "title": f"Graph Intent Test - {scenario_name} #{i+1}",
+                            "content_type": "graph_intent_test",
+                            "content": context_text,
                             "metadata": {
+                                "title": f"Graph Intent Test - {scenario_name} #{i+1}",
                                 "test_scenario": scenario_name,
+                                "scenario_index": i,
                                 "expected_relationships": expected_relationships,
                                 "test_timestamp": datetime.utcnow().isoformat()
                             }
