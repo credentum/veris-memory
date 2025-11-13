@@ -860,14 +860,18 @@ class ParaphraseRobustness(BaseCheck):
                 "limit": limit,
                 "include_metadata": True
             }
-            
+
             async with session.post(search_url, json=payload) as response:
                 if response.status == 200:
                     data = await response.json()
+                    # Fixed: REST API returns "results" not "contexts" (PR #240)
+                    # Normalize response to always have "contexts" key for backward compatibility
+                    if "results" in data and "contexts" not in data:
+                        data["contexts"] = data["results"]
                     return data
                 else:
                     return {"error": f"HTTP {response.status}", "contexts": []}
-                    
+
         except Exception as e:
             return {"error": str(e), "contexts": []}
     
