@@ -371,7 +371,8 @@ class VectorDBInitializer:
             try:
                 retrieved_points = self.client.retrieve(
                     collection_name=collection_name,
-                    ids=[vector_id]
+                    ids=[vector_id],
+                    with_vectors=True  # Required to get vector data for verification
                 )
                 if not retrieved_points or len(retrieved_points) == 0:
                     raise RuntimeError(f"Storage verification failed: Vector {vector_id} not found after upsert")
