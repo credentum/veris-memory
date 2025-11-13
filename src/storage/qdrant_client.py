@@ -163,7 +163,7 @@ class VectorDBInitializer:
             return False
 
     def create_collection(self, force: bool = False) -> bool:
-        """Create the project_context collection"""
+        """Create the Qdrant collection for vector storage (configured via collection_name)"""
         collection_name = self.config.get("qdrant", {}).get("collection_name", "context_embeddings")
 
         if not self.client:

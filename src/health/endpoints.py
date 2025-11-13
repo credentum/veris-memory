@@ -81,7 +81,10 @@ class HealthChecker:
                                          os.getenv("NEO4J_HTTP_URL", "http://neo4j:7474"))
         self.api_url = self.config.get("api_url",
                                        os.getenv("API_BASE_URL", "http://context-store:8000"))
-        
+
+        # Qdrant collection name - Read from env var for consistency
+        self.qdrant_collection = os.getenv("QDRANT_COLLECTION_NAME", "context_embeddings")
+
         # Timeouts
         self.liveness_timeout = self.config.get("liveness_timeout", 5)
         self.readiness_timeout = self.config.get("readiness_timeout", 10)
@@ -101,7 +104,7 @@ class HealthChecker:
                     if response.status == 200:
                         # Check collection status
                         async with session.get(
-                            f"{self.qdrant_url}/collections/context_embeddings"
+                            f"{self.qdrant_url}/collections/{self.qdrant_collection}"
                         ) as coll_response:
                             if coll_response.status == 200:
                                 data = await coll_response.json()
