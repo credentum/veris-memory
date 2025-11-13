@@ -107,7 +107,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
 
   # Stop all containers first
   echo "🛑 Stopping all containers gracefully..."
-  docker compose down --remove-orphans 2>/dev/null || true
+  docker compose -p veris-memory-dev down --remove-orphans 2>/dev/null || true
 
   # Force stop any remaining containers with our project name
   echo "🛑 Force stopping any remaining veris-memory containers..."
@@ -349,12 +349,12 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     echo "🏗️  Building and starting services..."
 
     # Deploy main services
-    docker compose up -d --build
+    docker compose -p veris-memory-dev up -d --build
 
     # Deploy voice platform services (voice-bot + livekit)
     if [ -f "docker-compose.voice.yml" ]; then
       echo "🎙️  Deploying voice platform..."
-      docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build voice-bot livekit
+      docker compose -p veris-memory-dev -f docker-compose.yml -f docker-compose.voice.yml up -d --build voice-bot livekit
     else
       echo "⚠️  docker-compose.voice.yml not found, skipping voice-bot deployment"
     fi
@@ -364,7 +364,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
 
     # Show service status
     echo "📊 Service Status:"
-    docker compose ps
+    docker compose -p veris-memory-dev ps
 
     # Initialize Neo4j schema
     echo ""
@@ -425,7 +425,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     # Show voice-bot status specifically
     echo ""
     echo "🎙️  Voice Platform Status:"
-    docker compose -f docker-compose.yml -f docker-compose.voice.yml ps voice-bot livekit 2>/dev/null || echo "Voice services not running"
+    docker compose -p veris-memory-dev -f docker-compose.yml -f docker-compose.voice.yml ps voice-bot livekit 2>/dev/null || echo "Voice services not running"
 
     echo ""
     echo "✅ Development deployment completed!"
