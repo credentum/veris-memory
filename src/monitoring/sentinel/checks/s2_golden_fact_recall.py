@@ -138,10 +138,14 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
     
     async def _store_fact(self, session: aiohttp.ClientSession, fact_data: Dict[str, Any], user_id: str) -> Dict[str, Any]:
         """Store a fact in the system."""
+        # Fixed: Use correct MCP API format (PR #240)
+        # - content: Dict, not JSON string
+        # - type: not content_type
+        # - author: not user_id
         store_payload = {
-            "user_id": user_id,
-            "content": json.dumps(fact_data),
-            "content_type": "fact",
+            "content": fact_data,
+            "type": "fact",
+            "author": user_id,
             "metadata": {"test_type": "golden_recall", "sentinel": True}
         }
         
@@ -164,10 +168,12 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
     
     async def _test_recall(self, session: aiohttp.ClientSession, question: str, expected_content: str, user_id: str) -> Dict[str, Any]:
         """Test recalling a fact through a natural language question."""
+        # Fixed: Use correct MCP API format (PR #240)
+        # - filters: {"author": user_id} instead of user_id field
         query_payload = {
-            "user_id": user_id,
             "query": question,
-            "limit": 5
+            "limit": 5,
+            "filters": {"author": user_id}
         }
         
         success, message, latency, response_data = await self.test_api_call(
@@ -189,22 +195,26 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
             }
         
         # Check if the expected content is in the response
-        if not response_data or "contexts" not in response_data:
+        # Fixed: API returns "results" not "contexts" (PR #240)
+        if not response_data or "results" not in response_data:
             return {
                 "question": question,
                 "expected_content": expected_content,
                 "success": False,
-                "message": "No contexts returned",
+                "message": "No results returned",
                 "latency_ms": latency,
                 "response": response_data
             }
-        
-        contexts = response_data["contexts"]
+
+        contexts = response_data["results"]
         found_expected = False
-        
+
         for context in contexts:
-            content = context.get("content", "")
-            if expected_content.lower() in content.lower():
+            # Fixed: content is a dict, need to convert to string for searching (PR #240)
+            content = context.get("content", {})
+            # Convert content dict to string for searching
+            content_str = json.dumps(content) if isinstance(content, dict) else str(content)
+            if expected_content.lower() in content_str.lower():
                 found_expected = True
                 break
         
