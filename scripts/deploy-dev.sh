@@ -256,6 +256,10 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
       printf "STRICT_EMBEDDINGS=false\\n"
       printf "EMBEDDING_DIM=384\\n"
 
+      # Qdrant Collection Configuration (PR #238)
+      printf "\\n# Qdrant Collection Name (must match across all components)\\n"
+      printf "QDRANT_COLLECTION_NAME=context_embeddings\\n"
+
       # Voice Platform Configuration
       printf "\\n# TeamAI Voice Platform Configuration\\n"
       if [ -n "\$LIVEKIT_API_KEY" ]; then
