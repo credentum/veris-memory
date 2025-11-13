@@ -220,8 +220,8 @@ services:
       - REDIS_URL=redis://redis:6379
       - QDRANT_URL=http://qdrant:6333
       - MONITORING_DASHBOARD_URL=http://monitoring-dashboard:8080
-      # API Authentication
-      - API_KEY_MCP=${API_KEY_MCP}
+      # API Authentication - Sentinel uses its own dedicated API key
+      - SENTINEL_API_KEY=${SENTINEL_API_KEY}
     volumes:
       - sentinel_data:/var/lib/sentinel
     ports:
