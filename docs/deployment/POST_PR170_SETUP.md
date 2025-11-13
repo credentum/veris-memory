@@ -22,10 +22,10 @@ This guide covers the **required configuration** and **database migrations** nee
 ### Add to `.env` file:
 
 ```bash
-# PR #170: Cache and Embedding Configuration
+# PR #170: Cache and Embedding Configuration (Updated for v1.0 compliance)
 VERIS_CACHE_TTL_SECONDS=300
 STRICT_EMBEDDINGS=false
-EMBEDDING_DIM=768  # or 384 for all-MiniLM-L6-v2
+EMBEDDING_DIM=384  # REQUIRED: v1.0 uses all-MiniLM-L6-v2 (384 dimensions)
 ```
 
 ### What These Do:
@@ -34,7 +34,7 @@ EMBEDDING_DIM=768  # or 384 for all-MiniLM-L6-v2
 |----------|---------|-------------|
 | `VERIS_CACHE_TTL_SECONDS` | 300 | Cache TTL in seconds (5 minutes default) |
 | `STRICT_EMBEDDINGS` | false | Embedding failure behavior (see below) |
-| `EMBEDDING_DIM` | 768 | Vector dimensions (match your model) |
+| `EMBEDDING_DIM` | 384 | Vector dimensions (v1.0 compliance - DO NOT CHANGE) |
 
 ### STRICT_EMBEDDINGS Options:
 
@@ -66,7 +66,7 @@ services:
       # PR #170: Cache and embedding configuration
       - VERIS_CACHE_TTL_SECONDS=${VERIS_CACHE_TTL_SECONDS:-300}
       - STRICT_EMBEDDINGS=${STRICT_EMBEDDINGS:-false}
-      - EMBEDDING_DIM=${EMBEDDING_DIM:-768}
+      - EMBEDDING_DIM=${EMBEDDING_DIM:-384}  # v1.0 compliance
 ```
 
 ---
@@ -158,7 +158,7 @@ docker exec veris-memory-dev-context-store-1 env | grep -E "VERIS_CACHE_TTL|STRI
 ```
 VERIS_CACHE_TTL_SECONDS=300
 STRICT_EMBEDDINGS=false
-EMBEDDING_DIM=768
+EMBEDDING_DIM=384
 ```
 
 ### 5.2 Check Neo4j Index
@@ -319,7 +319,7 @@ Use this checklist when deploying PR #170:
 **A**: The application will use defaults:
 - `VERIS_CACHE_TTL_SECONDS=300` (5 minutes)
 - `STRICT_EMBEDDINGS=false` (graceful degradation)
-- `EMBEDDING_DIM=768` (for all-mpnet-base-v2)
+- `EMBEDDING_DIM=384` (v1.0 compliance - all-MiniLM-L6-v2)
 
 ### Q: What if I skip the Neo4j index?
 
