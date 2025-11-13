@@ -97,7 +97,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   # BACKUP PHASE - Preserve data before cleanup
   echo "💾 Creating backup before cleanup..."
   if [ -f "/opt/veris-memory/scripts/backup-restore-integration.sh" ]; then
-    /opt/veris-memory/scripts/backup-restore-integration.sh backup dev
+    bash /opt/veris-memory/scripts/backup-restore-integration.sh backup dev
   else
     echo "⚠️  Backup script not found, skipping backup"
   fi
@@ -434,7 +434,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   # RESTORE PHASE - Restore data after deployment
   echo "♻️  Restoring backed up data..."
   if [ -f "/opt/veris-memory/scripts/backup-restore-integration.sh" ]; then
-    /opt/veris-memory/scripts/backup-restore-integration.sh restore dev
+    bash /opt/veris-memory/scripts/backup-restore-integration.sh restore dev
   else
     echo "⚠️  Restore script not found, skipping restore"
   fi
