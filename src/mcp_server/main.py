@@ -2441,19 +2441,20 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                 # Convert results to proper format
                 for result in vector_results:
                     # Extract metadata from payload if present
-                    payload = result.payload
+                    # Fix: qdrant_client.search() returns List[Dict], not List[ScoredPoint]
+                    payload = result.get("payload", {})
                     metadata = payload.get("metadata", {}) if isinstance(payload, dict) else {}
 
                     results.append(
                         {
-                            "id": result.id,
+                            "id": result.get("id"),
                             "content": (
                                 payload.get("content", payload)
                                 if isinstance(payload, dict)
                                 else payload
                             ),
                             "metadata": metadata,  # Include metadata separately
-                            "score": result.score,
+                            "score": result.get("score", 0.0),
                             "source": "vector",
                         }
                     )
