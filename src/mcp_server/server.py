@@ -1246,7 +1246,7 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
                 # Use the collection name from config or default
                 collection_name = qdrant_client.config.get("qdrant", {}).get(
-                    "collection_name", "project_context"
+                    "collection_name", "context_embeddings"
                 )
 
                 # Store the vector using VectorDBInitializer.store_vector method with circuit breaker
@@ -1661,7 +1661,7 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
                     # Search with each query variant - run async for better performance
                     collection_name = qdrant_client.config.get("qdrant", {}).get(
-                        "collection_name", "project_context"
+                        "collection_name", "context_embeddings"
                     )
 
                     # Build Qdrant filter from metadata_filters and context_type
