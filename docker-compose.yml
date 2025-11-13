@@ -356,5 +356,7 @@ volumes:
 networks:
   context-store-network:
     driver: bridge
+    name: veris-memory-dev_context-store-network
   voice-network:
     driver: bridge
+    name: veris-memory-dev_voice-network
