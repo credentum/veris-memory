@@ -7,6 +7,7 @@ providing semantic search capabilities with embedding generation.
 """
 
 import asyncio
+import os
 import time
 from typing import Any, List
 
@@ -38,7 +39,8 @@ class VectorBackend(BackendSearchInterface):
         """
         self.client = qdrant_client
         self.embedding_generator = embedding_generator
-        self._collection_name = "project_context"  # Fixed: Use actual collection with data
+        # Use environment variable for collection name to ensure consistency
+        self._collection_name = os.getenv("QDRANT_COLLECTION_NAME", "context_embeddings")
 
     @property
     def backend_name(self) -> str:
