@@ -138,15 +138,16 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
     
     async def _store_fact(self, session: aiohttp.ClientSession, fact_data: Dict[str, Any], user_id: str) -> Dict[str, Any]:
         """Store a fact in the system."""
-        # Fixed: Use correct MCP API format (PR #240)
+        # Fixed: Use correct MCP API format (PR #240 + #241)
         # - content: Dict, not JSON string
-        # - type: not content_type
+        # - type: must be one of: design, decision, trace, sprint, log
         # - author: not user_id
+        # Note: Using "log" type since "fact" is not in allowed values
         store_payload = {
             "content": fact_data,
-            "type": "fact",
+            "type": "log",
             "author": user_id,
-            "metadata": {"test_type": "golden_recall", "sentinel": True}
+            "metadata": {"test_type": "golden_recall", "sentinel": True, "content_type": "fact"}
         }
         
         success, message, latency, response_data = await self.test_api_call(
