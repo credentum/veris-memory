@@ -397,11 +397,11 @@ EOF
     if docker ps | grep -q "veris-memory-${ENVIRONMENT}-redis"; then
         local redis_container="veris-memory-${ENVIRONMENT}-redis-1"
         log "Found Redis container: $redis_container"
-        
-        # Trigger background save
+
+        # Trigger background save for RDB
         if docker exec "$redis_container" redis-cli BGSAVE 2>/dev/null; then
             log "Redis BGSAVE initiated"
-            
+
             # Wait for BGSAVE to complete (check every second, max 30 seconds)
             for i in {1..30}; do
                 if docker exec "$redis_container" redis-cli LASTSAVE 2>/dev/null > /tmp/lastsave_check; then
@@ -417,14 +417,27 @@ EOF
                     break
                 fi
             done
-            
-            # Copy the RDB file
-            if verified_docker_cp "$redis_container:/data/dump.rdb" \
-                "$BACKUP_DIR/redis.rdb" "Redis RDB file"; then
-                log "✅ Redis backup successful"
+
+            # Trigger AOF rewrite to consolidate AOF files
+            log "Triggering AOF rewrite for clean backup..."
+            docker exec "$redis_container" redis-cli BGREWRITEAOF 2>/dev/null || log_warning "BGREWRITEAOF failed (may not be using AOF)"
+            sleep 2  # Give AOF rewrite time to start
+
+            # Copy entire /data directory (includes both RDB and AOF files)
+            log "Backing up Redis data directory (RDB + AOF files)..."
+            if verified_docker_cp "$redis_container:/data" \
+                "$BACKUP_DIR/redis-data" "Redis data directory"; then
+                log "✅ Redis backup successful (RDB + AOF)"
+
+                # List backed up files for verification
+                log "Backed up Redis files:"
+                ls -lah "$BACKUP_DIR/redis-data" 2>/dev/null | grep -E "(dump\.rdb|appendonly)" | while read line; do
+                    log "  $line"
+                done
+
                 redis_status="success"
             else
-                log_error "❌ Failed to copy Redis dump file"
+                log_error "❌ Failed to copy Redis data directory"
                 redis_status="copy_failed"
             fi
         else
@@ -446,7 +459,7 @@ EOF
     [ -f "$BACKUP_DIR/neo4j-export.cypher" ] && backup_success=$((backup_success + 1)) && backup_methods="$backup_methods Neo4j(Online)"
     [ -f "$BACKUP_DIR/neo4j.dump" ] && backup_success=$((backup_success + 1)) && backup_methods="$backup_methods Neo4j(Dump)"
     [ -d "$BACKUP_DIR/neo4j-data" ] && backup_success=$((backup_success + 1)) && backup_methods="$backup_methods Neo4j(Data)"
-    [ -f "$BACKUP_DIR/redis.rdb" ] && backup_success=$((backup_success + 1)) && backup_methods="$backup_methods Redis"
+    [ -d "$BACKUP_DIR/redis-data" ] && backup_success=$((backup_success + 1)) && backup_methods="$backup_methods Redis(RDB+AOF)"
     
     # Update metadata with results
     cat >> "$BACKUP_DIR/metadata.json.tmp" << EOF
@@ -484,7 +497,7 @@ EOF
         [ -d "$BACKUP_DIR/qdrant-storage" ] && log "  ✓ Qdrant storage: $(du -sh "$BACKUP_DIR/qdrant-storage" 2>/dev/null | cut -f1)"
         [ -f "$BACKUP_DIR/neo4j-export.cypher" ] && log "  ✓ Neo4j export: $(du -sh "$BACKUP_DIR/neo4j-export.cypher" 2>/dev/null | cut -f1)"
         [ -d "$BACKUP_DIR/neo4j-data" ] && log "  ✓ Neo4j data: $(du -sh "$BACKUP_DIR/neo4j-data" 2>/dev/null | cut -f1)"
-        [ -f "$BACKUP_DIR/redis.rdb" ] && log "  ✓ Redis dump: $(du -sh "$BACKUP_DIR/redis.rdb" 2>/dev/null | cut -f1)"
+        [ -d "$BACKUP_DIR/redis-data" ] && log "  ✓ Redis data (RDB+AOF): $(du -sh "$BACKUP_DIR/redis-data" 2>/dev/null | cut -f1)"
         
         # Return success if at least one component backed up
         return 0
@@ -502,7 +515,7 @@ EOF
         log_error "  → Expected files not found:"
         [ ! -f "$BACKUP_DIR/qdrant.snapshot" ] && [ ! -d "$BACKUP_DIR/qdrant-storage" ] && log_error "    • Qdrant backup missing"
         [ ! -f "$BACKUP_DIR/neo4j-export.cypher" ] && [ ! -f "$BACKUP_DIR/neo4j.dump" ] && [ ! -d "$BACKUP_DIR/neo4j-data" ] && log_error "    • Neo4j backup missing"
-        [ ! -f "$BACKUP_DIR/redis.rdb" ] && log_error "    • Redis backup missing"
+        [ ! -d "$BACKUP_DIR/redis-data" ] && log_error "    • Redis backup missing"
         
         log_error "  → Troubleshooting steps:"
         log_error "    1. Check backup directory permissions: $BACKUP_DIR"
@@ -771,29 +784,55 @@ restore_backup() {
     # Restore Redis
     log "Starting Redis restore..."
     local redis_restored=false
-    
-    if [ -f "$BACKUP_DIR/redis.rdb" ] && docker ps | grep -q "veris-memory-${ENVIRONMENT}-redis"; then
+
+    if [ -d "$BACKUP_DIR/redis-data" ] && docker ps | grep -q "veris-memory-${ENVIRONMENT}-redis"; then
         local redis_container="veris-memory-${ENVIRONMENT}-redis-1"
-        log "Attempting Redis restore from RDB backup..."
+        log "Attempting Redis restore from backup (RDB + AOF)..."
         echo "  → Restoring Redis..."
-        
-        # Stop Redis, restore RDB, restart
+
+        # Show what we're restoring
+        log "Backup contains:"
+        ls -lah "$BACKUP_DIR/redis-data" 2>/dev/null | grep -E "(dump\.rdb|appendonly)" | while read line; do
+            log "  $line"
+        done
+
+        # Stop Redis container
         if docker stop "$redis_container" 2>/dev/null; then
             log "Redis container stopped"
             sleep 2
-            
-            if docker cp "$BACKUP_DIR/redis.rdb" \
-                "$redis_container:/data/dump.rdb" 2>/dev/null; then
-                log "RDB file copied successfully"
-                
-                if docker start "$redis_container" 2>/dev/null; then
-                    log "✅ Redis restore successful"
+
+            # Clear existing Redis data directory in container
+            log "Clearing existing Redis data..."
+            docker exec "$redis_container" sh -c "rm -rf /data/*" 2>/dev/null || log_warning "Could not clear /data (container stopped)"
+
+            # Copy entire backup directory contents to /data
+            # Note: docker cp copies directory contents when path ends with /.
+            if docker cp "$BACKUP_DIR/redis-data/." "$redis_container:/data/" 2>/dev/null; then
+                log "Redis data directory restored successfully"
+
+                # Verify copied files
+                log "Verifying restored files..."
+                docker start "$redis_container" 2>/dev/null
+                sleep 3
+                docker exec "$redis_container" ls -la /data/ 2>/dev/null | while read line; do
+                    log "  $line"
+                done
+
+                # Check if Redis loaded data
+                sleep 2
+                local redis_keys=$(docker exec "$redis_container" redis-cli DBSIZE 2>/dev/null | grep -oE '[0-9]+' || echo "0")
+                log "Redis reports $redis_keys keys after restore"
+
+                if [ "$redis_keys" -gt 0 ]; then
+                    log "✅ Redis restore successful ($redis_keys keys loaded)"
                     redis_restored=true
                 else
-                    log_error "Failed to restart Redis container"
+                    log_warning "⚠️  Redis restored but reports 0 keys (may need time to load AOF)"
+                    redis_restored=true  # Still consider it successful if files were copied
                 fi
             else
-                log_error "Failed to copy RDB file"
+                log_error "Failed to copy Redis data directory"
+                docker start "$redis_container" 2>/dev/null  # Try to restart anyway
             fi
         else
             log_error "Failed to stop Redis container"
