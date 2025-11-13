@@ -164,7 +164,7 @@ class VectorDBInitializer:
 
     def create_collection(self, force: bool = False) -> bool:
         """Create the project_context collection"""
-        collection_name = self.config.get("qdrant", {}).get("collection_name", "project_context")
+        collection_name = self.config.get("qdrant", {}).get("collection_name", "context_embeddings")
 
         if not self.client:
             logger.error("✗ Not connected to Qdrant")
@@ -224,7 +224,7 @@ class VectorDBInitializer:
 
     def verify_setup(self) -> bool:
         """Verify the Qdrant setup is correct"""
-        collection_name = self.config.get("qdrant", {}).get("collection_name", "project_context")
+        collection_name = self.config.get("qdrant", {}).get("collection_name", "context_embeddings")
 
         if not self.client:
             click.echo("✗ Not connected to Qdrant", err=True)
@@ -263,7 +263,7 @@ class VectorDBInitializer:
 
     def insert_test_point(self) -> bool:
         """Insert a test point to verify everything works"""
-        collection_name = self.config.get("qdrant", {}).get("collection_name", "project_context")
+        collection_name = self.config.get("qdrant", {}).get("collection_name", "context_embeddings")
 
         if not self.client:
             click.echo("✗ Not connected to Qdrant", err=True)
@@ -332,7 +332,7 @@ class VectorDBInitializer:
         if not self.client:
             raise RuntimeError("Not connected to Qdrant")
 
-        collection_name = self.config.get("qdrant", {}).get("collection_name", "project_context")
+        collection_name = self.config.get("qdrant", {}).get("collection_name", "context_embeddings")
 
         # Validate inputs
         if not vector_id or not isinstance(vector_id, str):
@@ -419,7 +419,7 @@ class VectorDBInitializer:
         if not self.client:
             raise RuntimeError("Not connected to Qdrant")
 
-        collection_name = self.config.get("qdrant", {}).get("collection_name", "project_context")
+        collection_name = self.config.get("qdrant", {}).get("collection_name", "context_embeddings")
 
         # Validate inputs
         if not query_vector or not isinstance(query_vector, list):

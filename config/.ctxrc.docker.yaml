@@ -59,7 +59,7 @@ agents:
 qdrant:
   host: qdrant    # Docker service name
   port: 6333
-  collection_name: project_context
+  collection_name: context_embeddings
   ssl: false
   grpc_port: 6334
   prefer_grpc: false

@@ -24,6 +24,7 @@ services:
       - VERIS_CACHE_TTL_SECONDS=${VERIS_CACHE_TTL_SECONDS:-300}
       - STRICT_EMBEDDINGS=${STRICT_EMBEDDINGS:-false}
       - EMBEDDING_DIM=${EMBEDDING_DIM:-384}  # v1.0 compliance: must be 384
+      - QDRANT_COLLECTION_NAME=${QDRANT_COLLECTION_NAME:-context_embeddings}  # Collection name for vector storage
     command: ["python", "-m", "uvicorn", "src.mcp_server.main:app", "--host", "0.0.0.0", "--port", "8000"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
