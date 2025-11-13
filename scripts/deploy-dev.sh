@@ -109,6 +109,15 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   echo "🛑 Stopping all containers gracefully..."
   docker compose -p veris-memory-dev down --remove-orphans 2>/dev/null || true
 
+  # CRITICAL: Also stop any containers using the OLD project name (without -dev)
+  echo "🧹 Cleaning up old project name containers..."
+  docker compose -p veris-memory down --remove-orphans 2>/dev/null || true
+
+  # Remove old networks to force recreation with correct project name
+  echo "🌐 Removing old Docker networks..."
+  docker network rm veris-memory_context-store-network 2>/dev/null && echo "  ✓ Removed: veris-memory_context-store-network" || echo "  ℹ️ Already removed"
+  docker network rm veris-memory_voice-network 2>/dev/null && echo "  ✓ Removed: veris-memory_voice-network" || echo "  ℹ️ Already removed"
+
   # Force stop any remaining containers with our project name
   echo "🛑 Force stopping any remaining veris-memory containers..."
   docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker stop 2>/dev/null || true
@@ -158,6 +167,15 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     # Fallback deployment for dev
     echo "🛑 Stopping existing dev containers..."
     docker compose -p veris-memory-dev down --remove-orphans 2>/dev/null || true
+
+    # CRITICAL: Also stop any containers using the OLD project name (without -dev)
+    echo "🧹 Cleaning up old project name containers..."
+    docker compose -p veris-memory down --remove-orphans 2>/dev/null || true
+
+    # Remove old networks to force recreation with correct project name
+    echo "🌐 Removing old Docker networks to force recreation..."
+    docker network rm veris-memory_context-store-network 2>/dev/null && echo "  ✓ Removed old network: veris-memory_context-store-network" || echo "  ℹ️ Old network not found (already removed)"
+    docker network rm veris-memory_voice-network 2>/dev/null && echo "  ✓ Removed old network: veris-memory_voice-network" || echo "  ℹ️ Voice network not found"
 
     # Stop containers on dev ports (standard ports we test with)
     for port in 8000 6333 7474 7687 6379 6334; do
