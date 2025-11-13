@@ -94,6 +94,14 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   echo "📝 Recent commits:"
   git log --oneline -5
 
+  # BACKUP PHASE - Preserve data before cleanup
+  echo "💾 Creating backup before cleanup..."
+  if [ -f "/opt/veris-memory/scripts/backup-restore-integration.sh" ]; then
+    /opt/veris-memory/scripts/backup-restore-integration.sh backup dev
+  else
+    echo "⚠️  Backup script not found, skipping backup"
+  fi
+
   # Extensive cleanup
   echo "🧹 Performing comprehensive cleanup..."
 
@@ -422,6 +430,16 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     echo ""
     echo "✅ Development deployment completed!"
   fi
+
+  # RESTORE PHASE - Restore data after deployment
+  echo "♻️  Restoring backed up data..."
+  if [ -f "/opt/veris-memory/scripts/backup-restore-integration.sh" ]; then
+    /opt/veris-memory/scripts/backup-restore-integration.sh restore dev
+  else
+    echo "⚠️  Restore script not found, skipping restore"
+  fi
+
+  echo "✅ Deployment with backup/restore completed!"
 EOSSH
 
 echo "✅ Deployment script completed successfully"
