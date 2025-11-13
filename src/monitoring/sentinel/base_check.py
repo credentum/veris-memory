@@ -223,14 +223,15 @@ class APITestMixin:
         
         try:
             # Include API key authentication header with validation
-            # Try SENTINEL_API_KEY first (dedicated monitoring key), fall back to API_KEY_MCP
+            # CRITICAL: Sentinel MUST use SENTINEL_API_KEY (dedicated monitoring key)
+            # DO NOT fall back to API_KEY_MCP - that's for the MCP server itself
             headers = {}
-            api_key_env = os.getenv("SENTINEL_API_KEY") or os.getenv("API_KEY_MCP")
+            api_key_env = os.getenv("SENTINEL_API_KEY")
             if api_key_env:
                 # Validate and extract key
                 api_key_env = api_key_env.strip()
                 if not api_key_env:
-                    logger.warning("SENTINEL_API_KEY/API_KEY_MCP is empty after stripping whitespace.")
+                    logger.error("❌ SENTINEL_API_KEY is empty after stripping whitespace!")
                 else:
                     # Extract key portion from format: vmk_{prefix}_{hash}:user_id:role:is_agent
                     # Context-store expects only the key portion (before first colon)
@@ -238,29 +239,40 @@ class APITestMixin:
                     api_key_parts: list[str] = api_key_env.split(":")
                     api_key = api_key_parts[0]  # Extract key portion only
 
+                    # DEBUG: Log API key info for troubleshooting 401 errors
+                    logger.info(f"API Key Env Format: {api_key_env[:20]}... (length: {len(api_key_env)})")
+                    logger.info(f"Extracted API Key: {api_key[:20]}... (length: {len(api_key)})")
+
                     # Check if env var has full format (preferred) or just key
                     if FULL_FORMAT_PATTERN.match(api_key_env):
                         # Full format detected, extracted key portion
                         headers["X-API-Key"] = api_key
                         redacted_key = api_key[:12] + "..." if len(api_key) > 12 else "***"
-                        logger.debug(f"Using API key (extracted from full format): {redacted_key}")
+                        logger.info(f"Using API key (extracted from full format): {redacted_key}")
+                        logger.info(f"Headers being sent: {list(headers.keys())}")
                     elif API_KEY_PATTERN.match(api_key):
                         # Key-only format
                         headers["X-API-Key"] = api_key
                         redacted_key = api_key[:12] + "..." if len(api_key) > 12 else "***"
-                        logger.debug(f"Using API key: {redacted_key}")
+                        logger.info(f"Using API key: {redacted_key}")
+                        logger.info(f"Headers being sent: {list(headers.keys())}")
                     else:
-                        # Invalid format
+                        # Invalid format - make this a loud error
                         redacted_key = api_key_env[:8] + "..." if len(api_key_env) > 8 else "***"
-                        logger.warning(
-                            f"SENTINEL_API_KEY/API_KEY_MCP format invalid. Expected: vmk_{{prefix}}_{{hash}} or vmk_{{prefix}}_{{hash}}:user_id:role:is_agent. "
+                        logger.error(
+                            f"❌ SENTINEL_API_KEY format invalid! Expected: vmk_{{prefix}}_{{hash}} or vmk_{{prefix}}_{{hash}}:user_id:role:is_agent. "
                             f"Got: {redacted_key}"
                         )
             else:
-                logger.warning(
-                    "SENTINEL_API_KEY/API_KEY_MCP not found in environment. API calls may fail with authentication errors. "
-                    "Please set SENTINEL_API_KEY or API_KEY_MCP environment variable."
-                )
+                # Make this a LOUD error - Sentinel MUST have its own API key
+                logger.error("=" * 80)
+                logger.error("❌❌❌ CRITICAL: SENTINEL_API_KEY NOT FOUND IN ENVIRONMENT ❌❌❌")
+                logger.error("Sentinel MUST use its own API key (SENTINEL_API_KEY).")
+                logger.error("DO NOT use API_KEY_MCP - that's for the MCP server.")
+                logger.error("Please set SENTINEL_API_KEY in docker-compose.yml")
+                logger.error("Format: vmk_sentinel_{hash} or vmk_sentinel_{hash}:user_id:role:is_agent")
+                logger.error("=" * 80)
+                # Continue execution but all API calls will fail with 401
 
             request_kwargs = {
                 "timeout": aiohttp.ClientTimeout(total=timeout),
@@ -270,6 +282,14 @@ class APITestMixin:
             if data and method.upper() in ['POST', 'PUT', 'PATCH']:
                 request_kwargs["json"] = data
 
+            # DEBUG: Log request details for 401 troubleshooting
+            logger.info(f"Making {method} request to {endpoint}")
+            logger.info(f"Request headers: {list(request_kwargs['headers'].keys())}")
+            if 'X-API-Key' in request_kwargs['headers']:
+                logger.info(f"X-API-Key header present: {request_kwargs['headers']['X-API-Key'][:20]}...")
+            else:
+                logger.warning("X-API-Key header MISSING from request!")
+
             async with getattr(session, method.lower())(endpoint, **request_kwargs) as resp:
                 latency_ms = (time.time() - start_time) * 1000
 
@@ -278,10 +298,14 @@ class APITestMixin:
                 except Exception as e:
                     logger.debug(f"Failed to parse JSON response: {e}. Response might not be JSON.")
                     response_data = None
-                
+
                 if resp.status == expected_status:
                     return True, f"API call successful (HTTP {resp.status})", latency_ms, response_data
                 else:
+                    # DEBUG: Log detailed error info for auth failures
+                    if resp.status == 401:
+                        logger.error(f"401 Unauthorized for {endpoint}")
+                        logger.error(f"Response data: {response_data}")
                     return False, f"API call failed: HTTP {resp.status}", latency_ms, response_data
                     
         except asyncio.TimeoutError:
