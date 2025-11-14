@@ -39,6 +39,14 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   echo "Host: \$(hostname)"
   echo "User: \$(whoami)"
 
+  # SECURITY: Generate Redis password if not provided
+  if [ -z '$REDIS_PASSWORD' ]; then
+    echo "🔐 Generating secure Redis password..."
+    export REDIS_PASSWORD=\$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
+  else
+    export REDIS_PASSWORD='$REDIS_PASSWORD'
+  fi
+
   # Export all secrets as environment variables for scripts to use
   export NEO4J_PASSWORD='$NEO4J_PASSWORD'
   export TELEGRAM_BOT_TOKEN='$TELEGRAM_BOT_TOKEN'
@@ -123,8 +131,30 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker stop 2>/dev/null || true
   docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker rm 2>/dev/null || true
 
+  # CRITICAL: Remove ALL instances of fixed-name containers
+  echo "🛑 Stopping fixed-name containers (livekit-server, voice-bot)..."
+  LIVEKIT_IDS=\$(docker ps -a -q --filter "name=livekit-server" 2>/dev/null || true)
+  VOICEBOT_IDS=\$(docker ps -a -q --filter "name=voice-bot" 2>/dev/null || true)
+
+  if [ -n "\$LIVEKIT_IDS" ] || [ -n "\$VOICEBOT_IDS" ]; then
+    echo "  → Found containers, removing by ID..."
+    [ -n "\$LIVEKIT_IDS" ] && echo "\$LIVEKIT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+    [ -n "\$VOICEBOT_IDS" ] && echo "\$VOICEBOT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+  else
+    echo "  → No livekit/voice-bot containers found"
+  fi
+
+  # Kill non-docker processes on livekit ports
+  for port in 7880 7882 5349; do
+    PID=\$(lsof -ti tcp:\$port 2>/dev/null || true)
+    [ -n "\$PID" ] && kill -9 \$PID 2>/dev/null || true
+  done
+
+  echo "⏳ Waiting 10 seconds for port release..."
+  sleep 10
+
   # Stop containers by port (more aggressive)
-  for port in 8000 8001 8080 6333 7474 7687 6379; do
+  for port in 8000 8001 8080 6333 7474 7687 6379 7880 7882 3478 5349; do
     container=\$(docker ps --filter "publish=\$port" --format "{{.Names}}" 2>/dev/null | head -1)
     if [ -n "\$container" ]; then
       echo "Stopping container on port \$port: \$container"
@@ -177,8 +207,30 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     docker network rm veris-memory_context-store-network 2>/dev/null && echo "  ✓ Removed old network: veris-memory_context-store-network" || echo "  ℹ️ Old network not found (already removed)"
     docker network rm veris-memory_voice-network 2>/dev/null && echo "  ✓ Removed old network: veris-memory_voice-network" || echo "  ℹ️ Voice network not found"
 
-    # Stop containers on dev ports (standard ports we test with)
-    for port in 8000 6333 7474 7687 6379 6334; do
+    # CRITICAL: Remove ALL instances of fixed-name containers
+    echo "🛑 Stopping fixed-name containers (livekit-server, voice-bot)..."
+    LIVEKIT_IDS=\$(docker ps -a -q --filter "name=livekit-server" 2>/dev/null || true)
+    VOICEBOT_IDS=\$(docker ps -a -q --filter "name=voice-bot" 2>/dev/null || true)
+
+    if [ -n "\$LIVEKIT_IDS" ] || [ -n "\$VOICEBOT_IDS" ]; then
+      echo "  → Found containers, removing by ID..."
+      [ -n "\$LIVEKIT_IDS" ] && echo "\$LIVEKIT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+      [ -n "\$VOICEBOT_IDS" ] && echo "\$VOICEBOT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+    else
+      echo "  → No livekit/voice-bot containers found"
+    fi
+
+    # Kill non-docker processes on livekit ports
+    for port in 7880 7882 5349; do
+      PID=\$(lsof -ti tcp:\$port 2>/dev/null || true)
+      [ -n "\$PID" ] && kill -9 \$PID 2>/dev/null || true
+    done
+
+    echo "⏳ Waiting 10 seconds for port release..."
+    sleep 10
+
+    # Stop containers on dev ports (standard ports we test with + livekit ports)
+    for port in 8000 6333 7474 7687 6379 6334 7880 7882 3478 5349; do
       containers=\$(docker ps --filter "publish=\$port" --format "{{.Names}}" 2>/dev/null || true)
       if [ -n "\$containers" ]; then
         echo "Stopping containers on port \$port: \$containers"
@@ -203,8 +255,10 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     # Remove ALL managed variables to ensure clean state (no duplicates)
     echo "🗑️  Removing managed variables from .env to prevent duplicates..."
     if [ -f .env ]; then
-      # Remove NEO4J, TELEGRAM, API keys, PR #170, Voice Platform, and Sentinel variables
+      # Remove NEO4J, REDIS, TELEGRAM, API keys, PR #170, Voice Platform, and Sentinel variables
       grep -v "^NEO4J" .env > .env.tmp || true
+      grep -v "^REDIS_PASSWORD" .env.tmp > .env.tmp0 || true
+      mv .env.tmp0 .env.tmp
       grep -v "^TELEGRAM" .env.tmp > .env.tmp2 || true
       grep -v "^API_KEY_MCP" .env.tmp2 > .env.tmp3 || true
       grep -v "^VERIS_CACHE_TTL" .env.tmp3 > .env.tmp4 || true
@@ -228,6 +282,10 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     {
       printf "NEO4J_PASSWORD=%s\\n" "\$NEO4J_PASSWORD"
       printf "NEO4J_AUTH=neo4j/%s\\n" "\$NEO4J_PASSWORD"
+
+      # SECURITY: Redis Password Authentication
+      printf "\\n# Redis Authentication (Security Fix)\\n"
+      printf "REDIS_PASSWORD=%s\\n" "\$REDIS_PASSWORD"
 
       # Add Telegram configuration if available
       if [ -n "\$TELEGRAM_BOT_TOKEN" ]; then

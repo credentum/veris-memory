@@ -7,14 +7,14 @@ services:
       context: .
       dockerfile: dockerfiles/Dockerfile
     ports:
-      - "8000:8000"
+      - "8000:8000"  # SECURITY: Accessible via Docker bridge network for MCP clients (external access blocked by firewall)
     environment:
       - QDRANT_URL=http://qdrant:6333
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
       - NEO4J_RO_PASSWORD=${NEO4J_RO_PASSWORD:-readonly_secure_2024!}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379  # SECURITY: Redis with password auth
       - MCP_SERVER_PORT=8000
       - LOG_LEVEL=info
       - API_KEY_MCP=${API_KEY_MCP}
@@ -50,14 +50,14 @@ services:
       context: .
       dockerfile: dockerfiles/Dockerfile.api
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"  # SECURITY: Bind to localhost only
     environment:
       - QDRANT_URL=http://qdrant:6333
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
       - NEO4J_RO_PASSWORD=${NEO4J_RO_PASSWORD:-readonly_secure_2024!}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379  # SECURITY: Redis with password auth
       - API_SERVER_PORT=8001
       - LOG_LEVEL=info
       - API_KEY_MCP=${API_KEY_MCP}
@@ -87,8 +87,8 @@ services:
     image: veris-memory/qdrant:v1.15.1-healthcheck
     platform: linux/amd64
     ports:
-      - "6333:6333"
-      - "6334:6334" # gRPC port
+      - "127.0.0.1:6333:6333"  # SECURITY: Bind to localhost only
+      - "127.0.0.1:6334:6334"  # SECURITY: gRPC port - localhost only
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
@@ -109,8 +109,8 @@ services:
     image: neo4j:5.15-community@sha256:69c579facb7acab1e98f28952b91144c89e469a081804a5dafebd6c3030433b8
     platform: linux/amd64
     ports:
-      - "7474:7474" # HTTP
-      - "7687:7687" # Bolt
+      - "127.0.0.1:7474:7474"  # SECURITY: HTTP - localhost only
+      - "127.0.0.1:7687:7687"  # SECURITY: Bolt - localhost only
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
@@ -150,12 +150,19 @@ services:
     image: redis:7.2.5-alpine@sha256:6aaf3f5e6bc8a592fbfe2cccf19eb36d27c39d12dab4f4b01556b7449e7b1f44
     platform: linux/amd64
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"  # SECURITY: Bind to localhost only
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    # SECURITY: Redis with password authentication
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --protected-mode yes
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -170,13 +177,13 @@ services:
       context: .
       dockerfile: dockerfiles/Dockerfile
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"  # SECURITY: Bind to localhost only
     environment:
       - QDRANT_URL=http://qdrant:6333
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379  # SECURITY: Redis with password auth
       - DASHBOARD_PORT=8080
       - MONITORING_ENABLED=true
       - LOG_LEVEL=info
@@ -218,7 +225,7 @@ services:
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379  # SECURITY: Redis with password auth
       - QDRANT_URL=http://qdrant:6333
       - MONITORING_DASHBOARD_URL=http://monitoring-dashboard:8080
       # API Authentication - Sentinel uses its own dedicated API key
@@ -236,7 +243,7 @@ services:
       - /backup:/backup:ro
       - /opt/veris-memory-backups:/opt/veris-memory-backups:ro
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"  # SECURITY: Bind to localhost only
     depends_on:
       context-store:
         condition: service_healthy
@@ -260,96 +267,9 @@ services:
     networks:
       - context-store-network
 
-  # TeamAI Voice Platform Services
-  # LiveKit Server for Real-Time Voice (local development/testing)
-  # Note: Production uses LiveKit Cloud (LIVEKIT_API_WEBSOCKET)
-  livekit:
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile.livekit
-    image: veris-memory/livekit:latest-healthcheck
-    container_name: livekit-server
-    ports:
-      - "7880:7880"  # WebRTC/HTTP API (matches config.yaml)
-      - "7882:7882"  # Metrics
-      - "3478:3478/udp"  # TURN UDP (matches config.yaml udp_port)
-      - "5349:5349"  # TURN TLS (matches config.yaml tls_port)
-    environment:
-      - "LIVEKIT_KEYS=${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
-      - LIVEKIT_WEBHOOK_URLS=${LIVEKIT_WEBHOOK_URLS:-}
-    volumes:
-      - ./docker/livekit/config.yaml:/etc/livekit.yaml:ro
-    networks:
-      - context-store-network
-      - voice-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7880"]
-      interval: 20s
-      timeout: 3s
-      retries: 5
-      start_period: 30s
-
-  # Voice Bot Service - Integrates LiveKit with MCP Memory
-  voice-bot:
-    build:
-      context: ./voice-bot
-      dockerfile: Dockerfile
-    container_name: voice-bot
-    environment:
-      # LiveKit Configuration (Cloud or Self-Hosted)
-      - LIVEKIT_URL=${LIVEKIT_API_WEBSOCKET:-ws://livekit:7880}
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
-
-      # MCP Server Connection (Sprint 13 compatible)
-      - MCP_SERVER_URL=http://context-store:8000
-      - MCP_API_KEY=${API_KEY_VOICEBOT}
-      - VOICE_BOT_AUTHOR_PREFIX=${VOICE_BOT_AUTHOR_PREFIX:-voice_bot}
-      - ENABLE_MCP_RETRY=${ENABLE_MCP_RETRY:-true}
-      - MCP_RETRY_ATTEMPTS=${MCP_RETRY_ATTEMPTS:-3}
-
-      # Redis for Session State
-      - REDIS_URL=redis://redis:6379
-
-      # Service Configuration
-      - SERVICE_NAME=voice-bot
-      - HOST=0.0.0.0
-      - PORT=8002
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
-
-      # Voice Configuration (OpenAI Whisper + TTS)
-      - STT_PROVIDER=${STT_PROVIDER:-whisper}
-      - TTS_PROVIDER=${TTS_PROVIDER:-openai}
-      - STT_API_KEY=${STT_API_KEY:-}
-      - TTS_API_KEY=${TTS_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-
-      # Feature Flags
-      - ENABLE_VOICE_COMMANDS=${ENABLE_VOICE_COMMANDS:-true}
-      - ENABLE_FACT_STORAGE=${ENABLE_FACT_STORAGE:-true}
-      - ENABLE_CONVERSATION_TRACE=${ENABLE_CONVERSATION_TRACE:-true}
-    ports:
-      - "8002:8002"
-    depends_on:
-      context-store:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - context-store-network
-      - voice-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    volumes:
-      - ./voice-bot/app:/app/app:ro
-      - voice-bot-logs:/app/logs
+  # Voice Platform Services
+  # NOTE: livekit and voice-bot services are defined in docker-compose.voice.yml
+  # This prevents port binding conflicts when using -f flag with multiple compose files
 
 volumes:
   qdrant_data:
@@ -362,13 +282,10 @@ volumes:
     driver: local
   sentinel_data:
     driver: local
-  voice-bot-logs:
-    driver: local
+  # voice-bot-logs volume is defined in docker-compose.voice.yml
 
 networks:
   context-store-network:
     driver: bridge
     name: veris-memory-dev_context-store-network
-  voice-network:
-    driver: bridge
-    name: veris-memory-dev_voice-network
+  # voice-network is defined in docker-compose.voice.yml

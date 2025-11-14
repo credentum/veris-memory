@@ -1,0 +1,9 @@
+# Ignore SSL certificate files (security)
+*.pem
+*.key
+*.crt
+*.csr
+
+# Keep README and .gitkeep
+!README.md
+!.gitkeep

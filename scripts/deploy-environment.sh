@@ -266,6 +266,42 @@ for service in context-store qdrant neo4j redis; do
     fi
 done
 
+# CRITICAL: Remove ALL instances of fixed-name containers (livekit-server, voice-bot)
+echo "  → Force removing fixed-name containers (livekit-server, voice-bot)..."
+# Find ALL containers with these names using filter (more reliable than grep)
+LIVEKIT_IDS=$(docker ps -a -q --filter "name=livekit-server" 2>/dev/null || true)
+VOICEBOT_IDS=$(docker ps -a -q --filter "name=voice-bot" 2>/dev/null || true)
+
+if [ -n "$LIVEKIT_IDS" ] || [ -n "$VOICEBOT_IDS" ]; then
+    echo "    → Found existing containers:"
+    docker ps -a --filter "name=livekit-server" --filter "name=voice-bot" --format "table {{.Names}}\t{{.Status}}" || true
+
+    # Remove by container ID (more reliable than by name)
+    if [ -n "$LIVEKIT_IDS" ]; then
+        echo "    → Removing livekit-server (IDs: $LIVEKIT_IDS)"
+        echo "$LIVEKIT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+    fi
+    if [ -n "$VOICEBOT_IDS" ]; then
+        echo "    → Removing voice-bot (IDs: $VOICEBOT_IDS)"
+        echo "$VOICEBOT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+    fi
+else
+    echo "    → No livekit/voice-bot containers found"
+fi
+
+# Kill any processes holding livekit ports (non-docker processes)
+echo "  → Checking for non-docker processes on livekit ports..."
+for port in 7880 7882 5349; do
+    PID=$(lsof -ti tcp:$port 2>/dev/null || true)
+    if [ -n "$PID" ]; then
+        echo "    → Found process $PID on port $port, killing..."
+        kill -9 $PID 2>/dev/null || true
+    fi
+done
+
+echo "  → Waiting 10 seconds for complete port release..."
+sleep 10
+
 # CRITICAL: Remove Neo4j volumes to ensure password changes take effect
 echo -e "${YELLOW}🗑️  Removing Neo4j volumes for clean authentication...${NC}"
 # List all volumes for this project
@@ -284,9 +320,9 @@ echo -e "${GREEN}✅ Volumes removed - fresh state ensured${NC}"
 # Stop any containers using our target ports
 echo -e "${BLUE}🔍 Checking for port conflicts...${NC}"
 if [ "$ENVIRONMENT" = "dev" ]; then
-    PORTS="$API_PORT $QDRANT_PORT $NEO4J_HTTP_PORT $NEO4J_BOLT_PORT $REDIS_PORT 6334"
+    PORTS="$API_PORT $QDRANT_PORT $NEO4J_HTTP_PORT $NEO4J_BOLT_PORT $REDIS_PORT 6334 7880 7882 3478 5349"
 else
-    PORTS="$API_PORT $QDRANT_PORT $NEO4J_HTTP_PORT $NEO4J_BOLT_PORT $REDIS_PORT 6335"
+    PORTS="$API_PORT $QDRANT_PORT $NEO4J_HTTP_PORT $NEO4J_BOLT_PORT $REDIS_PORT 6335 7880 7882 3478 5349"
 fi
 
 for port in $PORTS; do
@@ -384,25 +420,102 @@ else
     fi
 fi
 
-# Build and start services
+# Build and start services (FIXED: separate build from up to prevent recreate race condition)
 echo -e "${GREEN}🚀 Starting $ENVIRONMENT services...${NC}"
 echo -e "${BLUE}🔍 DEBUG: Using docker compose command with:${NC}"
 echo "  → Project: $PROJECT_NAME"
 echo "  → Compose file: $COMPOSE_FILE"
-echo "  → Full command: docker compose -p \"$PROJECT_NAME\" -f \"$COMPOSE_FILE\" up -d --build"
 
-# Try modern docker compose syntax first, capture full output for debugging
-echo -e "${BLUE}Running: docker compose -p \"$PROJECT_NAME\" -f \"$COMPOSE_FILE\" up -d --build${NC}"
+# STEP 1: Build images separately
+echo -e "${BLUE}Step 1/3: Building images...${NC}"
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build 2>&1 | tail -20
 
-# Temporarily disable set -e to capture errors properly
+# STEP 2: Remove ALL containers for this project (prevents any recreate issues)
+echo -e "${BLUE}Step 2/3: Removing ALL existing containers for clean start...${NC}"
+
+# Remove ALL project containers (not just livekit/voice-bot)
+echo "  → Stopping all $PROJECT_NAME containers..."
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down --remove-orphans 2>&1 | grep -E "(Stopping|Removing)" || echo "  → No containers to stop"
+
+# Double-check livekit-server and voice-bot are gone
+LIVEKIT_IDS=$(docker ps -a -q --filter "name=livekit-server" 2>/dev/null || true)
+VOICEBOT_IDS=$(docker ps -a -q --filter "name=voice-bot" 2>/dev/null || true)
+if [ -n "$LIVEKIT_IDS" ]; then
+    echo "  → Force removing livekit-server containers"
+    echo "$LIVEKIT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+fi
+if [ -n "$VOICEBOT_IDS" ]; then
+    echo "  → Force removing voice-bot containers"
+    echo "$VOICEBOT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+fi
+
+echo "  → Waiting 5 seconds for complete cleanup..."
+sleep 5
+
+# Verify no containers exist
+REMAINING=$(docker ps -a --filter "name=$PROJECT_NAME" --format "{{.Names}}" 2>/dev/null || true)
+REMAINING_FIXED=$(docker ps -a --filter "name=livekit-server" --filter "name=voice-bot" --format "{{.Names}}" 2>/dev/null || true)
+if [ -n "$REMAINING" ] || [ -n "$REMAINING_FIXED" ]; then
+    echo "  ⚠️  WARNING: Some containers still exist:"
+    docker ps -a --filter "name=$PROJECT_NAME" --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || true
+    docker ps -a --filter "name=livekit-server" --filter "name=voice-bot" --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || true
+else
+    echo "  ✅ All containers removed"
+fi
+
+# STEP 3: Start services (containers already removed in Step 2, so this is a clean start)
+echo -e "${BLUE}Step 3/3: Starting services (clean start after removal, no rebuild)...${NC}"
+
+# Final safety check: Ensure NO containers exist with our project name or fixed names
+echo "  → Final container check before starting..."
+EXISTING_PROJECT=$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT_NAME" 2>/dev/null | wc -l)
+EXISTING_LIVEKIT=$(docker ps -aq --filter "name=livekit-server" 2>/dev/null | wc -l)
+EXISTING_VOICEBOT=$(docker ps -aq --filter "name=voice-bot" 2>/dev/null | wc -l)
+
+if [ "$EXISTING_PROJECT" -gt 0 ] || [ "$EXISTING_LIVEKIT" -gt 0 ] || [ "$EXISTING_VOICEBOT" -gt 0 ]; then
+    echo "  ⚠️  WARNING: Found existing containers that should have been removed:"
+    echo "    - Project containers: $EXISTING_PROJECT"
+    echo "    - LiveKit: $EXISTING_LIVEKIT"
+    echo "    - VoiceBot: $EXISTING_VOICEBOT"
+    echo "  → Forcing removal of ALL containers..."
+
+    # Nuclear option: remove all containers with our project label or fixed names
+    docker ps -aq --filter "label=com.docker.compose.project=$PROJECT_NAME" | xargs -r docker rm -f 2>/dev/null || true
+    docker ps -aq --filter "name=livekit-server" | xargs -r docker rm -f 2>/dev/null || true
+    docker ps -aq --filter "name=voice-bot" | xargs -r docker rm -f 2>/dev/null || true
+
+    echo "  → Waiting 5 seconds for ports to be released..."
+    sleep 5
+fi
+
+# Use separate create and start commands to avoid the recreate race condition
+echo "  → Creating containers without starting them..."
 set +e
-
-# Capture output to show actual errors
-COMPOSE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build 2>&1)
-COMPOSE_EXIT=$?
-
-# Re-enable set -e
+CREATE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" create --no-build 2>&1)
+CREATE_EXIT=$?
 set -e
+
+if [ $CREATE_EXIT -ne 0 ]; then
+    echo -e "${RED}❌ Container creation failed:${NC}"
+    echo "$CREATE_OUTPUT"
+    exit 1
+fi
+
+echo "  → Starting created containers..."
+set +e
+START_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" start 2>&1)
+START_EXIT=$?
+set -e
+
+if [ $START_EXIT -ne 0 ]; then
+    echo -e "${RED}❌ Container start failed:${NC}"
+    echo "$START_OUTPUT"
+    COMPOSE_OUTPUT="$CREATE_OUTPUT\n$START_OUTPUT"
+    COMPOSE_EXIT=$START_EXIT
+else
+    COMPOSE_OUTPUT="$CREATE_OUTPUT\n$START_OUTPUT"
+    COMPOSE_EXIT=0
+fi
 
 if [ $COMPOSE_EXIT -ne 0 ]; then
     echo ""

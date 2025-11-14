@@ -632,3 +632,76 @@ class TestContentPipelineMonitoring:
         assert retrieval_stage["successful"] is True
         # data_integrity check should work with flat string format
         assert "data_integrity" in retrieval_stage
+
+
+class TestContentPipelineTargetBaseURL:
+    """Test TARGET_BASE_URL environment variable usage in ContentPipelineMonitoring."""
+
+    @pytest.mark.asyncio
+    @patch.dict('os.environ', {'TARGET_BASE_URL': 'http://context-store:8000'}, clear=False)
+    async def test_uses_target_base_url_when_set(self) -> None:
+        """Test check uses TARGET_BASE_URL environment variable when set."""
+        config = SentinelConfig(enabled_checks=["S10-content-pipeline"])
+        check = ContentPipelineMonitoring(config)
+
+        # Verify TARGET_BASE_URL is used
+        assert check.veris_memory_url == "http://context-store:8000"
+
+    @pytest.mark.asyncio
+    @patch.dict('os.environ', {}, clear=True)
+    async def test_falls_back_to_localhost_when_unset(self) -> None:
+        """Test check falls back to localhost:8000 when TARGET_BASE_URL is not set."""
+        config = SentinelConfig(enabled_checks=["S10-content-pipeline"])
+        check = ContentPipelineMonitoring(config)
+
+        # Verify fallback to localhost
+        assert check.veris_memory_url == "http://localhost:8000"
+
+    @pytest.mark.asyncio
+    @patch.dict('os.environ', {'TARGET_BASE_URL': 'http://custom-host:9999'}, clear=False)
+    async def test_config_overrides_env_var(self) -> None:
+        """Test config veris_memory_url overrides TARGET_BASE_URL if explicitly set."""
+        config = SentinelConfig(
+            enabled_checks=["S10-content-pipeline"],
+            veris_memory_url="http://config-override:7777"
+        )
+        check = ContentPipelineMonitoring(config)
+
+        # Config should override env var
+        assert check.veris_memory_url == "http://config-override:7777"
+
+    @pytest.mark.asyncio
+    @patch.dict('os.environ', {'TARGET_BASE_URL': 'http://context-store:8000'}, clear=False)
+    async def test_can_connect_using_target_base_url(self) -> None:
+        """Test check can successfully connect to context-store using TARGET_BASE_URL."""
+        config = SentinelConfig(enabled_checks=["S10-content-pipeline"])
+        check = ContentPipelineMonitoring(config)
+
+        # Mock successful HTTP connection to context-store
+        mock_session = AsyncMock()
+        mock_response = AsyncMock()
+        mock_response.status = 201
+        mock_response.json = AsyncMock(return_value={"id": "test123", "success": True})
+
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_session.post.return_value = ctx
+
+        # Also mock GET for retrieval
+        mock_get_response = AsyncMock()
+        mock_get_response.status = 200
+        mock_get_response.json = AsyncMock(return_value={"contexts": [{"id": "test123"}]})
+
+        get_ctx = AsyncMock()
+        get_ctx.__aenter__ = AsyncMock(return_value=mock_get_response)
+        get_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get.return_value = get_ctx
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check.run_check()
+
+        # Verify connection was attempted to context-store URL
+        assert mock_session.post.called
+        call_url = str(mock_session.post.call_args[0][0])
+        assert call_url.startswith("http://context-store:8000")
