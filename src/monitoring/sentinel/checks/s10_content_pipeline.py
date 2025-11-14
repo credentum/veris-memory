@@ -17,6 +17,7 @@ This check validates:
 """
 
 import asyncio
+import os
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -44,7 +45,9 @@ class ContentPipelineMonitoring(BaseCheck):
     
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S10-content-pipeline", "Content pipeline monitoring")
-        self.veris_memory_url = config.get("veris_memory_url", "http://localhost:8000")
+        # Use TARGET_BASE_URL from environment, fallback to config, then localhost
+        default_url = os.getenv("TARGET_BASE_URL", "http://localhost:8000")
+        self.veris_memory_url = config.get("veris_memory_url", default_url)
         self.timeout_seconds = config.get("s10_pipeline_timeout_sec", 60)
         self.pipeline_stages = config.get("s10_pipeline_stages", [
             "ingestion",
