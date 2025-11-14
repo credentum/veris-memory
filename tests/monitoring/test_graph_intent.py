@@ -20,36 +20,13 @@ class TestGraphIntentValidation:
 
     @pytest.fixture
     def config(self) -> SentinelConfig:
-        """Create a test configuration."""
-        # PR #247: Use a mock config object that supports .get() for test values
-        class TestConfig:
-            def __init__(self):
-                self.target_base_url = "http://test.example.com:8000"
-                self._config_data = {
-                    "veris_memory_url": "http://test.example.com:8000",
-                    "s9_graph_timeout_sec": 30,
-                    "s9_max_traversal_depth": 3,
-                    "s9_graph_sample_size": 10,
-                    "s9_intent_scenarios": [
-                        {
-                            "name": "test_scenario",
-                            "description": "Test scenario for validation",
-                            "contexts": [
-                                "Test context one",
-                                "Test context two"
-                            ],
-                            "expected_relationships": ["test", "context"]
-                        }
-                    ]
-                }
-
-            def get(self, key: str, default=None):
-                return self._config_data.get(key, default)
-
-            def is_check_enabled(self, check_id: str) -> bool:
-                return True
-
-        return TestConfig()
+        """Create a test configuration using real SentinelConfig."""
+        # Create real SentinelConfig instance
+        config = SentinelConfig(
+            target_base_url="http://test.example.com:8000",
+            enabled_checks=["S9-graph-intent"]
+        )
+        return config
     
     @pytest.fixture
     def check(self, config: SentinelConfig) -> GraphIntentValidation:

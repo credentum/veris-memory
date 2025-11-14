@@ -49,19 +49,27 @@ class MetricsWiring(BaseCheck):
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S4-metrics-wiring", "Metrics wiring validation")
         # Try multiple common metrics endpoints for better compatibility
-        # PR #247: Use Docker service names instead of localhost for container networking
+        # PR #247: Use Docker service names with environment variable overrides
+        import os
+
         base_url = config.get("veris_memory_url", "http://context-store:8000")
+
+        # Allow service names to be overridden via environment variables
+        context_store_host = os.getenv("CONTEXT_STORE_HOST", "context-store:8000")
+        veris_memory_host = os.getenv("VERIS_MEMORY_HOST", "veris-memory:8000")
+        prometheus_host = os.getenv("PROMETHEUS_HOST", "prometheus:9090")
+
         self.metrics_endpoints = config.get("metrics_endpoints", [
             f"{base_url}/metrics",
-            "http://context-store:8000/metrics",
-            "http://veris-memory:8000/metrics",
-            "http://prometheus:9090/metrics"  # Prometheus service name
+            f"http://{context_store_host}/metrics",
+            f"http://{veris_memory_host}/metrics",
+            f"http://{prometheus_host}/metrics"
         ])
         # Keep single endpoint for backward compatibility (use first in list)
         self.metrics_endpoint = self.metrics_endpoints[0]
-        # PR #247: Use Docker service names for monitoring stack components
-        self.prometheus_url = config.get("prometheus_url", "http://prometheus:9090")
-        self.grafana_url = config.get("grafana_url", "http://grafana:3000")
+        # PR #247: Use Docker service names with environment variable overrides
+        self.prometheus_url = config.get("prometheus_url", os.getenv("PROMETHEUS_URL", f"http://{prometheus_host}"))
+        self.grafana_url = config.get("grafana_url", os.getenv("GRAFANA_URL", "http://grafana:3000"))
         self.timeout_seconds = config.get("s4_metrics_timeout_sec", 30)
         # PR #240: Updated to match actual metrics exposed by /metrics endpoint
         # Current implementation exposes health status, uptime, and service info
@@ -163,15 +171,15 @@ class MetricsWiring(BaseCheck):
     async def _check_metrics_endpoint(self) -> Dict[str, Any]:
         """Check that the metrics endpoint is accessible and returns data.
 
-        Uses exponential backoff retry logic for transient network failures.
+        Uses simple retry logic for transient network failures.
         """
         # Try multiple endpoints to find working metrics
         last_error = None
         tried_endpoints = []
 
-        # Retry configuration
-        max_retries = 3
-        base_delay = 0.5  # seconds
+        # Simple retry configuration - linear backoff
+        max_retries = 2
+        retry_delay = 1.0  # seconds
 
         try:
             async with aiohttp.ClientSession(
@@ -180,18 +188,18 @@ class MetricsWiring(BaseCheck):
                 for endpoint in self.metrics_endpoints:
                     tried_endpoints.append(endpoint)
 
-                    # Retry with exponential backoff for transient failures
+                    # Simple retry loop for transient failures
                     for attempt in range(max_retries):
                         try:
                             async with session.get(endpoint) as response:
                                 if response.status != 200:
                                     last_error = f"Status {response.status}"
-                                    # Don't retry on 404 or other client errors
+                                    # Don't retry on client errors (404, etc)
                                     if 400 <= response.status < 500:
                                         break
-                                    # Retry on 5xx server errors
+                                    # Retry once on server errors (5xx)
                                     if attempt < max_retries - 1:
-                                        await asyncio.sleep(base_delay * (2 ** attempt))
+                                        await asyncio.sleep(retry_delay)
                                         continue
                                     break
 
@@ -211,7 +219,7 @@ class MetricsWiring(BaseCheck):
                                 # Success! Found working endpoint
                                 return {
                                     "passed": True,
-                                    "message": f"Metrics endpoint accessible at {endpoint} with {len(metric_lines)} metric lines (attempt {attempt + 1})",
+                                    "message": f"Metrics endpoint accessible at {endpoint} with {len(metric_lines)} metric lines",
                                     "status_code": response.status,
                                     "endpoint_used": endpoint,
                                 "content_length": len(content),
@@ -219,10 +227,10 @@ class MetricsWiring(BaseCheck):
                                 "sample_metrics": metric_lines[:5]  # First 5 metrics as sample
                             }
                         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                            # Network errors - retry with exponential backoff
+                            # Network errors - simple retry
                             last_error = f"{type(e).__name__}: {str(e)}"
                             if attempt < max_retries - 1:
-                                await asyncio.sleep(base_delay * (2 ** attempt))
+                                await asyncio.sleep(retry_delay)
                                 continue
                             # Last attempt failed, try next endpoint
                             break
