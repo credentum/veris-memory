@@ -39,7 +39,7 @@ class TestContextEndpoints:
         mock_payload = {
             "user_id": "test_user",
             "content": "test content",
-            "content_type": "context",
+            "content_type": "log",
             "metadata": {"key": "value"}
         }
 
@@ -49,13 +49,46 @@ class TestContextEndpoints:
             "message": "Stored successfully"
         }
 
-        with patch("src.mcp_server.rest_compatibility.forward_to_mcp_tool", new=AsyncMock(return_value=mock_mcp_result)):
+        with patch("src.mcp_server.rest_compatibility.forward_to_mcp_tool", new=AsyncMock(return_value=mock_mcp_result)) as mock_forward:
             request_model = rest_compatibility.ContextCreateRequest(**mock_payload)
             result = await rest_compatibility.create_context(request_model, mock_request)
 
             assert result.success is True
             assert result.context_id == "ctx-123"
             assert result.message == "Context stored successfully"
+
+            # Verify content was converted from string to dict format for MCP
+            called_payload = mock_forward.call_args[0][2]
+            assert isinstance(called_payload["content"], dict), "Content must be dict for MCP endpoint"
+            assert called_payload["content"]["text"] == "test content", "Content dict must have 'text' key"
+            assert called_payload["type"] == "log", "Type must be valid MCP type"
+
+    @pytest.mark.asyncio
+    async def test_create_context_content_format_conversion(self):
+        """Test that REST string content is converted to MCP dict format."""
+        mock_request = Mock()
+        mock_request.headers = {}
+
+        mock_payload = {
+            "content": "simple text content",
+            # No content_type specified - should default to "log"
+        }
+
+        mock_mcp_result = {
+            "success": True,
+            "id": "ctx-456",
+            "message": "Stored successfully"
+        }
+
+        with patch("src.mcp_server.rest_compatibility.forward_to_mcp_tool", new=AsyncMock(return_value=mock_mcp_result)) as mock_forward:
+            request_model = rest_compatibility.ContextCreateRequest(**mock_payload)
+            result = await rest_compatibility.create_context(request_model, mock_request)
+
+            # Verify MCP payload has correct format
+            mcp_call = mock_forward.call_args[0][2]
+            assert mcp_call["content"] == {"text": "simple text content"}, "Content must be wrapped in dict with 'text' key"
+            assert mcp_call["type"] == "log", "Default type must be 'log'"
+            assert mcp_call["author"] == "anonymous", "Default author must be 'anonymous'"
 
     @pytest.mark.asyncio
     async def test_create_context_returns_201_status(self):
@@ -80,7 +113,7 @@ class TestContextEndpoints:
                 "/api/v1/contexts",
                 json={
                     "content": "test content",
-                    "content_type": "context"
+                    "content_type": "log"  # Changed from "context" to valid MCP type
                 }
             )
 
