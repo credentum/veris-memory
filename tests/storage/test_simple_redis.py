@@ -345,5 +345,84 @@ class TestSimpleRedisClientOperations(unittest.TestCase):
         self.assertFalse(self.client.is_connected)
 
 
+class TestSimpleRedisClientSetex(unittest.TestCase):
+    """Test SETEX operation (set with expiration)."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = SimpleRedisClient()
+
+    def tearDown(self):
+        """Clean up after tests."""
+        if self.client:
+            self.client.close()
+
+    @patch('redis.Redis')
+    @patch.dict(os.environ, {}, clear=True)
+    def test_setex_operation(self, mock_redis_class):
+        """Test SETEX operation with TTL."""
+        mock_redis_instance = Mock()
+        mock_redis_instance.ping.return_value = True
+        mock_redis_instance.setex.return_value = True
+        mock_redis_class.return_value = mock_redis_instance
+
+        self.client.connect()
+        result = self.client.setex('key1', 300, 'value1')
+
+        self.assertTrue(result)
+        mock_redis_instance.setex.assert_called_once_with('key1', 300, 'value1')
+
+    @patch('redis.Redis')
+    @patch.dict(os.environ, {}, clear=True)
+    def test_setex_with_json_value(self, mock_redis_class):
+        """Test SETEX with JSON-serialized value (common use case)."""
+        mock_redis_instance = Mock()
+        mock_redis_instance.ping.return_value = True
+        mock_redis_instance.setex.return_value = True
+        mock_redis_class.return_value = mock_redis_instance
+
+        import json
+        json_value = json.dumps({'query': 'test', 'results': [1, 2, 3]})
+        self.client.connect()
+        result = self.client.setex('cache:query:hash', 600, json_value)
+
+        self.assertTrue(result)
+        mock_redis_instance.setex.assert_called_once_with('cache:query:hash', 600, json_value)
+
+    @patch('redis.Redis')
+    @patch.dict(os.environ, {}, clear=True)
+    def test_setex_connection_error(self, mock_redis_class):
+        """Test SETEX handles connection errors gracefully."""
+        mock_redis_instance = Mock()
+        mock_redis_instance.ping.return_value = True
+        mock_redis_instance.setex.side_effect = redis.ConnectionError("Connection lost")
+        mock_redis_class.return_value = mock_redis_instance
+
+        self.client.connect()
+        result = self.client.setex('key1', 300, 'value1')
+
+        self.assertFalse(result)
+        self.assertFalse(self.client.is_connected)
+
+    @patch('redis.Redis')
+    @patch.dict(os.environ, {}, clear=True)
+    def test_setex_auto_reconnect(self, mock_redis_class):
+        """Test SETEX attempts reconnection when not connected."""
+        mock_redis_instance = Mock()
+        mock_redis_instance.ping.return_value = True
+        mock_redis_instance.setex.return_value = True
+        mock_redis_class.return_value = mock_redis_instance
+
+        # Don't connect initially
+        self.client.is_connected = False
+
+        result = self.client.setex('key1', 300, 'value1')
+
+        # Should have attempted reconnection
+        self.assertTrue(result)
+        mock_redis_instance.ping.assert_called()  # Reconnection attempt
+        mock_redis_instance.setex.assert_called_once_with('key1', 300, 'value1')
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
