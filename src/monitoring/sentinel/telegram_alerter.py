@@ -186,12 +186,12 @@ class TelegramAlerter:
         # Build header
         header = f"<b>{severity_emoji} {severity.value.upper()}: Veris Memory Alert</b>"
 
-        # Build body
+        # Build body - escape all user-controlled data to prevent HTML injection
         lines = [
             header,
             "━━━━━━━━━━━━━━━━━━━━━",
-            f"<b>Check:</b> {check_id}",
-            f"<b>Status:</b> {status.upper()} {status_emoji}",
+            f"<b>Check:</b> {self._escape_html(check_id)}",
+            f"<b>Status:</b> {self._escape_html(status.upper())} {status_emoji}",
             f"<b>Time:</b> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         ]
 
@@ -250,7 +250,8 @@ class TelegramAlerter:
             for i, failure in enumerate(top_failures[:5], 1):
                 check_id = failure.get('check_id', 'Unknown')
                 count = failure.get('count', 0)
-                lines.append(f"{i}. {check_id}: {count} failures")
+                # Escape check_id to prevent HTML injection
+                lines.append(f"{i}. {self._escape_html(check_id)}: {count} failures")
         
         lines.extend([
             "",

@@ -74,11 +74,12 @@ class SentinelRunner:
 
         for var_name in critical_vars:
             value = os.getenv(var_name)
-            if not value:
+            # Check for None, empty string, or whitespace-only values
+            if not value or value.strip() == "":
                 missing_vars.append(var_name)
 
         if missing_vars:
-            logger.warning(f"Missing critical environment variables: {', '.join(missing_vars)}")
+            logger.warning(f"Missing or empty critical environment variables: {', '.join(missing_vars)}")
             logger.warning("S7 config parity check may fail")
 
         # Validate LOG_LEVEL if set

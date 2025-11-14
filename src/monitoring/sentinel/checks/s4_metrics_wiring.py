@@ -161,10 +161,17 @@ class MetricsWiring(BaseCheck):
             )
     
     async def _check_metrics_endpoint(self) -> Dict[str, Any]:
-        """Check that the metrics endpoint is accessible and returns data."""
+        """Check that the metrics endpoint is accessible and returns data.
+
+        Uses exponential backoff retry logic for transient network failures.
+        """
         # Try multiple endpoints to find working metrics
         last_error = None
         tried_endpoints = []
+
+        # Retry configuration
+        max_retries = 3
+        base_delay = 0.5  # seconds
 
         try:
             async with aiohttp.ClientSession(
@@ -172,38 +179,57 @@ class MetricsWiring(BaseCheck):
             ) as session:
                 for endpoint in self.metrics_endpoints:
                     tried_endpoints.append(endpoint)
-                    try:
-                        async with session.get(endpoint) as response:
-                            if response.status != 200:
-                                last_error = f"Status {response.status}"
-                                continue
 
-                            content = await response.text()
+                    # Retry with exponential backoff for transient failures
+                    for attempt in range(max_retries):
+                        try:
+                            async with session.get(endpoint) as response:
+                                if response.status != 200:
+                                    last_error = f"Status {response.status}"
+                                    # Don't retry on 404 or other client errors
+                                    if 400 <= response.status < 500:
+                                        break
+                                    # Retry on 5xx server errors
+                                    if attempt < max_retries - 1:
+                                        await asyncio.sleep(base_delay * (2 ** attempt))
+                                        continue
+                                    break
 
-                            # Basic validation of Prometheus format
-                            if not content or len(content.strip()) == 0:
-                                last_error = "Empty content"
-                                continue
+                                content = await response.text()
 
-                            # Count metrics lines (non-comment, non-empty)
-                            metric_lines = [
-                                line for line in content.split('\n')
-                                if line.strip() and not line.startswith('#')
-                            ]
+                                # Basic validation of Prometheus format
+                                if not content or len(content.strip()) == 0:
+                                    last_error = "Empty content"
+                                    break
 
-                            # Success! Found working endpoint
-                            return {
-                                "passed": True,
-                                "message": f"Metrics endpoint accessible at {endpoint} with {len(metric_lines)} metric lines",
-                                "status_code": response.status,
-                                "endpoint_used": endpoint,
+                                # Count metrics lines (non-comment, non-empty)
+                                metric_lines = [
+                                    line for line in content.split('\n')
+                                    if line.strip() and not line.startswith('#')
+                                ]
+
+                                # Success! Found working endpoint
+                                return {
+                                    "passed": True,
+                                    "message": f"Metrics endpoint accessible at {endpoint} with {len(metric_lines)} metric lines (attempt {attempt + 1})",
+                                    "status_code": response.status,
+                                    "endpoint_used": endpoint,
                                 "content_length": len(content),
                                 "metric_lines_count": len(metric_lines),
                                 "sample_metrics": metric_lines[:5]  # First 5 metrics as sample
                             }
-                    except Exception as e:
-                        last_error = str(e)
-                        continue
+                        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                            # Network errors - retry with exponential backoff
+                            last_error = f"{type(e).__name__}: {str(e)}"
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(base_delay * (2 ** attempt))
+                                continue
+                            # Last attempt failed, try next endpoint
+                            break
+                        except Exception as e:
+                            # Other errors - don't retry, move to next endpoint
+                            last_error = f"{type(e).__name__}: {str(e)}"
+                            break
 
                 # No endpoint worked
                 return {

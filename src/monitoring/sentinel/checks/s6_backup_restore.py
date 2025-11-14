@@ -52,25 +52,38 @@ class BackupRestore(BaseCheck):
         # PR #247: Validate backup paths for security
         # Only allow paths within approved directories to prevent filesystem exposure
         approved_prefixes = [
-            os.path.abspath("/backup"),
-            os.path.abspath("/opt/veris-memory-backups"),
-            os.path.abspath("/var/backups/veris-memory"),
-            os.path.abspath("/tmp/veris-backups")
+            os.path.realpath("/backup"),
+            os.path.realpath("/opt/veris-memory-backups"),
+            os.path.realpath("/var/backups/veris-memory"),
+            os.path.realpath("/tmp/veris-backups")
         ]
         self.backup_paths = []
         for path in raw_paths:
-            # Resolve absolute path and normalize to prevent directory traversal attacks
-            # This defends against paths like "/backup/../etc/passwd"
+            # Resolve real path (follows symlinks, resolves all .. and .) to prevent directory traversal attacks
+            # This defends against paths like "/backup/../etc/passwd" and symlink attacks
             try:
-                # Get absolute path (follows symlinks if they exist, but normalizes relative paths)
-                normalized = os.path.abspath(os.path.normpath(path))
-                # Check if the normalized absolute path is within approved directories
-                is_valid = any(normalized.startswith(prefix + os.sep) or normalized == prefix
-                              for prefix in approved_prefixes)
+                # Get real path - resolves symlinks and normalizes
+                real_path = os.path.realpath(path)
+
+                # Use os.path.commonpath to ensure the resolved path is truly within an approved directory
+                # This prevents attacks like "/backup/../etc/passwd" which would fail prefix checks
+                is_valid = False
+                for approved_prefix in approved_prefixes:
+                    try:
+                        # Check if the common path is the approved prefix itself
+                        # This ensures real_path is within or equal to approved_prefix
+                        common = os.path.commonpath([real_path, approved_prefix])
+                        if common == approved_prefix:
+                            is_valid = True
+                            break
+                    except ValueError:
+                        # Different drives on Windows or no common path
+                        continue
+
                 if is_valid:
-                    self.backup_paths.append(normalized)
+                    self.backup_paths.append(real_path)
                 else:
-                    logger.warning(f"Skipping backup path '{path}' - resolved to '{normalized}' which is not in approved directories")
+                    logger.warning(f"Skipping backup path '{path}' - resolved to '{real_path}' which is not in approved directories")
             except Exception as e:
                 logger.warning(f"Skipping invalid backup path '{path}': {e}")
 
