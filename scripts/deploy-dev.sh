@@ -39,6 +39,14 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   echo "Host: \$(hostname)"
   echo "User: \$(whoami)"
 
+  # SECURITY: Generate Redis password if not provided
+  if [ -z '$REDIS_PASSWORD' ]; then
+    echo "🔐 Generating secure Redis password..."
+    export REDIS_PASSWORD=\$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
+  else
+    export REDIS_PASSWORD='$REDIS_PASSWORD'
+  fi
+
   # Export all secrets as environment variables for scripts to use
   export NEO4J_PASSWORD='$NEO4J_PASSWORD'
   export TELEGRAM_BOT_TOKEN='$TELEGRAM_BOT_TOKEN'
@@ -203,8 +211,10 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     # Remove ALL managed variables to ensure clean state (no duplicates)
     echo "🗑️  Removing managed variables from .env to prevent duplicates..."
     if [ -f .env ]; then
-      # Remove NEO4J, TELEGRAM, API keys, PR #170, Voice Platform, and Sentinel variables
+      # Remove NEO4J, REDIS, TELEGRAM, API keys, PR #170, Voice Platform, and Sentinel variables
       grep -v "^NEO4J" .env > .env.tmp || true
+      grep -v "^REDIS_PASSWORD" .env.tmp > .env.tmp0 || true
+      mv .env.tmp0 .env.tmp
       grep -v "^TELEGRAM" .env.tmp > .env.tmp2 || true
       grep -v "^API_KEY_MCP" .env.tmp2 > .env.tmp3 || true
       grep -v "^VERIS_CACHE_TTL" .env.tmp3 > .env.tmp4 || true
@@ -228,6 +238,10 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     {
       printf "NEO4J_PASSWORD=%s\\n" "\$NEO4J_PASSWORD"
       printf "NEO4J_AUTH=neo4j/%s\\n" "\$NEO4J_PASSWORD"
+
+      # SECURITY: Redis Password Authentication
+      printf "\\n# Redis Authentication (Security Fix)\\n"
+      printf "REDIS_PASSWORD=%s\\n" "\$REDIS_PASSWORD"
 
       # Add Telegram configuration if available
       if [ -n "\$TELEGRAM_BOT_TOKEN" ]; then
