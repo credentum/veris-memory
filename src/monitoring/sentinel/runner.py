@@ -58,9 +58,70 @@ class SentinelRunner:
             'last_result': None
         })
         
+        # PR #247: Validate critical environment variables at startup
+        self._validate_environment()
+
         # Initialize database
         self._init_database()
-    
+
+    def _validate_environment(self) -> None:
+        """Validate critical environment variables at startup.
+
+        Set SENTINEL_FAIL_FAST=true to exit on validation failures.
+        """
+        import os
+        import sys
+
+        # Check if fail-fast mode is enabled
+        fail_fast = os.getenv("SENTINEL_FAIL_FAST", "false").lower() == "true"
+
+        # Critical environment variables required for S7 config parity check
+        critical_vars = ["LOG_LEVEL", "ENVIRONMENT"]
+        missing_vars = []
+        invalid_vars = []
+
+        for var_name in critical_vars:
+            value = os.getenv(var_name)
+            # Check for None, empty string, or whitespace-only values
+            if not value or value.strip() == "":
+                missing_vars.append(var_name)
+
+        # Validate LOG_LEVEL if set
+        log_level = os.getenv("LOG_LEVEL", "").upper()
+        if log_level and log_level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+            invalid_vars.append(f"LOG_LEVEL='{log_level}' (expected: DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+
+        # Validate ENVIRONMENT if set
+        environment = os.getenv("ENVIRONMENT", "").lower()
+        if environment and environment not in ["development", "staging", "production", "test"]:
+            invalid_vars.append(f"ENVIRONMENT='{environment}' (expected: development, staging, production, test)")
+
+        # Report validation results
+        has_errors = bool(missing_vars or invalid_vars)
+
+        if missing_vars:
+            msg = f"Missing or empty critical environment variables: {', '.join(missing_vars)}"
+            if fail_fast:
+                logger.error(msg)
+            else:
+                logger.warning(msg)
+
+        if invalid_vars:
+            msg = f"Invalid environment variable values: {', '.join(invalid_vars)}"
+            if fail_fast:
+                logger.error(msg)
+            else:
+                logger.warning(msg)
+
+        if has_errors:
+            if fail_fast:
+                logger.error("SENTINEL_FAIL_FAST is enabled - exiting due to environment validation failures")
+                sys.exit(1)
+            else:
+                logger.warning("S7 config parity check may fail (set SENTINEL_FAIL_FAST=true to exit on validation failures)")
+
+        logger.info(f"Environment validation complete. LOG_LEVEL={log_level or 'NOT_SET'}, ENVIRONMENT={environment or 'NOT_SET'}")
+
     def _initialize_alert_manager(self) -> Optional[AlertManager]:
         """Initialize alert manager if configured."""
         import os

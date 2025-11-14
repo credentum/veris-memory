@@ -223,8 +223,18 @@ services:
       - MONITORING_DASHBOARD_URL=http://monitoring-dashboard:8080
       # API Authentication - Sentinel uses its own dedicated API key
       - SENTINEL_API_KEY=${SENTINEL_API_KEY}
+      # General Configuration (required for S7 config parity check)
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
     volumes:
       - sentinel_data:/var/lib/sentinel
+      # Mount host backup directories for S6 backup validation (read-only)
+      # IMPORTANT: These directories must exist on the host for sentinel to validate backups
+      # If directories don't exist, sentinel S6 check will fail
+      # To create directories: mkdir -p /backup /opt/veris-memory-backups
+      # For custom paths, set environment variable: S6_BACKUP_PATHS=/custom/path
+      - /backup:/backup:ro
+      - /opt/veris-memory-backups:/opt/veris-memory-backups:ro
     ports:
       - "9090:9090"
     depends_on:

@@ -17,27 +17,16 @@ from src.monitoring.sentinel.models import SentinelConfig
 
 class TestGraphIntentValidation:
     """Test suite for GraphIntentValidation check."""
-    
+
     @pytest.fixture
     def config(self) -> SentinelConfig:
-        """Create a test configuration."""
-        return SentinelConfig({
-            "veris_memory_url": "http://test.example.com:8000",
-            "s9_graph_timeout_sec": 30,
-            "s9_max_traversal_depth": 3,
-            "s9_graph_sample_size": 10,
-            "s9_intent_scenarios": [
-                {
-                    "name": "test_scenario",
-                    "description": "Test scenario for validation",
-                    "contexts": [
-                        "Test context one",
-                        "Test context two"
-                    ],
-                    "expected_relationships": ["test", "context"]
-                }
-            ]
-        })
+        """Create a test configuration using real SentinelConfig."""
+        # Create real SentinelConfig instance
+        config = SentinelConfig(
+            target_base_url="http://test.example.com:8000",
+            enabled_checks=["S9-graph-intent"]
+        )
+        return config
     
     @pytest.fixture
     def check(self, config: SentinelConfig) -> GraphIntentValidation:
@@ -463,3 +452,175 @@ class TestGraphIntentValidation:
             assert "expected_relationships" in scenario
             assert len(scenario["contexts"]) >= 3
             assert len(scenario["expected_relationships"]) >= 3
+
+    # ==========================================
+    # PR #247: Tests for endpoint fallback logic
+    # ==========================================
+
+    @pytest.mark.asyncio
+    async def test_context_storage_endpoint_fallback_success_first(self, check: GraphIntentValidation) -> None:
+        """Test context storage succeeds on first endpoint."""
+        mock_session = AsyncMock()
+
+        # Mock successful response on first endpoint
+        mock_response = AsyncMock()
+        mock_response.status = 201
+        mock_response.json = AsyncMock(return_value={"context_id": "ctx123"})
+
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_session.post.return_value = ctx
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check.run_check()
+
+        # Should succeed without trying fallback endpoints
+        assert mock_session.post.call_count > 0
+
+    @pytest.mark.asyncio
+    async def test_context_storage_endpoint_fallback_to_second(self, check: GraphIntentValidation) -> None:
+        """Test context storage falls back to second endpoint when first fails."""
+        mock_session = AsyncMock()
+
+        call_count = 0
+        def mock_post(url, **kwargs):
+            nonlocal call_count
+            ctx = AsyncMock()
+            if call_count == 0 and '/api/store_context' in url:
+                # First endpoint (/api/store_context) fails
+                mock_response = AsyncMock()
+                mock_response.status = 404
+                ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            elif '/api/v1/contexts' in url:
+                # Second endpoint (/api/v1/contexts) succeeds
+                mock_response = AsyncMock()
+                mock_response.status = 201
+                mock_response.json = AsyncMock(return_value={"context_id": "ctx123"})
+                ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            else:
+                # Other endpoints
+                mock_response = AsyncMock()
+                mock_response.status = 404
+                ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            call_count += 1
+            return ctx
+
+        mock_session.post.side_effect = mock_post
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check.run_check()
+
+        # Should have tried multiple endpoints
+        assert mock_session.post.call_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_context_storage_all_endpoints_fail(self, check: GraphIntentValidation) -> None:
+        """Test graceful handling when all storage endpoints fail."""
+        mock_session = AsyncMock()
+
+        # All endpoints return 404
+        mock_response = AsyncMock()
+        mock_response.status = 404
+
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_session.post.return_value = ctx
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check.run_check()
+
+        # Check should complete despite storage failures
+        assert result.check_id == "S9-graph-intent"
+        # Should have tried to store contexts multiple times
+        assert mock_session.post.call_count > 0
+
+    @pytest.mark.asyncio
+    async def test_context_storage_handles_both_id_formats(self, check: GraphIntentValidation) -> None:
+        """Test that both 'context_id' and 'id' response formats are handled."""
+        mock_session = AsyncMock()
+
+        responses = [
+            {"context_id": "ctx123"},  # Format 1
+            {"id": "ctx456"},          # Format 2
+        ]
+        response_index = 0
+
+        def mock_post(url, **kwargs):
+            nonlocal response_index
+            ctx = AsyncMock()
+            mock_response = AsyncMock()
+            mock_response.status = 201
+            mock_response.json = AsyncMock(return_value=responses[response_index % len(responses)])
+            ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            response_index += 1
+            return ctx
+
+        mock_session.post.side_effect = mock_post
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check.run_check()
+
+        # Should handle both response formats
+        assert result.check_id == "S9-graph-intent"
+
+    @pytest.mark.asyncio
+    async def test_context_storage_network_error_fallback(self, check: GraphIntentValidation) -> None:
+        """Test fallback to next endpoint on network errors."""
+        mock_session = AsyncMock()
+
+        call_count = 0
+        def mock_post(url, **kwargs):
+            nonlocal call_count
+            if call_count == 0:
+                # First attempt raises network error
+                call_count += 1
+                raise aiohttp.ClientError("Connection refused")
+            else:
+                # Second attempt succeeds
+                ctx = AsyncMock()
+                mock_response = AsyncMock()
+                mock_response.status = 201
+                mock_response.json = AsyncMock(return_value={"context_id": "ctx123"})
+                ctx.__aenter__ = AsyncMock(return_value=mock_response)
+                call_count += 1
+                return ctx
+
+        mock_session.post.side_effect = mock_post
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check.run_check()
+
+        # Should have attempted multiple times
+        assert call_count > 1
+
+    @pytest.mark.asyncio
+    async def test_context_storage_empty_id_triggers_fallback(self, check: GraphIntentValidation) -> None:
+        """Test that empty context_id triggers fallback to next endpoint."""
+        mock_session = AsyncMock()
+
+        call_count = 0
+        def mock_post(url, **kwargs):
+            nonlocal call_count
+            ctx = AsyncMock()
+            if call_count == 0:
+                # First endpoint returns empty context_id
+                mock_response = AsyncMock()
+                mock_response.status = 201
+                mock_response.json = AsyncMock(return_value={"context_id": None})
+                ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            else:
+                # Second endpoint returns valid id
+                mock_response = AsyncMock()
+                mock_response.status = 201
+                mock_response.json = AsyncMock(return_value={"id": "ctx456"})
+                ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            call_count += 1
+            return ctx
+
+        mock_session.post.side_effect = mock_post
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check.run_check()
+
+        # Should have tried fallback
+        assert call_count > 1

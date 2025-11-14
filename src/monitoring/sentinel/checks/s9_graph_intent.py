@@ -240,14 +240,29 @@ class GraphIntentValidation(BaseCheck):
                             }
                         }
                         
+                        # Try multiple endpoint formats for compatibility
+                        endpoints_to_try = [
+                            f"{self.veris_memory_url}/api/store_context",
+                            f"{self.veris_memory_url}/api/v1/contexts"
+                        ]
+
+                        context_stored = False
                         try:
-                            store_url = f"{self.veris_memory_url}/api/v1/contexts"
-                            async with session.post(store_url, json=store_data) as response:
-                                if response.status == 201:
-                                    result_data = await response.json()
-                                    context_ids.append(result_data.get("context_id"))
-                                else:
-                                    logger.warning(f"Failed to store context for scenario {scenario_name}")
+                            for endpoint_url in endpoints_to_try:
+                                try:
+                                    async with session.post(endpoint_url, json=store_data) as response:
+                                        if response.status in [200, 201]:
+                                            result_data = await response.json()
+                                            context_id = result_data.get("context_id") or result_data.get("id")
+                                            if context_id:
+                                                context_ids.append(context_id)
+                                                context_stored = True
+                                                break
+                                except Exception:
+                                    continue
+
+                            if not context_stored:
+                                logger.warning(f"Failed to store context for scenario {scenario_name} - all endpoints failed")
                         except Exception as store_error:
                             logger.warning(f"Context storage error: {store_error}")
                     

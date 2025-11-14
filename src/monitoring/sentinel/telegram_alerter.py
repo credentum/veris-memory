@@ -63,10 +63,10 @@ class TelegramAlerter:
         "unknown": "❓"
     }
     
-    def __init__(self, bot_token: str, chat_id: str, rate_limit: int = 30):
+    def __init__(self, bot_token: str, chat_id: str, rate_limit: int = 30) -> None:
         """
         Initialize Telegram alerter.
-        
+
         Args:
             bot_token: Telegram bot API token
             chat_id: Target chat/channel ID
@@ -186,12 +186,12 @@ class TelegramAlerter:
         # Build header
         header = f"<b>{severity_emoji} {severity.value.upper()}: Veris Memory Alert</b>"
 
-        # Build body
+        # Build body - escape all user-controlled data to prevent HTML injection
         lines = [
             header,
             "━━━━━━━━━━━━━━━━━━━━━",
-            f"<b>Check:</b> {check_id}",
-            f"<b>Status:</b> {status.upper()} {status_emoji}",
+            f"<b>Check:</b> {self._escape_html(check_id)}",
+            f"<b>Status:</b> {self._escape_html(status.upper())} {status_emoji}",
             f"<b>Time:</b> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         ]
 
@@ -250,7 +250,8 @@ class TelegramAlerter:
             for i, failure in enumerate(top_failures[:5], 1):
                 check_id = failure.get('check_id', 'Unknown')
                 count = failure.get('count', 0)
-                lines.append(f"{i}. {check_id}: {count} failures")
+                # Escape check_id to prevent HTML injection
+                lines.append(f"{i}. {self._escape_html(check_id)}: {count} failures")
         
         lines.extend([
             "",
@@ -278,19 +279,32 @@ class TelegramAlerter:
                 self.message_queue.append(message)
             return False
         
+        # Validate and truncate message text if needed (Telegram max: 4096 characters)
+        message_text = message.text
+        if len(message_text) > 4096:
+            logger.warning(f"Telegram message truncated from {len(message_text)} to 4096 characters")
+            message_text = message_text[:4093] + "..."
+
         # Send via Telegram API
         try:
             async with aiohttp.ClientSession() as session:
                 url = f"{self.api_url}/sendMessage"
-                payload = {
+                # Telegram API requires form-data or application/x-www-form-urlencoded
+                # NOT application/json, so we use data= instead of json=
+                params = {
                     "chat_id": self.chat_id,
-                    "text": message.text,
+                    "text": message_text,
                     "parse_mode": message.parse_mode,
-                    "disable_web_page_preview": message.disable_web_page_preview,
-                    "disable_notification": message.disable_notification
+                    "disable_web_page_preview": str(message.disable_web_page_preview).lower(),
+                    "disable_notification": str(message.disable_notification).lower()
                 }
-                
-                async with session.post(url, json=payload) as response:
+
+                # Explicitly set Content-Type header for clarity
+                headers = {
+                    "Content-Type": "application/x-www-form-urlencoded"
+                }
+
+                async with session.post(url, data=params, headers=headers) as response:
                     if response.status == 200:
                         result = await response.json()
                         if result.get("ok"):

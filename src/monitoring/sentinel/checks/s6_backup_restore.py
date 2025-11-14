@@ -38,11 +38,75 @@ class BackupRestore(BaseCheck):
     
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S6-backup-restore", "Backup/restore validation")
-        self.backup_paths = config.get("backup_paths", [
-            "/var/backups/veris-memory",
-            "/opt/veris-memory/backups",
-            "/tmp/veris-backups"
+        # Updated to match actual backup locations on host (mounted into container)
+        raw_paths = config.get("backup_paths", [
+            "/backup/health",          # Health backups (every 6 hours)
+            "/backup/daily",           # Daily backups
+            "/backup/weekly",          # Weekly backups
+            "/backup/monthly",         # Monthly backups
+            "/backup/backup-ultimate", # Ultimate backups
+            "/backup",                 # Root backup directory
+            "/opt/veris-memory-backups" # Alternate location
         ])
+
+        # PR #247: Validate backup paths for security
+        # Only allow paths within approved directories to prevent filesystem exposure
+        # Use normalized paths without realpath to avoid TOCTOU vulnerabilities
+        approved_prefixes = [
+            os.path.abspath("/backup"),
+            os.path.abspath("/opt/veris-memory-backups"),
+            os.path.abspath("/var/backups/veris-memory"),
+            os.path.abspath("/tmp/veris-backups")
+        ]
+        self.backup_paths = []
+        for path in raw_paths:
+            # Normalize path (resolve .. and .) without following symlinks
+            # This prevents TOCTOU attacks while still blocking directory traversal
+            try:
+                # Normalize the path - handles .. and . but doesn't follow symlinks
+                normalized_path = os.path.abspath(os.path.normpath(path))
+
+                # Validate path is within approved directories using os.path.commonpath
+                # This is TOCTOU-safe as we validate before use
+                # NOTE: Windows-specific behavior - paths on different drives will raise ValueError
+                is_valid = False
+                for approved_prefix in approved_prefixes:
+                    try:
+                        # Check if the common path is the approved prefix itself
+                        # This ensures normalized_path is within or equal to approved_prefix
+                        # On Windows: ValueError if paths are on different drives (e.g., C:\ vs D:\)
+                        # On POSIX: ValueError if one path is absolute and other is relative (shouldn't happen here)
+                        common = os.path.commonpath([normalized_path, approved_prefix])
+                        if common == approved_prefix:
+                            # Additional check: ensure the path doesn't escape via ..
+                            # normalized_path must start with approved_prefix
+                            if normalized_path == approved_prefix or normalized_path.startswith(approved_prefix + os.sep):
+                                is_valid = True
+                                break
+                    except ValueError as e:
+                        # Windows: Different drives (e.g., C:\backup vs D:\backups)
+                        # POSIX: Should not happen (both paths are absolute after normpath)
+                        # Log at debug level as this is expected when checking multiple prefixes
+                        logger.debug(f"Path '{normalized_path}' not comparable with '{approved_prefix}': {e}")
+                        continue
+                    except Exception as e:
+                        # Unexpected errors in path comparison
+                        logger.warning(f"Unexpected error comparing paths '{normalized_path}' and '{approved_prefix}': {e}")
+                        continue
+
+                if is_valid:
+                    self.backup_paths.append(normalized_path)
+                else:
+                    logger.warning(
+                        f"Skipping backup path '{path}' - normalized to '{normalized_path}' "
+                        f"which is not in approved directories: {approved_prefixes}"
+                    )
+            except Exception as e:
+                logger.warning(f"Skipping invalid backup path '{path}': {e}")
+
+        if not self.backup_paths:
+            logger.error("No valid backup paths configured after validation")
+
         self.max_backup_age_hours = config.get("s6_backup_max_age_hours", 24)
         self.database_url = config.get("database_url", "postgresql://localhost/veris_memory")
         self.min_backup_size_mb = config.get("min_backup_size_mb", 1)

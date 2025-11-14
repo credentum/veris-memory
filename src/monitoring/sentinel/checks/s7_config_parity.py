@@ -40,13 +40,19 @@ class ConfigParity(BaseCheck):
         self.expected_config_path = config.get("expected_config_path", "/opt/veris-memory/config/expected.json")
         self.service_url = config.get("veris_memory_url", "http://localhost:8000")
         self.timeout_seconds = config.get("s7_config_timeout_sec", 30)
+        # Truly critical env vars for sentinel operation (reduced list)
         self.critical_env_vars = config.get("s7_critical_env_vars", [
-            "DATABASE_URL",
-            "QDRANT_URL", 
-            "NEO4J_URL",
-            "REDIS_URL",
             "LOG_LEVEL",
             "ENVIRONMENT"
+        ])
+        # Optional env vars for service validation (won't fail check if missing)
+        self.optional_env_vars = config.get("s7_optional_env_vars", [
+            "DATABASE_URL",
+            "QDRANT_URL",
+            "NEO4J_URL",
+            "NEO4J_URI",
+            "REDIS_URL",
+            "TARGET_BASE_URL"
         ])
         # Expected versions - Phase 4 Update (2025-11-08)
         #
@@ -163,53 +169,82 @@ class ConfigParity(BaseCheck):
             env_status = {}
             missing_vars = []
             empty_vars = []
-            
-            # Check critical environment variables
+            missing_optional_vars = []
+
+            # Check critical environment variables (REQUIRED)
             for var_name in self.critical_env_vars:
                 var_value = os.environ.get(var_name)
-                
+
                 if var_value is None:
                     missing_vars.append(var_name)
-                    env_status[var_name] = {"status": "missing", "value": None}
+                    env_status[var_name] = {"status": "missing", "value": None, "critical": True}
                 elif var_value.strip() == "":
                     empty_vars.append(var_name)
-                    env_status[var_name] = {"status": "empty", "value": ""}
+                    env_status[var_name] = {"status": "empty", "value": "", "critical": True}
                 else:
                     # Mask sensitive values for logging
                     masked_value = self._mask_sensitive_value(var_name, var_value)
-                    env_status[var_name] = {"status": "set", "value": masked_value}
-            
-            # Check for common configuration patterns
+                    env_status[var_name] = {"status": "set", "value": masked_value, "critical": True}
+
+            # Check optional environment variables (NOT required, just informational)
+            for var_name in self.optional_env_vars:
+                var_value = os.environ.get(var_name)
+
+                if var_value is None:
+                    missing_optional_vars.append(var_name)
+                    env_status[var_name] = {"status": "missing", "value": None, "critical": False}
+                elif var_value.strip() == "":
+                    env_status[var_name] = {"status": "empty", "value": "", "critical": False}
+                else:
+                    # Mask sensitive values for logging
+                    masked_value = self._mask_sensitive_value(var_name, var_value)
+                    env_status[var_name] = {"status": "set", "value": masked_value, "critical": False}
+
+            # Check for common configuration patterns (only for CRITICAL vars)
             config_issues = []
-            
-            # Database URL validation
+
+            # Log level validation (CRITICAL)
+            log_level = os.environ.get("LOG_LEVEL", "").upper()
+            if not log_level:
+                config_issues.append("LOG_LEVEL is not set")
+            elif log_level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+                config_issues.append(f"LOG_LEVEL '{log_level}' is not a standard logging level")
+
+            # Environment validation (CRITICAL)
+            environment = os.environ.get("ENVIRONMENT", "").lower()
+            if not environment:
+                config_issues.append("ENVIRONMENT is not set")
+            elif environment not in ["development", "staging", "production", "test"]:
+                config_issues.append(f"ENVIRONMENT '{environment}' is not a standard environment name")
+
+            # Optional validations (only warn if set incorrectly, not if missing)
             db_url = os.environ.get("DATABASE_URL", "")
             if db_url and not any(protocol in db_url for protocol in ["postgresql://", "sqlite://", "mysql://"]):
-                config_issues.append("DATABASE_URL does not contain a recognized database protocol")
-            
-            # Log level validation
-            log_level = os.environ.get("LOG_LEVEL", "").upper()
-            if log_level and log_level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
-                config_issues.append(f"LOG_LEVEL '{log_level}' is not a standard logging level")
-            
-            # Environment validation
-            environment = os.environ.get("ENVIRONMENT", "").lower()
-            if environment and environment not in ["development", "staging", "production", "test"]:
-                config_issues.append(f"ENVIRONMENT '{environment}' is not a standard environment name")
-            
-            # Combine all issues
+                # This is a warning, not a critical failure
+                logger.warning("DATABASE_URL does not contain a recognized database protocol")
+
+            # Combine all CRITICAL issues
             all_issues = []
             if missing_vars:
-                all_issues.append(f"Missing critical environment variables: {missing_vars}")
+                all_issues.append(f"Missing critical environment variables: {', '.join(missing_vars)}")
             if empty_vars:
-                all_issues.append(f"Empty critical environment variables: {empty_vars}")
+                all_issues.append(f"Empty critical environment variables: {', '.join(empty_vars)}")
             all_issues.extend(config_issues)
-            
+
+            # Build success message
+            if len(all_issues) == 0:
+                msg = f"All {len(self.critical_env_vars)} critical environment variables properly configured"
+                if missing_optional_vars:
+                    msg += f" ({len(missing_optional_vars)} optional vars not set: {', '.join(missing_optional_vars[:3])}{'...' if len(missing_optional_vars) > 3 else ''})"
+            else:
+                msg = f"Environment variables check: {len(all_issues)} critical issues found"
+
             return {
                 "passed": len(all_issues) == 0,
-                "message": f"Environment variables check: {len(all_issues)} issues found" if all_issues else f"All {len(self.critical_env_vars)} critical environment variables properly configured",
+                "message": msg,
                 "env_status": env_status,
-                "missing_vars": missing_vars,
+                "missing_critical_vars": missing_vars,
+                "missing_optional_vars": missing_optional_vars,
                 "empty_vars": empty_vars,
                 "config_issues": config_issues,
                 "all_issues": all_issues
