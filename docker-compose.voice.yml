@@ -49,8 +49,8 @@ services:
       - MCP_SERVER_URL=http://context-store:8000
       - MCP_API_KEY=${MCP_API_KEY:-}
 
-      # Redis for Session State
-      - REDIS_URL=redis://redis:6379
+      # Redis for Session State (with authentication)
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
 
       # Service Configuration
       - SERVICE_NAME=voice-bot

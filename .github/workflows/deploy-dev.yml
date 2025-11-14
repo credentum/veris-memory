@@ -99,7 +99,7 @@ jobs:
             
             # Dev uses standard ports (what we test with)
             echo -n "  Redis: "
-            echo "PING" | nc -w 2 localhost 6379 | grep -q PONG && echo "✓ (6379)" || echo "✗"
+            docker inspect --format='{{.State.Health.Status}}' veris-memory-dev-redis-1 2>/dev/null | grep -q "healthy" && echo "✓ (6379)" || echo "✗"
             
             echo -n "  Neo4j: "
             timeout 1 bash -c "</dev/tcp/localhost/7474" 2>/dev/null && echo "✓ (7474)" || echo "✗"
@@ -146,7 +146,7 @@ jobs:
               "api": $(curl -sf http://localhost:8000/health > /dev/null 2>&1 && echo '"healthy"' || echo '"unhealthy"'),
               "qdrant": $(curl -sf http://localhost:6333/ > /dev/null 2>&1 && echo '"healthy"' || echo '"unhealthy"'),
               "neo4j": $(timeout 2 bash -c "</dev/tcp/localhost/7687" 2>/dev/null && echo '"healthy"' || echo '"unhealthy"'),
-              "redis": $(echo "PING" | nc -w 2 localhost 6379 | grep -q PONG && echo '"healthy"' || echo '"unhealthy"')
+              "redis": $(docker inspect --format='{{.State.Health.Status}}' veris-memory-dev-redis-1 2>/dev/null | grep -q "healthy" && echo '"healthy"' || echo '"unhealthy"')
             },
             "success": true
           }
