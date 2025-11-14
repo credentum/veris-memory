@@ -267,13 +267,11 @@ for service in context-store qdrant neo4j redis; do
 done
 
 # CRITICAL: Remove fixed-name containers (livekit-server, voice-bot)
-echo "  → Checking for fixed-name containers (livekit-server, voice-bot)..."
-for container_name in livekit-server voice-bot; do
-    if docker ps -a --format "{{.Names}}" | grep -q "^${container_name}$"; then
-        echo "    → Force removing $container_name"
-        docker rm -f "$container_name" 2>/dev/null || true
-    fi
-done
+echo "  → Force removing fixed-name containers (livekit-server, voice-bot)..."
+docker stop livekit-server voice-bot 2>/dev/null || true
+docker rm -f livekit-server voice-bot 2>/dev/null || true
+echo "  → Waiting 3 seconds for port release..."
+sleep 3
 
 # CRITICAL: Remove Neo4j volumes to ensure password changes take effect
 echo -e "${YELLOW}🗑️  Removing Neo4j volumes for clean authentication...${NC}"
