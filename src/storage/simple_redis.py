@@ -48,6 +48,7 @@ class SimpleRedisClient:
                     db = int(url_match.group(4)) if url_match.group(4) else 0
                 else:
                     # Fallback to individual env vars
+                    logger.warning(f"Failed to parse REDIS_URL: {redis_url}, falling back to individual env vars")
                     host = os.getenv("REDIS_HOST", "redis")
                     port = int(os.getenv("REDIS_PORT", "6379"))
                     db = int(os.getenv("REDIS_DB", "0"))
@@ -80,8 +81,9 @@ class SimpleRedisClient:
             # Test connection
             self.client.ping()
             self.is_connected = True
-            
+
             logger.info(f"✅ SimpleRedisClient connected to {host}:{port}")
+            logger.debug(f"Connected to Redis at {host}:{port} db={db}")
             return True
             
         except Exception as e:
