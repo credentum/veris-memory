@@ -39,7 +39,7 @@ class BackupRestore(BaseCheck):
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S6-backup-restore", "Backup/restore validation")
         # Updated to match actual backup locations on host (mounted into container)
-        self.backup_paths = config.get("backup_paths", [
+        raw_paths = config.get("backup_paths", [
             "/backup/health",          # Health backups (every 6 hours)
             "/backup/daily",           # Daily backups
             "/backup/weekly",          # Weekly backups
@@ -48,6 +48,23 @@ class BackupRestore(BaseCheck):
             "/backup",                 # Root backup directory
             "/opt/veris-memory-backups" # Alternate location
         ])
+
+        # PR #247: Validate backup paths for security
+        # Only allow paths within approved directories to prevent filesystem exposure
+        approved_prefixes = ["/backup", "/opt/veris-memory-backups", "/var/backups/veris-memory", "/tmp/veris-backups"]
+        self.backup_paths = []
+        for path in raw_paths:
+            # Normalize path to prevent directory traversal
+            normalized = os.path.normpath(path)
+            # Check if path is within approved directories
+            if any(normalized.startswith(prefix) for prefix in approved_prefixes):
+                self.backup_paths.append(normalized)
+            else:
+                logger.warning(f"Skipping backup path '{path}' - not in approved directories: {approved_prefixes}")
+
+        if not self.backup_paths:
+            logger.error("No valid backup paths configured after validation")
+
         self.max_backup_age_hours = config.get("s6_backup_max_age_hours", 24)
         self.database_url = config.get("database_url", "postgresql://localhost/veris_memory")
         self.min_backup_size_mb = config.get("min_backup_size_mb", 1)

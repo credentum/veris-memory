@@ -495,7 +495,163 @@ invalid_metric_line_without_value
         """Test run_check when an exception occurs."""
         with patch.object(check, '_check_metrics_endpoint', side_effect=Exception("Network error")):
             result = await check.run_check()
-        
+
         assert result.status == "fail"
         assert "Metrics wiring check failed with error: Network error" in result.message
         assert result.details["error"] == "Network error"
+
+    # ==========================================
+    # PR #247: Tests for endpoint fallback logic
+    # ==========================================
+
+    @pytest.mark.asyncio
+    async def test_multiple_endpoint_fallback_success_first(self, config):
+        """Test that first endpoint in list is tried first and succeeds."""
+        config["veris_memory_url"] = "http://context-store:8000"
+        check = MetricsWiring(config)
+
+        # Verify endpoints are configured correctly
+        assert len(check.metrics_endpoints) == 4
+        assert check.metrics_endpoints[0] == "http://context-store:8000/metrics"
+        assert check.metrics_endpoints[1] == "http://context-store:8000/metrics"
+
+        # Mock successful response on first endpoint
+        mock_session = AsyncMock()
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value="# TYPE test_metric counter\ntest_metric 42\n")
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_session.get.return_value = mock_ctx
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check._check_metrics_endpoint()
+
+        assert result["passed"] is True
+        assert "endpoint_used" in result
+        assert result["metric_lines_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_multiple_endpoint_fallback_success_second(self, config):
+        """Test that fallback to second endpoint works when first fails."""
+        config["veris_memory_url"] = "http://context-store:8000"
+        check = MetricsWiring(config)
+
+        mock_session = AsyncMock()
+
+        # First endpoint fails, second succeeds
+        call_count = 0
+        def mock_get(url):
+            nonlocal call_count
+            ctx = AsyncMock()
+            if call_count == 0:
+                # First endpoint fails
+                mock_response = AsyncMock()
+                mock_response.status = 404
+                ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            else:
+                # Second endpoint succeeds
+                mock_response = AsyncMock()
+                mock_response.status = 200
+                mock_response.text = AsyncMock(return_value="# TYPE test_metric counter\ntest_metric 42\n")
+                ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            call_count += 1
+            return ctx
+
+        mock_session.get.side_effect = mock_get
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check._check_metrics_endpoint()
+
+        assert result["passed"] is True
+        assert "endpoint_used" in result
+        assert result["metric_lines_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_multiple_endpoint_all_fail(self, config):
+        """Test that check fails gracefully when all endpoints fail."""
+        config["veris_memory_url"] = "http://context-store:8000"
+        check = MetricsWiring(config)
+
+        mock_session = AsyncMock()
+        mock_response = AsyncMock()
+        mock_response.status = 404
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_session.get.return_value = mock_ctx
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check._check_metrics_endpoint()
+
+        assert result["passed"] is False
+        assert "Cannot connect to metrics endpoints" in result["message"]
+        assert "tried_endpoints" in result
+        assert len(result["tried_endpoints"]) == 4
+
+    @pytest.mark.asyncio
+    async def test_endpoint_empty_content_fallback(self, config):
+        """Test that endpoint with empty content triggers fallback."""
+        config["veris_memory_url"] = "http://context-store:8000"
+        check = MetricsWiring(config)
+
+        mock_session = AsyncMock()
+        call_count = 0
+
+        def mock_get(url):
+            nonlocal call_count
+            ctx = AsyncMock()
+            if call_count == 0:
+                # First endpoint returns empty
+                mock_response = AsyncMock()
+                mock_response.status = 200
+                mock_response.text = AsyncMock(return_value="")
+                ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            else:
+                # Second endpoint has content
+                mock_response = AsyncMock()
+                mock_response.status = 200
+                mock_response.text = AsyncMock(return_value="test_metric 42\n")
+                ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            call_count += 1
+            return ctx
+
+        mock_session.get.side_effect = mock_get
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check._check_metrics_endpoint()
+
+        assert result["passed"] is True
+        assert result["metric_lines_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_endpoint_network_error_fallback(self, config):
+        """Test that network errors trigger fallback to next endpoint."""
+        config["veris_memory_url"] = "http://context-store:8000"
+        check = MetricsWiring(config)
+
+        mock_session = AsyncMock()
+        call_count = 0
+
+        def mock_get(url):
+            nonlocal call_count
+            if call_count == 0:
+                # First endpoint network error
+                raise aiohttp.ClientError("Connection refused")
+            else:
+                # Second endpoint works
+                mock_response = AsyncMock()
+                mock_response.status = 200
+                mock_response.text = AsyncMock(return_value="test_metric 42\n")
+                ctx = AsyncMock()
+                ctx.__aenter__ = AsyncMock(return_value=mock_response)
+                call_count += 1
+                return ctx
+
+        mock_session.get.side_effect = mock_get
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check._check_metrics_endpoint()
+
+        assert result["passed"] is True

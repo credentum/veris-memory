@@ -58,9 +58,41 @@ class SentinelRunner:
             'last_result': None
         })
         
+        # PR #247: Validate critical environment variables at startup
+        self._validate_environment()
+
         # Initialize database
         self._init_database()
-    
+
+    def _validate_environment(self) -> None:
+        """Validate critical environment variables at startup."""
+        import os
+
+        # Critical environment variables required for S7 config parity check
+        critical_vars = ["LOG_LEVEL", "ENVIRONMENT"]
+        missing_vars = []
+
+        for var_name in critical_vars:
+            value = os.getenv(var_name)
+            if not value:
+                missing_vars.append(var_name)
+
+        if missing_vars:
+            logger.warning(f"Missing critical environment variables: {', '.join(missing_vars)}")
+            logger.warning("S7 config parity check may fail")
+
+        # Validate LOG_LEVEL if set
+        log_level = os.getenv("LOG_LEVEL", "").upper()
+        if log_level and log_level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+            logger.warning(f"Invalid LOG_LEVEL '{log_level}'. Expected one of: DEBUG, INFO, WARNING, ERROR, CRITICAL")
+
+        # Validate ENVIRONMENT if set
+        environment = os.getenv("ENVIRONMENT", "").lower()
+        if environment and environment not in ["development", "staging", "production", "test"]:
+            logger.warning(f"Invalid ENVIRONMENT '{environment}'. Expected one of: development, staging, production, test")
+
+        logger.info(f"Environment validation complete. LOG_LEVEL={log_level or 'NOT_SET'}, ENVIRONMENT={environment or 'NOT_SET'}")
+
     def _initialize_alert_manager(self) -> Optional[AlertManager]:
         """Initialize alert manager if configured."""
         import os

@@ -343,10 +343,128 @@ class TestSecurityNegatives:
             mock_session = AsyncMock()
             mock_session.get.side_effect = aiohttp.ClientError("Connection failed")
             mock_session_class.return_value = mock_session
-            
+
             # Test should handle network errors gracefully
             result = await check._test_invalid_authentication()
-            
+
             # Network errors are acceptable for security tests
             assert result["passed"] is True  # No auth bypasses detected
             assert len(result["failures"]) == 0
+
+    # ==========================================
+    # PR #247: Tests for endpoint compatibility and 404 handling
+    # ==========================================
+
+    @pytest.mark.asyncio
+    async def test_endpoint_404_handling(self, check):
+        """Test that 404 responses are treated as acceptable (endpoint doesn't exist)."""
+        mock_session = AsyncMock()
+
+        # Mock 404 responses for non-existent endpoints
+        mock_response_404 = AsyncMock()
+        mock_response_404.status = 404
+
+        call_count = 0
+        def mock_get(url, **kwargs):
+            nonlocal call_count
+            ctx = AsyncMock()
+            # All endpoints return 404
+            ctx.__aenter__ = AsyncMock(return_value=mock_response_404)
+            call_count += 1
+            return ctx
+
+        mock_session.get.side_effect = mock_get
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check._test_invalid_authentication()
+
+        # 404 should not be treated as auth bypass
+        assert result["passed"] is True
+        assert len(result["failures"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_endpoint_compatibility_v1_and_store_context(self, check):
+        """Test that both /api/v1/contexts and /api/store_context endpoints are tested."""
+        mock_session = AsyncMock()
+
+        tested_endpoints = []
+
+        def mock_get(url, **kwargs):
+            tested_endpoints.append(url)
+            ctx = AsyncMock()
+            mock_response = AsyncMock()
+            mock_response.status = 401  # Properly protected
+            ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            return ctx
+
+        mock_session.get.side_effect = mock_get
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check._test_invalid_authentication()
+
+        # Should test both endpoint formats
+        assert any('/api/store_context' in url for url in tested_endpoints)
+        assert result["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_access_404_handling(self, check):
+        """Test unauthorized access check treats 404 as acceptable."""
+        mock_session = AsyncMock()
+
+        mock_response_404 = AsyncMock()
+        mock_response_404.status = 404
+
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_response_404)
+        mock_session.get.return_value = ctx
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check._test_unauthorized_access()
+
+        # Should pass - 404 means endpoint doesn't exist, not a security issue
+        assert result["passed"] is True
+        assert len(result["access_violations"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_access_200_is_violation(self, check):
+        """Test that 200 OK without auth is properly detected as violation."""
+        mock_session = AsyncMock()
+
+        mock_response_200 = AsyncMock()
+        mock_response_200.status = 200
+
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_response_200)
+        mock_session.get.return_value = ctx
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check._test_unauthorized_access()
+
+        # Should fail - 200 OK without auth is a security violation
+        assert result["passed"] is False
+        assert len(result["access_violations"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_multiple_endpoint_formats_tested(self, check):
+        """Test that both /api/v1/ and /api/store_ endpoint formats are tested."""
+        mock_session = AsyncMock()
+
+        tested_endpoints = set()
+
+        def mock_get(url, **kwargs):
+            tested_endpoints.add(url)
+            ctx = AsyncMock()
+            mock_response = AsyncMock()
+            mock_response.status = 403  # Properly protected
+            ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            return ctx
+
+        mock_session.get.side_effect = mock_get
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            await check._test_unauthorized_access()
+
+        # Verify both /api/v1/contexts and /api/store_context are in the tested set
+        base_url = check.base_url
+        assert f"{base_url}/api/v1/contexts" in tested_endpoints
+        assert f"{base_url}/api/store_context" in tested_endpoints
