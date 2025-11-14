@@ -15,8 +15,12 @@ services:
       - "7880:7880"     # LiveKit HTTP/WebSocket (proxied with rate limiting)
       - "8080:8080"     # Voice-Bot HTTP (proxied, redirects to HTTPS)
       - "8443:8443"     # Voice-Bot HTTPS (proxied with rate limiting)
+    environment:
+      # Rate limiting configuration (adjustable per deployment)
+      - VOICE_BOT_RATE_LIMIT=${VOICE_BOT_RATE_LIMIT:-10r/s}  # Voice-bot requests per second
+      - LIVEKIT_RATE_LIMIT=${LIVEKIT_RATE_LIMIT:-20r/s}      # LiveKit requests per second (WebRTC needs more)
+      - RATE_LIMIT_ZONE_SIZE=${RATE_LIMIT_ZONE_SIZE:-10m}    # Memory for rate limit tracking (10m = ~160k IPs)
     volumes:
-      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
       - ./voice-bot/certs:/etc/nginx/ssl:ro  # Share SSL certs with voice-bot
       - nginx-logs:/var/log/nginx

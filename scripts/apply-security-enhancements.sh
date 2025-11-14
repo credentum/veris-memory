@@ -110,11 +110,20 @@ if [[ -f "${SCRIPT_DIR}/security/security-audit.sh" ]]; then
     if crontab -l -u "${CRON_USER}" 2>/dev/null | grep -F "${SCRIPT_DIR}/security/security-audit.sh" > /dev/null; then
         echo -e "${YELLOW}⚠ Cron job already exists${NC}"
     else
+        # Backup existing crontab
+        CRONTAB_BACKUP="/opt/veris-memory-backups/crontab/crontab-backup-$(date +%Y%m%d-%H%M%S)"
+        mkdir -p "$(dirname "${CRONTAB_BACKUP}")"
+        if crontab -l -u "${CRON_USER}" > /dev/null 2>&1; then
+            crontab -l -u "${CRON_USER}" > "${CRONTAB_BACKUP}"
+            echo "  → Backed up existing crontab to: ${CRONTAB_BACKUP}"
+        fi
+
         # Add cron job
         (crontab -l -u "${CRON_USER}" 2>/dev/null; echo "${CRON_JOB}") | crontab -u "${CRON_USER}" -
         echo -e "${GREEN}✓ Weekly security audit scheduled (Sundays at 2 AM)${NC}"
         echo "  - Logs: /var/log/veris-memory-security-audit.log"
         echo "  - To view cron: crontab -l"
+        echo "  - Backup: ${CRONTAB_BACKUP}"
     fi
 else
     echo -e "${YELLOW}⚠ security-audit.sh not found, skipping cron setup${NC}"
