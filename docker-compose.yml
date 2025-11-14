@@ -7,7 +7,7 @@ services:
       context: .
       dockerfile: dockerfiles/Dockerfile
     ports:
-      - "127.0.0.1:8000:8000"  # SECURITY: Bind to localhost only
+      - "8000:8000"  # SECURITY: Accessible via Docker bridge network for MCP clients (external access blocked by firewall)
     environment:
       - QDRANT_URL=http://qdrant:6333
       - NEO4J_URI=bolt://neo4j:7687
