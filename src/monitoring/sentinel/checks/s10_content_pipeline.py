@@ -233,17 +233,19 @@ class ContentPipelineMonitoring(BaseCheck):
                     test_id = f"pipeline_test_{uuid.uuid4().hex[:8]}"
                     content_type = sample["type"]
                     content_data = sample["content"]
-                    
-                    # Prepare ingestion payload
+
+                    # Prepare ingestion payload - API expects content as string
                     ingestion_payload = {
                         "context_type": "pipeline_test",
-                        "content": content_data,
+                        "content": content_data["text"],  # Extract text string from content dict
                         "title": f"Pipeline Test - {content_type} #{i+1}",
                         "metadata": {
                             "test_id": test_id,
                             "content_type": content_type,
                             "test_timestamp": datetime.utcnow().isoformat(),
-                            "expected_features": sample.get("expected_features", [])
+                            "expected_features": sample.get("expected_features", []),
+                            "original_title": content_data.get("title", ""),
+                            "tags": content_data.get("tags", [])
                         }
                     }
                     
@@ -526,14 +528,12 @@ class ContentPipelineMonitoring(BaseCheck):
                 # Test storage consistency by storing and immediately retrieving content
                 test_content = {
                     "context_type": "consistency_test",
-                    "content": {
-                        "text": f"Storage consistency test content - {datetime.utcnow().isoformat()}",
-                        "test_type": "consistency_validation"
-                    },
+                    "content": f"Storage consistency test content - {datetime.utcnow().isoformat()}",  # String, not dict
                     "title": "Storage Consistency Test",
                     "metadata": {
                         "test_timestamp": datetime.utcnow().isoformat(),
-                        "consistency_test": True
+                        "consistency_test": True,
+                        "test_type": "consistency_validation"
                     }
                 }
                 
@@ -542,7 +542,7 @@ class ContentPipelineMonitoring(BaseCheck):
                 # Store multiple test contexts
                 for i in range(5):
                     test_content["title"] = f"Storage Consistency Test #{i+1}"
-                    test_content["content"]["text"] = f"Storage consistency test content #{i+1} - {datetime.utcnow().isoformat()}"
+                    test_content["content"] = f"Storage consistency test content #{i+1} - {datetime.utcnow().isoformat()}"
 
                     try:
                         store_url = f"{self.veris_memory_url}/api/v1/contexts"
@@ -633,14 +633,12 @@ class ContentPipelineMonitoring(BaseCheck):
                 for i in range(10):  # Test with 10 rapid operations
                     test_content = {
                         "context_type": "throughput_test",
-                        "content": {
-                            "text": f"Throughput test content #{i+1}",
-                            "performance_test": True
-                        },
+                        "content": f"Throughput test content #{i+1}",  # String, not dict
                         "title": f"Throughput Test #{i+1}",
                         "metadata": {
                             "test_type": "throughput",
-                            "operation_index": i
+                            "operation_index": i,
+                            "performance_test": True
                         }
                     }
 
@@ -672,11 +670,11 @@ class ContentPipelineMonitoring(BaseCheck):
                     # Store content
                     test_content = {
                         "context_type": "latency_test",
-                        "content": {
-                            "text": f"Latency test content for measurement #{i+1}",
+                        "content": f"Latency test content for measurement #{i+1}",  # String, not dict
+                        "title": f"Latency Test #{i+1}",
+                        "metadata": {
                             "performance_test": True
-                        },
-                        "title": f"Latency Test #{i+1}"
+                        }
                     }
 
                     try:
@@ -722,11 +720,11 @@ class ContentPipelineMonitoring(BaseCheck):
                 async def concurrent_operation(session, index):
                     test_content = {
                         "context_type": "concurrent_test",
-                        "content": {
-                            "text": f"Concurrent test content #{index}",
+                        "content": f"Concurrent test content #{index}",  # String, not dict
+                        "title": f"Concurrent Test #{index}",
+                        "metadata": {
                             "performance_test": True
-                        },
-                        "title": f"Concurrent Test #{index}"
+                        }
                     }
 
                     try:
@@ -812,11 +810,11 @@ class ContentPipelineMonitoring(BaseCheck):
                 try:
                     oversized_content = {
                         "context_type": "error_test",
-                        "content": {
-                            "text": "x" * 1000000,  # 1MB of text
+                        "content": "x" * 1000000,  # 1MB of text - string, not dict
+                        "title": "Oversized Content Test",
+                        "metadata": {
                             "oversized": True
-                        },
-                        "title": "Oversized Content Test"
+                        }
                     }
                     
                     async with session.post(store_url, json=oversized_content) as response:
@@ -917,13 +915,11 @@ class ContentPipelineMonitoring(BaseCheck):
                 # Stage 1: Content Creation
                 lifecycle_content = {
                     "context_type": "lifecycle_test",
-                    "content": {
-                        "text": f"Content lifecycle test - {datetime.utcnow().isoformat()}",
-                        "lifecycle_stage": "creation"
-                    },
+                    "content": f"Content lifecycle test - {datetime.utcnow().isoformat()}",  # String, not dict
                     "title": "Content Lifecycle Test",
                     "metadata": {
                         "lifecycle_test": True,
+                        "lifecycle_stage": "creation",
                         "created_at": datetime.utcnow().isoformat()
                     }
                 }
