@@ -7,18 +7,18 @@ version: "3.8"
 services:
   # LiveKit Server for Real-Time Voice
   livekit:
-    image: livekit/livekit-server:latest
+    build:
+      context: ./dockerfiles
+      dockerfile: Dockerfile.livekit
+    image: veris-memory/livekit:v1.7.0-healthcheck
     container_name: livekit-server
     ports:
-      - "7880:7880"  # WebRTC
-      - "7881:7881"  # TURN/TLS
-      - "7882:7882"  # Metrics
+      - "7880:7880"     # HTTP/WebSocket
+      - "7881:7881"     # TURN/TLS (if needed)
+      - "50000-50100:50000-50100/udp"  # RTC UDP port range (limited for dev)
     environment:
-      - LIVEKIT_KEYS=${LIVEKIT_API_KEY}:${LIVEKIT_API_SECRET}
+      - "LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecret}"
       - LIVEKIT_WEBHOOK_URLS=${LIVEKIT_WEBHOOK_URLS:-}
-      - LIVEKIT_TURN_ENABLED=true
-      - LIVEKIT_PORT=7880
-      - LIVEKIT_RTC_PORT=7881
     volumes:
       - ./docker/livekit/config.yaml:/etc/livekit.yaml:ro
     networks:
@@ -26,11 +26,11 @@ services:
       - voice-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7880/"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
+      test: ["CMD", "curl", "-f", "http://localhost:7880/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
 
   # Voice Bot Service - Integrates LiveKit with MCP Memory
   voice-bot:
@@ -41,8 +41,9 @@ services:
     environment:
       # LiveKit Configuration
       - LIVEKIT_URL=ws://livekit:7880
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - LIVEKIT_WS_URL=${LIVEKIT_WS_URL:-ws://135.181.4.118:7880}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devsecret}
 
       # MCP Server Connection (using existing context-store)
       - MCP_SERVER_URL=http://context-store:8000
@@ -56,6 +57,12 @@ services:
       - HOST=0.0.0.0
       - PORT=8002
       - LOG_LEVEL=info
+
+      # SSL Configuration (configurable via environment variables)
+      # Default paths for containerized deployment
+      # Override via: export SSL_KEYFILE=/custom/path/key.pem SSL_CERTFILE=/custom/path/cert.pem
+      - SSL_KEYFILE=${SSL_KEYFILE:-/app/certs/key.pem}
+      - SSL_CERTFILE=${SSL_CERTFILE:-/app/certs/cert.pem}
 
       # Voice Configuration
       - STT_PROVIDER=${STT_PROVIDER:-deepgram}
@@ -76,13 +83,14 @@ services:
       - voice-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:8002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
     volumes:
       - ./voice-bot/app:/app/app:ro
+      - ./voice-bot/certs:/app/certs:ro
       - voice-bot-logs:/app/logs
 
 # Volumes for voice services
@@ -94,6 +102,7 @@ volumes:
 networks:
   voice-network:
     driver: bridge
+    name: veris-memory-dev_voice-network
   context-store-network:
     external: false
-    name: veris-memory_context-store-network
+    name: veris-memory-dev_context-store-network

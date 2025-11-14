@@ -340,7 +340,7 @@ class HashDiffEmbedder:
 
             # Store in Qdrant
             collection_name = self.config.get("qdrant", {}).get(
-                "collection_name", "project_context"
+                "collection_name", "context_embeddings"
             )
             if self.client is not None:
                 self.client.upsert(

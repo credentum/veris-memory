@@ -41,7 +41,7 @@ search:
 qdrant:
   host: qdrant              # FROZEN: Docker network name
   port: 6333
-  collection: project_context # FROZEN: Working collection name
+  collection: context_embeddings # UPDATED: Use actual existing collection
   wait_writes: true         # FROZEN: CRITICAL for immediate consistency
   ssl: false
   grpc_port: 6334

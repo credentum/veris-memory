@@ -4,18 +4,18 @@
 port: 7880
 rtc:
   port_range_start: 50000
-  port_range_end: 60000
-  use_external_ip: false
+  port_range_end: 50100
+  use_external_ip: true
 
 # Keys are set via LIVEKIT_KEYS environment variable
 # Format: LIVEKIT_KEYS=<api_key>:<api_secret>
 
-# Enable TURN for NAT traversal
-turn:
-  enabled: true
-  domain: localhost
-  tls_port: 5349
-  udp_port: 3478
+# TURN disabled for development (can be enabled later if needed)
+# turn:
+#   enabled: true
+#   domain: localhost
+#   tls_port: 5349
+#   udp_port: 3478
 
 # Webhook configuration (optional)
 # webhook:

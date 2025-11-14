@@ -22,15 +22,16 @@ class TestMetricsWiring:
     @pytest.fixture
     def config(self):
         """Create a test configuration."""
+        # PR #240: Updated to match actual metrics exposed by /metrics endpoint
         return SentinelConfig({
             "metrics_endpoint": "http://test.example.com/metrics",
             "prometheus_url": "http://test.example.com:9090",
             "grafana_url": "http://test.example.com:3000",
             "s4_metrics_timeout_sec": 10,
             "s4_expected_metrics": [
-                "veris_memory_requests_total",
-                "veris_memory_contexts_stored",
-                "veris_memory_response_time_seconds"
+                "veris_memory_health_status",
+                "veris_memory_uptime_seconds",
+                "veris_memory_info"
             ]
         })
     
@@ -115,12 +116,13 @@ class TestMetricsWiring:
         """Test successful metrics endpoint check."""
         mock_response = AsyncMock()
         mock_response.status = 200
+        # PR #240: Updated to use actual metrics from /metrics endpoint
         mock_response.text = AsyncMock(return_value="""
-# HELP veris_memory_requests_total Total number of requests
-# TYPE veris_memory_requests_total counter
-veris_memory_requests_total{method="GET"} 1234
-veris_memory_requests_total{method="POST"} 567
-veris_memory_contexts_stored 890
+# HELP veris_memory_health_status Service health status (1=healthy, 0=unhealthy)
+# TYPE veris_memory_health_status gauge
+veris_memory_health_status{service="overall"} 1
+veris_memory_uptime_seconds 1234
+veris_memory_info{version="0.9.0",protocol="MCP-1.0"} 1
         """.strip())
         
         mock_session = AsyncMock()
@@ -173,13 +175,14 @@ veris_memory_contexts_stored 890
         """Test metrics format validation with valid Prometheus format."""
         mock_response = AsyncMock()
         mock_response.status = 200
+        # PR #240: Updated to use actual metrics from /metrics endpoint
         mock_response.text = AsyncMock(return_value="""
-# HELP veris_memory_requests_total Total requests
-# TYPE veris_memory_requests_total counter
-veris_memory_requests_total{method="GET"} 1234.0
-# HELP veris_memory_contexts_stored Stored contexts
-# TYPE veris_memory_contexts_stored gauge
-veris_memory_contexts_stored 567
+# HELP veris_memory_health_status Service health status (1=healthy, 0=unhealthy)
+# TYPE veris_memory_health_status gauge
+veris_memory_health_status{service="overall"} 1
+# HELP veris_memory_uptime_seconds Service uptime in seconds
+# TYPE veris_memory_uptime_seconds counter
+veris_memory_uptime_seconds 567
         """.strip())
         
         mock_session = AsyncMock()
@@ -227,10 +230,11 @@ invalid_metric_line_without_value
         # Mock Prometheus query endpoint
         mock_query_response = AsyncMock()
         mock_query_response.status = 200
+        # PR #240: Updated to use actual metrics from /metrics endpoint
         mock_query_response.json = AsyncMock(return_value={
             "data": {
                 "result": [
-                    {"metric": {"__name__": "veris_memory_requests_total"}, "value": [1234567890, "123"]}
+                    {"metric": {"__name__": "veris_memory_health_status"}, "value": [1234567890, "1"]}
                 ]
             }
         })

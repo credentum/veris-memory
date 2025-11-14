@@ -1246,7 +1246,7 @@ async def store_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
                 # Use the collection name from config or default
                 collection_name = qdrant_client.config.get("qdrant", {}).get(
-                    "collection_name", "project_context"
+                    "collection_name", "context_embeddings"
                 )
 
                 # Store the vector using VectorDBInitializer.store_vector method with circuit breaker
@@ -1661,7 +1661,7 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
                     # Search with each query variant - run async for better performance
                     collection_name = qdrant_client.config.get("qdrant", {}).get(
-                        "collection_name", "project_context"
+                        "collection_name", "context_embeddings"
                     )
 
                     # Build Qdrant filter from metadata_filters and context_type
@@ -1986,18 +1986,20 @@ async def retrieve_context_tool(arguments: Dict[str, Any]) -> Dict[str, Any]:
         if metadata_filters and enhanced_results:
             filtered_results = []
             for result in enhanced_results:
-                metadata = result.get('metadata', {})
-                
+                # Fix: Access metadata from correct nesting level in payload structure
+                # User metadata is stored at payload.metadata, not at top level
+                metadata = result.get('payload', {}).get('metadata', {})
+
                 # Check if all metadata filters match exactly
                 match = True
                 for filter_key, filter_value in metadata_filters.items():
                     if metadata.get(filter_key) != filter_value:
                         match = False
                         break
-                
+
                 if match:
                     filtered_results.append(result)
-            
+
             enhanced_results = filtered_results
             logger.info(f"Strict metadata filtering applied: {len(enhanced_results)} results remaining")
 

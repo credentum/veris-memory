@@ -61,7 +61,8 @@ agents:
 qdrant:
   host: localhost
   port: 6333
-  collection_name: project_context
+  # Collection name for vector storage (should match QDRANT_COLLECTION_NAME env var in docker-compose.yml)
+  collection_name: context_embeddings
   ssl: false
   grpc_port: 6334
   prefer_grpc: false

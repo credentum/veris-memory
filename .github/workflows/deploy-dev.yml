@@ -13,6 +13,9 @@ on:
       - 'docker-compose*.yml'
       - '.env*'
       - 'scripts/deploy-dev.sh'
+      - 'scripts/deploy-environment.sh'
+      - 'scripts/init-neo4j-schema.sh'
+      - 'deployments/**'
       - '.github/workflows/deploy-dev.yml'
   workflow_dispatch:
     inputs:
@@ -106,9 +109,16 @@ jobs:
             
             echo -n "  MCP Server: "
             curl -s http://localhost:8000/health > /dev/null 2>&1 && echo "✓ (8000)" || echo "✗"
-            
+
             echo -n "  REST API: "
             curl -s http://localhost:8001/api/v1/health > /dev/null 2>&1 && echo "✓ (8001)" || echo "✗"
+
+            echo -n "  Voice-Bot: "
+            curl -k -s https://localhost:8002/health > /dev/null 2>&1 && echo "✓ HTTPS (8002)" || \
+            curl -s http://localhost:8002/health > /dev/null 2>&1 && echo "✓ HTTP (8002)" || echo "✗"
+
+            echo -n "  LiveKit: "
+            curl -s http://localhost:7880/ > /dev/null 2>&1 && echo "✓ (7880)" || echo "✗"
           EOF
 
       - name: Generate Deployment Report

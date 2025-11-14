@@ -13,8 +13,9 @@ logger = logging.getLogger(__name__)
 class VoiceHandler:
     """Handles LiveKit voice interactions"""
 
-    def __init__(self, livekit_url: str, api_key: str, api_secret: str):
-        self.livekit_url = livekit_url
+    def __init__(self, livekit_url: str, api_key: str, api_secret: str, livekit_ws_url: Optional[str] = None):
+        self.livekit_url = livekit_url  # Internal URL for backend API calls
+        self.livekit_ws_url = livekit_ws_url or livekit_url  # Public URL for browser clients
         self.api_key = api_key
         self.api_secret = api_secret
         self.lk_api = None
@@ -72,7 +73,7 @@ class VoiceHandler:
             return {
                 "room_name": room_name,
                 "token": user_token,
-                "url": self.livekit_url,
+                "url": self.livekit_ws_url,  # Public URL for browser clients
                 "user_id": user_id,
                 "created_at": datetime.utcnow().isoformat()
             }

@@ -94,12 +94,29 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   echo "📝 Recent commits:"
   git log --oneline -5
 
+  # BACKUP PHASE - Preserve data before cleanup
+  echo "💾 Creating backup before cleanup..."
+  if [ -f "/opt/veris-memory/scripts/backup-restore-integration.sh" ]; then
+    bash /opt/veris-memory/scripts/backup-restore-integration.sh backup dev
+  else
+    echo "⚠️  Backup script not found, skipping backup"
+  fi
+
   # Extensive cleanup
   echo "🧹 Performing comprehensive cleanup..."
 
   # Stop all containers first
   echo "🛑 Stopping all containers gracefully..."
-  docker compose down --remove-orphans 2>/dev/null || true
+  docker compose -p veris-memory-dev down --remove-orphans 2>/dev/null || true
+
+  # CRITICAL: Also stop any containers using the OLD project name (without -dev)
+  echo "🧹 Cleaning up old project name containers..."
+  docker compose -p veris-memory down --remove-orphans 2>/dev/null || true
+
+  # Remove old networks to force recreation with correct project name
+  echo "🌐 Removing old Docker networks..."
+  docker network rm veris-memory_context-store-network 2>/dev/null && echo "  ✓ Removed: veris-memory_context-store-network" || echo "  ℹ️ Already removed"
+  docker network rm veris-memory_voice-network 2>/dev/null && echo "  ✓ Removed: veris-memory_voice-network" || echo "  ℹ️ Already removed"
 
   # Force stop any remaining containers with our project name
   echo "🛑 Force stopping any remaining veris-memory containers..."
@@ -150,6 +167,15 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     # Fallback deployment for dev
     echo "🛑 Stopping existing dev containers..."
     docker compose -p veris-memory-dev down --remove-orphans 2>/dev/null || true
+
+    # CRITICAL: Also stop any containers using the OLD project name (without -dev)
+    echo "🧹 Cleaning up old project name containers..."
+    docker compose -p veris-memory down --remove-orphans 2>/dev/null || true
+
+    # Remove old networks to force recreation with correct project name
+    echo "🌐 Removing old Docker networks to force recreation..."
+    docker network rm veris-memory_context-store-network 2>/dev/null && echo "  ✓ Removed old network: veris-memory_context-store-network" || echo "  ℹ️ Old network not found (already removed)"
+    docker network rm veris-memory_voice-network 2>/dev/null && echo "  ✓ Removed old network: veris-memory_voice-network" || echo "  ℹ️ Voice network not found"
 
     # Stop containers on dev ports (standard ports we test with)
     for port in 8000 6333 7474 7687 6379 6334; do
@@ -230,6 +256,10 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
       printf "STRICT_EMBEDDINGS=false\\n"
       printf "EMBEDDING_DIM=384\\n"
 
+      # Qdrant Collection Configuration (PR #238)
+      printf "\\n# Qdrant Collection Name (must match across all components)\\n"
+      printf "QDRANT_COLLECTION_NAME=context_embeddings\\n"
+
       # Voice Platform Configuration
       printf "\\n# TeamAI Voice Platform Configuration\\n"
       if [ -n "\$LIVEKIT_API_KEY" ]; then
@@ -264,6 +294,11 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
       printf "ENABLE_FACT_STORAGE=true\\n"
       printf "ENABLE_CONVERSATION_TRACE=true\\n"
 
+      # Voice Bot SSL Configuration (auto-generated)
+      printf "\\n# SSL Configuration for Voice Bot\\n"
+      printf "SSL_KEYFILE=/app/certs/key.pem\\n"
+      printf "SSL_CERTFILE=/app/certs/cert.pem\\n"
+
       # Sentinel Monitoring Configuration
       printf "\\n# Sentinel Monitoring Authentication\\n"
       if [ -n "\$SENTINEL_API_KEY" ]; then
@@ -281,19 +316,152 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     fi
     echo "✅ Configuration file created successfully"
 
-    # Build and start services
+    # Generate SSL certificates for voice-bot if they don't exist
+    echo "🔐 Checking SSL certificates for voice-bot..."
+    CERT_DIR="/opt/veris-memory/voice-bot/certs"
+    if [ ! -d "\$CERT_DIR" ]; then
+      echo "📁 Creating certs directory..."
+      mkdir -p "\$CERT_DIR"
+    fi
+
+    if [ ! -f "\$CERT_DIR/key.pem" ] || [ ! -f "\$CERT_DIR/cert.pem" ]; then
+      echo "📜 Generating self-signed SSL certificate..."
+      openssl req -x509 -newkey rsa:4096 -nodes \
+        -keyout "\$CERT_DIR/key.pem" \
+        -out "\$CERT_DIR/cert.pem" \
+        -days 365 \
+        -subj "/C=US/ST=State/L=City/O=Personal/CN=\$(hostname -I | awk '{print \$1}')" \
+        2>/dev/null || echo "⚠️  Certificate generation failed, voice-bot will use HTTP"
+
+      if [ -f "\$CERT_DIR/key.pem" ] && [ -f "\$CERT_DIR/cert.pem" ]; then
+        echo "✅ SSL certificates generated successfully"
+        chmod 600 "\$CERT_DIR/key.pem"
+        chmod 644 "\$CERT_DIR/cert.pem"
+      fi
+    else
+      echo "✅ SSL certificates already exist"
+      # Check certificate expiry (warn if less than 30 days)
+      CERT_EXPIRY=\$(openssl x509 -enddate -noout -in "\$CERT_DIR/cert.pem" 2>/dev/null | cut -d= -f2)
+      if [ -n "\$CERT_EXPIRY" ]; then
+        EXPIRY_EPOCH=\$(date -d "\$CERT_EXPIRY" +%s 2>/dev/null || echo 0)
+        NOW_EPOCH=\$(date +%s)
+        DAYS_LEFT=\$(( (\$EXPIRY_EPOCH - \$NOW_EPOCH) / 86400 ))
+
+        if [ \$DAYS_LEFT -lt 30 ] && [ \$DAYS_LEFT -gt 0 ]; then
+          echo "⚠️  SSL certificate expires in \$DAYS_LEFT days"
+          echo "   Consider regenerating: rm -rf \$CERT_DIR && redeploy"
+        elif [ \$DAYS_LEFT -le 0 ]; then
+          echo "⚠️  SSL certificate has EXPIRED! Regenerating..."
+          rm -f "\$CERT_DIR/key.pem" "\$CERT_DIR/cert.pem"
+          openssl req -x509 -newkey rsa:4096 -nodes \
+            -keyout "\$CERT_DIR/key.pem" \
+            -out "\$CERT_DIR/cert.pem" \
+            -days 365 \
+            -subj "/C=US/ST=State/L=City/O=Personal/CN=\$(hostname -I | awk '{print \$1}')" \
+            2>/dev/null && echo "✅ SSL certificate regenerated"
+          chmod 600 "\$CERT_DIR/key.pem" 2>/dev/null
+          chmod 644 "\$CERT_DIR/cert.pem" 2>/dev/null
+        else
+          echo "   Valid for \$DAYS_LEFT more days"
+        fi
+      fi
+    fi
+
+    # Build and start services (including voice-bot)
     echo "🏗️  Building and starting services..."
-    docker compose up -d --build
+
+    # Deploy main services
+    docker compose -p veris-memory-dev up -d --build
+
+    # Deploy voice platform services (voice-bot + livekit)
+    if [ -f "docker-compose.voice.yml" ]; then
+      echo "🎙️  Deploying voice platform..."
+      docker compose -p veris-memory-dev -f docker-compose.yml -f docker-compose.voice.yml up -d --build voice-bot livekit
+    else
+      echo "⚠️  docker-compose.voice.yml not found, skipping voice-bot deployment"
+    fi
 
     echo "⏳ Waiting for services to start..."
     sleep 10
 
     # Show service status
     echo "📊 Service Status:"
-    docker compose ps
+    docker compose -p veris-memory-dev ps
 
+    # Initialize Neo4j schema
+    echo ""
+    echo "🔧 Initializing Neo4j schema..."
+    if [ -f "scripts/init-neo4j-schema.sh" ]; then
+      chmod +x scripts/init-neo4j-schema.sh
+      # Run schema initialization with proper error handling
+      if ./scripts/init-neo4j-schema.sh; then
+        echo "✅ Schema initialization completed successfully"
+      else
+        SCHEMA_EXIT_CODE=\$?
+        # Non-zero exit could be warnings (e.g., already exists) or real errors
+        # Log the warning but continue deployment
+        echo "⚠️  Schema initialization exited with code \$SCHEMA_EXIT_CODE"
+        echo "   Deployment will continue, but verify schema manually if needed"
+      fi
+    else
+      echo "⚠️  Neo4j schema initialization script not found"
+      echo "   Attempting manual initialization..."
+
+      # Fallback: Run schema init via docker exec
+      NEO4J_CONTAINER=\$(docker ps --filter "name=neo4j" --format "{{.Names}}" | head -1)
+      if [ -n "\$NEO4J_CONTAINER" ]; then
+        echo "   Found Neo4j container: \$NEO4J_CONTAINER"
+
+        # Create constraint with proper error handling
+        CONSTRAINT_OUTPUT=\$(docker exec -e NEO4J_PASSWORD="\$NEO4J_PASSWORD" "\$NEO4J_CONTAINER" \
+          sh -c 'cypher-shell -u neo4j -p "\$NEO4J_PASSWORD" "CREATE CONSTRAINT context_id_unique IF NOT EXISTS FOR (c:Context) REQUIRE c.id IS UNIQUE"' 2>&1)
+        CONSTRAINT_RESULT=\$?
+
+        if [ \$CONSTRAINT_RESULT -eq 0 ]; then
+          echo "   ✅ Context constraint created"
+        elif echo "\$CONSTRAINT_OUTPUT" | grep -qi "already exists"; then
+          echo "   ℹ️  Context constraint already exists (idempotent)"
+        else
+          echo "   ⚠️  Constraint creation failed: \$CONSTRAINT_OUTPUT"
+        fi
+
+        # Create index with proper error handling
+        INDEX_OUTPUT=\$(docker exec -e NEO4J_PASSWORD="\$NEO4J_PASSWORD" "\$NEO4J_CONTAINER" \
+          sh -c 'cypher-shell -u neo4j -p "\$NEO4J_PASSWORD" "CREATE INDEX context_type_idx IF NOT EXISTS FOR (c:Context) ON (c.type)"' 2>&1)
+        INDEX_RESULT=\$?
+
+        if [ \$INDEX_RESULT -eq 0 ]; then
+          echo "   ✅ Context index created"
+        elif echo "\$INDEX_OUTPUT" | grep -qi "already exists"; then
+          echo "   ℹ️  Context index already exists (idempotent)"
+        else
+          echo "   ⚠️  Index creation failed: \$INDEX_OUTPUT"
+        fi
+
+        echo "   ✅ Basic schema initialization attempted"
+      else
+        echo "   ⚠️  Neo4j container not found, skipping schema init"
+      fi
+    fi
+
+    # Show voice-bot status specifically
+    echo ""
+    echo "🎙️  Voice Platform Status:"
+    docker compose -p veris-memory-dev -f docker-compose.yml -f docker-compose.voice.yml ps voice-bot livekit 2>/dev/null || echo "Voice services not running"
+
+    echo ""
     echo "✅ Development deployment completed!"
   fi
+
+  # RESTORE PHASE - Restore data after deployment
+  echo "♻️  Restoring backed up data..."
+  if [ -f "/opt/veris-memory/scripts/backup-restore-integration.sh" ]; then
+    bash /opt/veris-memory/scripts/backup-restore-integration.sh restore dev
+  else
+    echo "⚠️  Restore script not found, skipping restore"
+  fi
+
+  echo "✅ Deployment with backup/restore completed!"
 EOSSH
 
 echo "✅ Deployment script completed successfully"

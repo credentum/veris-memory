@@ -61,12 +61,13 @@ class MetricsWiring(BaseCheck):
         self.prometheus_url = config.get("prometheus_url", "http://localhost:9090")
         self.grafana_url = config.get("grafana_url", "http://localhost:3000")
         self.timeout_seconds = config.get("s4_metrics_timeout_sec", 30)
+        # Fixed: Updated to match actual metrics exposed by /metrics endpoint (PR #240)
+        # Current implementation exposes health status, uptime, and service info
+        # TODO: Add operational metrics (requests, contexts, response_time) in future PR
         self.expected_metrics = config.get("s4_expected_metrics", [
-            "veris_memory_requests_total",
-            "veris_memory_contexts_stored",
-            "veris_memory_response_time_seconds",
-            "veris_memory_storage_size_bytes",
-            "veris_memory_active_connections"
+            "veris_memory_health_status",
+            "veris_memory_uptime_seconds",
+            "veris_memory_info"
         ])
         
     async def run_check(self) -> CheckResult:

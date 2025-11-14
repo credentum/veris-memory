@@ -22,9 +22,14 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+# Configuration
+MCP_INTERNAL_URL = os.getenv("MCP_INTERNAL_URL", "http://localhost:8000")
+MCP_FORWARD_TIMEOUT = float(os.getenv("MCP_FORWARD_TIMEOUT", "30.0"))
 
 # Create router for REST compatibility endpoints
 router = APIRouter(prefix="/api", tags=["REST Compatibility"])
@@ -83,43 +88,55 @@ async def forward_to_mcp_tool(
 
     Returns:
         Tool execution result
+
+    Raises:
+        HTTPException: If the MCP tool call fails
     """
     import httpx
 
     try:
-        # Get the base URL for internal calls
-        # Use localhost since we're calling ourselves
-        base_url = "http://localhost:8000"
+        # Use configurable base URL for internal calls
+        base_url = MCP_INTERNAL_URL
 
         # Forward the request to the MCP tool endpoint
         async with httpx.AsyncClient() as client:
-            # Get API key from request if present
+            # Forward authentication headers
             headers = {}
+
+            # Forward x-api-key header if present
             if "x-api-key" in request.headers:
                 headers["x-api-key"] = request.headers["x-api-key"]
+
+            # Forward Authorization header if present (Bearer tokens, etc.)
+            if "authorization" in request.headers:
+                headers["authorization"] = request.headers["authorization"]
 
             response = await client.post(
                 f"{base_url}{tool_path}",
                 json=payload,
                 headers=headers,
-                timeout=30.0
+                timeout=MCP_FORWARD_TIMEOUT
             )
 
             if response.status_code == 200:
                 return response.json()
             else:
-                logger.error(f"MCP tool call failed: {response.status_code} - {response.text}")
+                # Log detailed error for debugging, but return sanitized error to client
+                logger.debug(f"MCP tool call failed: {response.status_code} - {response.text}")
+                logger.error(f"MCP tool call to {tool_path} failed with status {response.status_code}")
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=f"MCP tool call failed: {response.text}"
+                    detail="Internal service error"
                 )
 
     except httpx.RequestError as e:
-        logger.error(f"HTTP request error calling MCP tool: {e}")
-        raise HTTPException(status_code=503, detail=f"Service unavailable: {str(e)}")
+        logger.error(f"HTTP request error calling MCP tool {tool_path}: {e}")
+        raise HTTPException(status_code=503, detail="Service unavailable")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error forwarding to MCP tool {tool_path}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # === REST API Endpoints ===
@@ -164,7 +181,7 @@ async def create_context(
         raise
     except Exception as e:
         logger.error(f"Error in create_context: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/v1/contexts/search", response_model=SearchResponse)
@@ -213,7 +230,7 @@ async def search_contexts(
         raise
     except Exception as e:
         logger.error(f"Error in search_contexts: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/v1/contexts/{context_id}")
@@ -227,9 +244,10 @@ async def get_context(
     Maps to MCP tool: query_graph with context ID lookup
     """
     try:
-        # Use query_graph to find specific context by ID
+        # Use parameterized Cypher query to prevent injection attacks
         mcp_payload = {
-            "query": f"MATCH (c:Context {{id: '{context_id}'}}) RETURN c LIMIT 1"
+            "query": "MATCH (c:Context {id: $context_id}) RETURN c LIMIT 1",
+            "parameters": {"context_id": context_id}
         }
 
         result = await forward_to_mcp_tool(request, "/tools/query_graph", mcp_payload)
@@ -247,7 +265,7 @@ async def get_context(
         raise
     except Exception as e:
         logger.error(f"Error in get_context: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/admin/config")
@@ -275,7 +293,7 @@ async def get_admin_config() -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"Error in get_admin_config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/admin/stats")
@@ -283,31 +301,40 @@ async def get_admin_stats(request: Request) -> Dict[str, Any]:
     """
     Get system statistics (for sentinel monitoring).
 
-    Returns operational statistics about the system.
+    Returns operational statistics by forwarding to /metrics endpoint.
     """
     try:
-        # Try to get stats from unified backend if available
-        stats = {
-            "success": True,
-            "stats": {
-                "uptime_seconds": 0,  # TODO: Calculate from app start time
-                "total_contexts": 0,  # TODO: Query from backend
-                "total_queries": 0,  # TODO: Get from metrics
-            },
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        # Forward to the actual metrics endpoint which has real stats
+        import httpx
 
-        if hasattr(request.app.state, 'unified_backend'):
-            backend = request.app.state.unified_backend
-            # Add real stats from backend if available
-            # This is a placeholder - actual implementation depends on backend
-            pass
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{MCP_INTERNAL_URL}/metrics",
+                timeout=MCP_FORWARD_TIMEOUT
+            )
 
-        return stats
+            if response.status_code == 200:
+                metrics_data = response.json()
+                # Transform metrics to stats format
+                return {
+                    "success": True,
+                    "stats": metrics_data,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            else:
+                # Return basic stats if metrics endpoint fails
+                return {
+                    "success": True,
+                    "stats": {
+                        "message": "Metrics endpoint unavailable",
+                        "status": "operational"
+                    },
+                    "timestamp": datetime.utcnow().isoformat()
+                }
 
     except Exception as e:
         logger.error(f"Error in get_admin_stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/admin/users")
@@ -343,97 +370,58 @@ async def get_admin_root() -> Dict[str, Any]:
 # === Health Endpoint Aliases ===
 
 @router.get("/health/validation")
-async def health_validation(request: Request) -> Dict[str, Any]:
+async def health_validation() -> RedirectResponse:
     """
-    Health check for validation subsystem (alias for /health/detailed).
+    Health check for validation subsystem (redirects to /health/detailed).
     """
-    # Redirect to main health endpoint
-    from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/health/detailed", status_code=307)
 
 
 @router.get("/health/database")
-async def health_database(request: Request) -> Dict[str, Any]:
+async def health_database() -> RedirectResponse:
     """
-    Health check for database subsystem.
+    Health check for database subsystem (redirects to /health/detailed).
     """
-    try:
-        if hasattr(request.app.state, 'unified_backend'):
-            backend = request.app.state.unified_backend
-            # Check database health
-            return {
-                "success": True,
-                "database": "healthy",
-                "message": "Database subsystem operational"
-            }
-        else:
-            return {
-                "success": False,
-                "database": "unavailable",
-                "message": "Backend not initialized"
-            }
-    except Exception as e:
-        return {
-            "success": False,
-            "database": "error",
-            "message": str(e)
-        }
+    return RedirectResponse(url="/health/detailed", status_code=307)
 
 
 @router.get("/health/storage")
-async def health_storage(request: Request) -> Dict[str, Any]:
+async def health_storage() -> RedirectResponse:
     """
-    Health check for storage subsystem.
+    Health check for storage subsystem (redirects to /health/detailed).
     """
-    return {
-        "success": True,
-        "storage": "healthy",
-        "message": "Storage subsystem operational"
-    }
+    return RedirectResponse(url="/health/detailed", status_code=307)
 
 
 @router.get("/health/retrieval")
-async def health_retrieval(request: Request) -> Dict[str, Any]:
+async def health_retrieval() -> RedirectResponse:
     """
-    Health check for retrieval subsystem.
+    Health check for retrieval subsystem (redirects to /health/detailed).
     """
-    return {
-        "success": True,
-        "retrieval": "healthy",
-        "message": "Retrieval subsystem operational"
-    }
+    return RedirectResponse(url="/health/detailed", status_code=307)
 
 
 @router.get("/health/enrichment")
-async def health_enrichment(request: Request) -> Dict[str, Any]:
+async def health_enrichment() -> RedirectResponse:
     """
-    Health check for enrichment subsystem.
+    Health check for enrichment subsystem (redirects to /health/detailed).
     """
-    return {
-        "success": True,
-        "enrichment": "healthy",
-        "message": "Enrichment subsystem operational"
-    }
+    return RedirectResponse(url="/health/detailed", status_code=307)
 
 
 @router.get("/health/indexing")
-async def health_indexing(request: Request) -> Dict[str, Any]:
+async def health_indexing() -> RedirectResponse:
     """
-    Health check for indexing subsystem.
+    Health check for indexing subsystem (redirects to /health/detailed).
     """
-    return {
-        "success": True,
-        "indexing": "healthy",
-        "message": "Indexing subsystem operational"
-    }
+    return RedirectResponse(url="/health/detailed", status_code=307)
 
 
 # === Metrics Alias ===
 
 @router.get("/metrics")
-async def metrics_alias(request: Request) -> Dict[str, Any]:
+async def metrics_alias() -> RedirectResponse:
     """
     Metrics endpoint alias (redirects to /metrics at root).
     """
-    from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/metrics", status_code=307)

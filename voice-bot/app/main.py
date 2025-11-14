@@ -3,12 +3,15 @@ TeamAI Voice Bot - Main FastAPI Application
 Integrates LiveKit voice with Veris MCP memory system
 """
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, Any, Optional
 from .config import settings
 import logging
 import sys
@@ -46,6 +49,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static files for voice bot UI
+static_path = Path(__file__).parent / "static"
+if static_path.exists():
+    app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+    logger.info(f"✅ Mounted static files from {static_path}")
+else:
+    # In production, fail fast if static directory is missing
+    # In development, just warn (allows running without UI)
+    error_msg = f"Static directory not found at {static_path}"
+    if settings.ENVIRONMENT == "production":
+        logger.error(f"❌ {error_msg} - Voice UI will not be available!")
+        logger.error("   Ensure voice-bot/app/static/ directory exists in deployment")
+        raise RuntimeError(f"Static directory required in production but not found: {static_path}")
+    else:
+        logger.warning(f"⚠️  {error_msg} - Voice UI endpoint (/ui) will return 404")
+        logger.warning("   This is acceptable in development but should be fixed for production")
+
 # Global clients (initialized on startup)
 memory_client = None
 voice_handler = None
@@ -80,7 +100,8 @@ async def startup_event():
         voice_handler = VoiceHandler(
             settings.LIVEKIT_URL,
             settings.LIVEKIT_API_KEY,
-            settings.LIVEKIT_API_SECRET
+            settings.LIVEKIT_API_SECRET,
+            settings.LIVEKIT_WS_URL
         )
         await voice_handler.initialize()
         logger.info("✅ Voice handler initialized")
@@ -124,7 +145,7 @@ async def shutdown_event():
 
 
 @app.get("/")
-async def root():
+async def root() -> Dict[str, Any]:
     """Root endpoint with service info"""
     return {
         "service": "TeamAI Voice Bot",
@@ -133,16 +154,26 @@ async def root():
         "endpoints": {
             "health": "/health",
             "docs": "/docs",
+            "ui": "/ui",
             "voice_session": "/api/v1/voice/session",
             "echo_test": "/api/v1/voice/echo-test"
         }
     }
 
 
+@app.get("/ui")
+async def voice_ui() -> FileResponse:
+    """Serve the voice bot UI"""
+    static_path = Path(__file__).parent / "static" / "index.html"
+    if not static_path.exists():
+        raise HTTPException(status_code=404, detail="Voice UI not found")
+    return FileResponse(static_path)
+
+
 @app.get("/health")
-async def health_check():
+async def health_check() -> JSONResponse:
     """Health check endpoint for Docker"""
-    checks = {
+    checks: Dict[str, Any] = {
         "service": "healthy",
         "timestamp": datetime.utcnow().isoformat()
     }
@@ -174,12 +205,12 @@ async def health_check():
 
 
 @app.get("/health/detailed")
-async def detailed_health_check():
+async def detailed_health_check() -> JSONResponse:
     """
     Detailed health check including Sprint 13 embedding pipeline status
     Shows full MCP server health including embedding service
     """
-    checks = {
+    checks: Dict[str, Any] = {
         "service": "voice-bot",
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
@@ -222,7 +253,7 @@ async def detailed_health_check():
 
 @app.post("/api/v1/voice/session")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def create_voice_session(request: Request, user_id: str):
+async def create_voice_session(request: Request) -> JSONResponse:
     """
     Create a new voice session for user
     Returns LiveKit connection details
@@ -233,9 +264,18 @@ async def create_voice_session(request: Request, user_id: str):
         raise HTTPException(status_code=503, detail="Voice handler not initialized")
 
     try:
+        # Get user_id from JSON body
+        body: Dict[str, Any] = await request.json()
+        user_id: Optional[str] = body.get("user_id")
+
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required in request body")
+
         session = await voice_handler.create_voice_session(user_id)
         logger.info(f"Created voice session for user {user_id}: {session['room_name']}")
         return JSONResponse(content=session, status_code=201)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating voice session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -243,12 +283,20 @@ async def create_voice_session(request: Request, user_id: str):
 
 @app.post("/api/v1/voice/echo-test")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def echo_test(request: Request, user_id: str, message: str):
+async def echo_test(request: Request, user_id: str, message: str) -> Dict[str, Any]:
     """
     Echo test endpoint for Sprint 1 validation
     Tests fact storage and retrieval without full voice pipeline
 
     Rate limited to prevent abuse.
+
+    Args:
+        request: FastAPI request object
+        user_id: User identifier
+        message: Message to echo and store
+
+    Returns:
+        Dict containing user_id, input, response, facts, and timestamp
     """
     if not memory_client:
         raise HTTPException(status_code=503, detail="Memory client not initialized")
@@ -281,12 +329,21 @@ async def echo_test(request: Request, user_id: str, message: str):
 
 @app.post("/api/v1/facts/store")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def store_fact(request: Request, user_id: str, key: str, value: str):
+async def store_fact(request: Request, user_id: str, key: str, value: str) -> Dict[str, Any]:
     """
     Store a fact about a user
 
     Rate limited to prevent abuse of fact storage.
     Input validation prevents injection attacks.
+
+    Args:
+        request: FastAPI request object
+        user_id: User identifier (alphanumeric with hyphens/underscores, max 100 chars)
+        key: Fact key (alphanumeric with underscores, max 100 chars)
+        value: Fact value (non-empty, max 1000 chars)
+
+    Returns:
+        Dict containing status, user_id, key, and value
     """
     if not memory_client:
         raise HTTPException(status_code=503, detail="Memory client not initialized")
@@ -323,11 +380,19 @@ async def store_fact(request: Request, user_id: str, key: str, value: str):
 
 @app.get("/api/v1/facts/{user_id}")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def get_facts(request: Request, user_id: str, keys: str = None):
+async def get_facts(request: Request, user_id: str, keys: Optional[str] = None) -> Dict[str, Any]:
     """
     Retrieve facts about a user
 
     Rate limited to prevent abuse of fact retrieval.
+
+    Args:
+        request: FastAPI request object
+        user_id: User identifier
+        keys: Optional comma-separated list of fact keys to retrieve
+
+    Returns:
+        Dict containing user_id, facts dict, count, and timestamp
     """
     if not memory_client:
         raise HTTPException(status_code=503, detail="Memory client not initialized")
@@ -348,9 +413,24 @@ async def get_facts(request: Request, user_id: str, keys: str = None):
 
 if __name__ == "__main__":
     import uvicorn
+
+    # Configure SSL if certificates are provided
+    ssl_kwargs = {}
+    if settings.SSL_KEYFILE and settings.SSL_CERTFILE:
+        ssl_kwargs["ssl_keyfile"] = settings.SSL_KEYFILE
+        ssl_kwargs["ssl_certfile"] = settings.SSL_CERTFILE
+        logger.info(f"🔐 Starting voice-bot with HTTPS enabled")
+        logger.info(f"   Key: {settings.SSL_KEYFILE}")
+        logger.info(f"   Cert: {settings.SSL_CERTFILE}")
+    else:
+        logger.warning("⚠️  Starting voice-bot with HTTP (not HTTPS)")
+        logger.warning("   Microphone access requires HTTPS in most browsers")
+        logger.warning("   Set SSL_KEYFILE and SSL_CERTFILE to enable HTTPS")
+
     uvicorn.run(
         "app.main:app",
         host=settings.HOST,
         port=settings.PORT,
-        reload=True
+        reload=True,
+        **ssl_kwargs
     )

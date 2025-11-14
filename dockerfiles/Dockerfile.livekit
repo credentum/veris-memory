@@ -1,6 +1,10 @@
 # Custom LiveKit Server image with health check tools
 # Based on Alpine Linux
-FROM livekit/livekit-server:latest
+# Pinned to v1.7.0 for security
+# Platform explicitly set to linux/amd64 to prevent architecture mismatch
+# NOTE: SHA256 digest removed because it was pinning the wrong architecture
+# The --platform flag ensures correct architecture variant is pulled
+FROM --platform=linux/amd64 livekit/livekit-server:v1.7.0
 
 # Install curl for health checks
 # LiveKit is based on Alpine Linux

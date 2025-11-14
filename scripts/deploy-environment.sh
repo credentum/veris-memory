@@ -328,6 +328,62 @@ if [ "$all_ports_free" = false ]; then
     exit 1
 fi
 
+# Generate SSL certificates for voice-bot if they don't exist
+echo -e "${BLUE}🔐 Checking SSL certificates for voice-bot...${NC}"
+CERT_DIR="/opt/veris-memory/voice-bot/certs"
+if [ ! -d "$CERT_DIR" ]; then
+    echo "  → Creating certs directory..."
+    mkdir -p "$CERT_DIR"
+fi
+
+if [ ! -f "$CERT_DIR/key.pem" ] || [ ! -f "$CERT_DIR/cert.pem" ]; then
+    echo "  → Generating self-signed SSL certificate..."
+    openssl req -x509 -newkey rsa:4096 -nodes \
+        -keyout "$CERT_DIR/key.pem" \
+        -out "$CERT_DIR/cert.pem" \
+        -days 365 \
+        -subj "/C=US/ST=State/L=City/O=Personal/CN=$(hostname -I | awk '{print $1}')" \
+        2>/dev/null || echo "⚠️  Certificate generation failed, voice-bot will use HTTP"
+
+    if [ -f "$CERT_DIR/key.pem" ] && [ -f "$CERT_DIR/cert.pem" ]; then
+        echo -e "${GREEN}  ✓ SSL certificates generated successfully${NC}"
+        # Set permissions readable by container user (voicebot runs as UID 1000)
+        chmod 644 "$CERT_DIR/key.pem"
+        chmod 644 "$CERT_DIR/cert.pem"
+    fi
+else
+    echo -e "${GREEN}  ✓ SSL certificates already exist${NC}"
+    # Ensure correct permissions on existing certificates
+    chmod 644 "$CERT_DIR/key.pem" 2>/dev/null
+    chmod 644 "$CERT_DIR/cert.pem" 2>/dev/null
+    # Check certificate expiry (warn if less than 30 days)
+    CERT_EXPIRY=$(openssl x509 -enddate -noout -in "$CERT_DIR/cert.pem" 2>/dev/null | cut -d= -f2)
+    if [ -n "$CERT_EXPIRY" ]; then
+        EXPIRY_EPOCH=$(date -d "$CERT_EXPIRY" +%s 2>/dev/null || echo 0)
+        NOW_EPOCH=$(date +%s)
+        DAYS_LEFT=$(( ($EXPIRY_EPOCH - $NOW_EPOCH) / 86400 ))
+
+        if [ $DAYS_LEFT -lt 30 ] && [ $DAYS_LEFT -gt 0 ]; then
+            echo -e "${YELLOW}  ⚠️  SSL certificate expires in $DAYS_LEFT days${NC}"
+            echo "     Consider regenerating: rm -rf $CERT_DIR && redeploy"
+        elif [ $DAYS_LEFT -le 0 ]; then
+            echo -e "${YELLOW}  ⚠️  SSL certificate has EXPIRED! Regenerating...${NC}"
+            rm -f "$CERT_DIR/key.pem" "$CERT_DIR/cert.pem"
+            openssl req -x509 -newkey rsa:4096 -nodes \
+                -keyout "$CERT_DIR/key.pem" \
+                -out "$CERT_DIR/cert.pem" \
+                -days 365 \
+                -subj "/C=US/ST=State/L=City/O=Personal/CN=$(hostname -I | awk '{print $1}')" \
+                2>/dev/null && echo -e "${GREEN}  ✓ SSL certificate regenerated${NC}"
+            # Set permissions readable by container user (voicebot runs as UID 1000)
+            chmod 644 "$CERT_DIR/key.pem" 2>/dev/null
+            chmod 644 "$CERT_DIR/cert.pem" 2>/dev/null
+        else
+            echo "     Valid for $DAYS_LEFT more days"
+        fi
+    fi
+fi
+
 # Build and start services
 echo -e "${GREEN}🚀 Starting $ENVIRONMENT services...${NC}"
 echo -e "${BLUE}🔍 DEBUG: Using docker compose command with:${NC}"
@@ -388,6 +444,16 @@ else
     echo -e "${GREEN}✅ Docker Compose completed successfully${NC}"
 fi
 
+# Deploy voice platform services (voice-bot + livekit)
+if [ -f "docker-compose.voice.yml" ]; then
+    echo ""
+    echo -e "${CYAN}🎙️  Deploying voice platform...${NC}"
+    docker compose -p "$PROJECT_NAME" -f docker-compose.yml -f docker-compose.voice.yml up -d --build voice-bot livekit 2>&1
+    echo -e "${GREEN}✅ Voice platform deployed${NC}"
+else
+    echo -e "${YELLOW}⚠️  docker-compose.voice.yml not found, skipping voice-bot deployment${NC}"
+fi
+
 # Wait for services to be healthy
 echo -e "${BLUE}⏳ Waiting for $ENVIRONMENT services to be healthy...${NC}"
 timeout=300
@@ -419,6 +485,66 @@ else
     echo -e "${YELLOW}⚠️  Bootstrap script not found, skipping${NC}"
 fi
 
+# Initialize Neo4j schema (constraints and indexes)
+echo ""
+echo -e "${BLUE}🔧 Initializing Neo4j schema...${NC}"
+if [ -f "scripts/init-neo4j-schema.sh" ]; then
+    chmod +x scripts/init-neo4j-schema.sh
+    # Set environment variables for the script
+    export NEO4J_CONTAINER="${PROJECT_NAME}-neo4j-1"
+    export NEO4J_HOST="localhost"
+    export NEO4J_PORT=$NEO4J_BOLT_PORT
+    export NEO4J_USER="neo4j"
+    # NEO4J_PASSWORD already set from environment
+
+    if ./scripts/init-neo4j-schema.sh; then
+        echo -e "${GREEN}✅ Schema initialization completed successfully${NC}"
+    else
+        SCHEMA_EXIT_CODE=$?
+        echo -e "${YELLOW}⚠️  Schema initialization exited with code $SCHEMA_EXIT_CODE${NC}"
+        echo -e "${YELLOW}   Deployment will continue, but verify schema manually if needed${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠️  Neo4j schema initialization script not found${NC}"
+    echo -e "${YELLOW}   Attempting manual initialization...${NC}"
+
+    # Fallback: Run schema init via docker exec
+    NEO4J_CONTAINER=$(docker ps --filter "name=${PROJECT_NAME}-neo4j" --format "{{.Names}}" | head -1)
+    if [ -n "$NEO4J_CONTAINER" ]; then
+        echo "   Found Neo4j container: $NEO4J_CONTAINER"
+
+        # Create constraint with proper error handling
+        CONSTRAINT_OUTPUT=$(docker exec -e NEO4J_PASSWORD="$NEO4J_PASSWORD" "$NEO4J_CONTAINER" \
+            sh -c 'cypher-shell -u neo4j -p "$NEO4J_PASSWORD" "CREATE CONSTRAINT context_id_unique IF NOT EXISTS FOR (c:Context) REQUIRE c.id IS UNIQUE"' 2>&1)
+        CONSTRAINT_RESULT=$?
+
+        if [ $CONSTRAINT_RESULT -eq 0 ]; then
+            echo -e "${GREEN}   ✅ Context constraint created${NC}"
+        elif echo "$CONSTRAINT_OUTPUT" | grep -qi "already exists"; then
+            echo "   ℹ️  Context constraint already exists (idempotent)"
+        else
+            echo -e "${YELLOW}   ⚠️  Constraint creation failed: $CONSTRAINT_OUTPUT${NC}"
+        fi
+
+        # Create index with proper error handling
+        INDEX_OUTPUT=$(docker exec -e NEO4J_PASSWORD="$NEO4J_PASSWORD" "$NEO4J_CONTAINER" \
+            sh -c 'cypher-shell -u neo4j -p "$NEO4J_PASSWORD" "CREATE INDEX context_type_idx IF NOT EXISTS FOR (c:Context) ON (c.type)"' 2>&1)
+        INDEX_RESULT=$?
+
+        if [ $INDEX_RESULT -eq 0 ]; then
+            echo -e "${GREEN}   ✅ Context index created${NC}"
+        elif echo "$INDEX_OUTPUT" | grep -qi "already exists"; then
+            echo "   ℹ️  Context index already exists (idempotent)"
+        else
+            echo -e "${YELLOW}   ⚠️  Index creation failed: $INDEX_OUTPUT${NC}"
+        fi
+
+        echo -e "${GREEN}   ✅ Basic schema initialization attempted${NC}"
+    else
+        echo -e "${YELLOW}   ⚠️  Neo4j container not found, skipping schema init${NC}"
+    fi
+fi
+
 # Run environment-specific health checks
 echo -e "${BLUE}🏥 Running $ENVIRONMENT health checks...${NC}"
 echo -n "  → Redis (port $REDIS_PORT): "
@@ -447,6 +573,22 @@ if curl -s http://localhost:$API_PORT/health | grep -q "ok\|healthy"; then
     echo -e "${GREEN}✓ Healthy${NC}"
 else
     echo -e "${RED}✗ Failed${NC}"
+fi
+
+echo -n "  → Voice-Bot (port 8002): "
+if curl -k -s https://localhost:8002/health > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Healthy (HTTPS)${NC}"
+elif curl -s http://localhost:8002/health > /dev/null 2>&1; then
+    echo -e "${YELLOW}✓ Healthy (HTTP - HTTPS not configured)${NC}"
+else
+    echo -e "${YELLOW}⚠ Not running${NC}"
+fi
+
+echo -n "  → LiveKit (port 7880): "
+if curl -s http://localhost:7880/ > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Healthy${NC}"
+else
+    echo -e "${YELLOW}⚠ Not running${NC}"
 fi
 
 # Update firewall rules to ensure all service ports are accessible
@@ -511,16 +653,18 @@ if [ "$ENVIRONMENT" = "dev" ]; then
     echo "Development services available at:"
     echo "  • MCP Server: http://localhost:8000"
     echo "  • REST API: http://localhost:8001"
-    echo "  • Voice-Bot: http://localhost:8002"
+    echo "  • Voice-Bot: https://localhost:8002 (HTTPS with self-signed cert)"
     echo "  • Dashboard: http://localhost:8080"
     echo "  • Sentinel: http://localhost:9090"
     echo "  • Qdrant: http://localhost:$QDRANT_PORT"
     echo "  • Neo4j: http://localhost:$NEO4J_HTTP_PORT"
     echo "  • Redis: localhost:$REDIS_PORT"
+    echo "  • LiveKit: http://localhost:7880"
     echo ""
     echo "External access (if firewall configured):"
     echo "  • API Docs: http://$(hostname -I | awk '{print $1}'):8001/docs"
-    echo "  • Voice Docs: http://$(hostname -I | awk '{print $1}'):8002/docs"
+    echo "  • Voice UI: https://$(hostname -I | awk '{print $1}'):8002/ui (accept SSL warning)"
+    echo "  • Voice Docs: https://$(hostname -I | awk '{print $1}'):8002/docs"
     echo "  • Dashboard: http://$(hostname -I | awk '{print $1}'):8080"
     echo ""
     echo "Run tests with:"
@@ -529,12 +673,13 @@ else
     echo "Production services available at:"
     echo "  • MCP Server: http://localhost:8000"
     echo "  • REST API: http://localhost:8001"
-    echo "  • Voice-Bot: http://localhost:8002"
+    echo "  • Voice-Bot: https://localhost:8002 (HTTPS with self-signed cert)"
     echo "  • Dashboard: http://localhost:8080"
     echo "  • Sentinel: http://localhost:9090"
     echo "  • Qdrant: http://localhost:$QDRANT_PORT"
     echo "  • Neo4j: http://localhost:$NEO4J_HTTP_PORT"
     echo "  • Redis: localhost:$REDIS_PORT"
+    echo "  • LiveKit: http://localhost:7880"
     echo ""
     echo "Run tests with:"
     echo "  python ops/smoke/smoke_runner.py"
