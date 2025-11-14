@@ -135,8 +135,8 @@ else
     add_error "Neo4j health check failed"
 fi
 
-# Redis Health Check
-if echo "PING" | nc -w 2 localhost 6379 | grep -q PONG; then
+# Redis Health Check (use container health status instead of unauthenticated port check)
+if docker inspect --format='{{.State.Health.Status}}' "${PROJECT_NAME}-redis-1" 2>/dev/null | grep -q "healthy"; then
     update_report '.health_checks.redis' '{"status": "healthy", "port": 6379}'
 else
     update_report '.health_checks.redis' '{"status": "unhealthy", "port": 6379}'
