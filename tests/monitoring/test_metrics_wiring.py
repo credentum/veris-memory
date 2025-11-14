@@ -23,17 +23,38 @@ class TestMetricsWiring:
     def config(self):
         """Create a test configuration."""
         # PR #240: Updated to match actual metrics exposed by /metrics endpoint
-        return SentinelConfig({
-            "metrics_endpoint": "http://test.example.com/metrics",
-            "prometheus_url": "http://test.example.com:9090",
-            "grafana_url": "http://test.example.com:3000",
-            "s4_metrics_timeout_sec": 10,
-            "s4_expected_metrics": [
-                "veris_memory_health_status",
-                "veris_memory_uptime_seconds",
-                "veris_memory_info"
-            ]
-        })
+        # PR #247: Use a mock config object that supports .get() for test values
+        class TestConfig:
+            def __init__(self):
+                self.target_base_url = "http://test.example.com"
+                self._config_data = {
+                    "veris_memory_url": "http://test.example.com",
+                    "metrics_endpoint": "http://test.example.com/metrics",
+                    "prometheus_url": "http://test.example.com:9090",
+                    "grafana_url": "http://test.example.com:3000",
+                    "s4_metrics_timeout_sec": 10,
+                    "s4_expected_metrics": [
+                        "veris_memory_health_status",
+                        "veris_memory_uptime_seconds",
+                        "veris_memory_info"
+                    ]
+                }
+
+            def get(self, key: str, default=None):
+                return self._config_data.get(key, default)
+
+            def __getitem__(self, key: str):
+                return self._config_data[key]
+
+            def __setitem__(self, key: str, value):
+                self._config_data[key] = value
+                if key == "veris_memory_url":
+                    self.target_base_url = value
+
+            def is_check_enabled(self, check_id: str) -> bool:
+                return True
+
+        return TestConfig()
     
     @pytest.fixture
     def check(self, config):

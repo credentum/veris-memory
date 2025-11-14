@@ -139,37 +139,42 @@ class SecurityNegatives(BaseCheck):
                     headers = {}
                     if token is not None:
                         headers["Authorization"] = f"Bearer {token}"
-                    
+
                     # Try both API endpoint formats for compatibility
                     test_endpoints = [
                         f"{self.base_url}/api/store_context",
                         f"{self.base_url}/api/v1/contexts"
                     ]
 
-                    try:
-                        for test_endpoint in test_endpoints:
-                            try:
-                                async with session.get(
-                                    test_endpoint,
-                                    headers=headers
-                                ) as response:
-                                    # Should be 401/403 (auth required) or 404 (endpoint not found - acceptable)
-                                    if response.status not in [401, 403, 404]:
-                                        auth_failures.append({
-                                            "token": token or "None",
-                                            "endpoint": test_endpoint,
-                                            "expected_status": "401/403/404",
-                                            "actual_status": response.status,
-                                            "message": "Invalid token was accepted"
-                                        })
-                                    # If we get a valid response (not 404), we tested successfully
-                                    if response.status != 404:
-                                        break
-                            except aiohttp.ClientError:
-                                continue
-                    except aiohttp.ClientError:
-                        # Network errors are acceptable for this test
-                        pass
+                    # PR #247: Consistent error handling - try each endpoint with proper fallback
+                    endpoint_tested = False
+                    for test_endpoint in test_endpoints:
+                        try:
+                            async with session.get(
+                                test_endpoint,
+                                headers=headers
+                            ) as response:
+                                # Should be 401/403 (auth required) or 404 (endpoint not found - acceptable)
+                                if response.status not in [401, 403, 404]:
+                                    auth_failures.append({
+                                        "token": token or "None",
+                                        "endpoint": test_endpoint,
+                                        "expected_status": "401/403/404",
+                                        "actual_status": response.status,
+                                        "message": "Invalid token was accepted"
+                                    })
+                                # If we get a valid response (not 404), we tested successfully
+                                if response.status != 404:
+                                    endpoint_tested = True
+                                    break
+                        except aiohttp.ClientError as e:
+                            # Network errors are acceptable - try next endpoint
+                            logger.debug(f"Network error testing {test_endpoint}: {e}")
+                            continue
+
+                    # Log warning if no endpoint was reachable (but don't fail the check)
+                    if not endpoint_tested:
+                        logger.debug(f"No endpoint reachable for token test, all returned 404 or network error")
             
             return {
                 "passed": len(auth_failures) == 0,

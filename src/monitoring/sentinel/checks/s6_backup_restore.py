@@ -51,16 +51,28 @@ class BackupRestore(BaseCheck):
 
         # PR #247: Validate backup paths for security
         # Only allow paths within approved directories to prevent filesystem exposure
-        approved_prefixes = ["/backup", "/opt/veris-memory-backups", "/var/backups/veris-memory", "/tmp/veris-backups"]
+        approved_prefixes = [
+            os.path.abspath("/backup"),
+            os.path.abspath("/opt/veris-memory-backups"),
+            os.path.abspath("/var/backups/veris-memory"),
+            os.path.abspath("/tmp/veris-backups")
+        ]
         self.backup_paths = []
         for path in raw_paths:
-            # Normalize path to prevent directory traversal
-            normalized = os.path.normpath(path)
-            # Check if path is within approved directories
-            if any(normalized.startswith(prefix) for prefix in approved_prefixes):
-                self.backup_paths.append(normalized)
-            else:
-                logger.warning(f"Skipping backup path '{path}' - not in approved directories: {approved_prefixes}")
+            # Resolve absolute path and normalize to prevent directory traversal attacks
+            # This defends against paths like "/backup/../etc/passwd"
+            try:
+                # Get absolute path (follows symlinks if they exist, but normalizes relative paths)
+                normalized = os.path.abspath(os.path.normpath(path))
+                # Check if the normalized absolute path is within approved directories
+                is_valid = any(normalized.startswith(prefix + os.sep) or normalized == prefix
+                              for prefix in approved_prefixes)
+                if is_valid:
+                    self.backup_paths.append(normalized)
+                else:
+                    logger.warning(f"Skipping backup path '{path}' - resolved to '{normalized}' which is not in approved directories")
+            except Exception as e:
+                logger.warning(f"Skipping invalid backup path '{path}': {e}")
 
         if not self.backup_paths:
             logger.error("No valid backup paths configured after validation")

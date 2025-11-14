@@ -63,10 +63,10 @@ class TelegramAlerter:
         "unknown": "❓"
     }
     
-    def __init__(self, bot_token: str, chat_id: str, rate_limit: int = 30):
+    def __init__(self, bot_token: str, chat_id: str, rate_limit: int = 30) -> None:
         """
         Initialize Telegram alerter.
-        
+
         Args:
             bot_token: Telegram bot API token
             chat_id: Target chat/channel ID

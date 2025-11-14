@@ -17,14 +17,26 @@ from src.monitoring.sentinel.models import SentinelConfig
 
 class TestSecurityNegatives:
     """Test suite for SecurityNegatives check."""
-    
+
     @pytest.fixture
     def config(self):
         """Create a test configuration."""
-        return SentinelConfig({
-            "veris_memory_url": "http://test.example.com",
-            "s5_security_timeout_sec": 10
-        })
+        # PR #247: Use a mock config object that supports .get() for test values
+        class TestConfig:
+            def __init__(self):
+                self.target_base_url = "http://test.example.com"
+                self._config_data = {
+                    "veris_memory_url": "http://test.example.com",
+                    "s5_security_timeout_sec": 10
+                }
+
+            def get(self, key: str, default=None):
+                return self._config_data.get(key, default)
+
+            def is_check_enabled(self, check_id: str) -> bool:
+                return True
+
+        return TestConfig()
     
     @pytest.fixture
     def check(self, config):
