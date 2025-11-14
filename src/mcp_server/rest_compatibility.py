@@ -62,10 +62,31 @@ class ContextResponse(BaseModel):
 
 
 class SearchResponse(BaseModel):
-    """Response model for search operations"""
+    """Response model for search operations.
+
+    DEPRECATION NOTICE:
+    The 'results' field is deprecated as of v1.1 and will be removed in v2.0.
+    Use 'contexts' field instead for forward compatibility.
+
+    Migration Guide:
+    - Old: response.results
+    - New: response.contexts
+
+    Both fields currently return the same data for backward compatibility.
+    """
     success: bool
-    contexts: List[Dict[str, Any]] = Field(default_factory=list, description="Search results (using 'contexts' key for Sentinel compatibility)")
-    results: Optional[List[Dict[str, Any]]] = Field(None, description="Deprecated: use 'contexts' instead")
+    contexts: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Search results. Primary field for Sentinel compatibility and future API versions."
+    )
+    results: Optional[List[Dict[str, Any]]] = Field(
+        None,
+        description=(
+            "DEPRECATED: Use 'contexts' instead. "
+            "This field will be removed in v2.0. "
+            "Kept for backward compatibility with legacy clients."
+        )
+    )
     count: int = 0
     message: Optional[str] = None
 

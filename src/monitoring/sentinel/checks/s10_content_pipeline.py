@@ -981,11 +981,22 @@ class ContentPipelineMonitoring(BaseCheck):
                             retrieved_data = await response.json()
 
                             # Extract retrieved content - handle both nested and flat formats
+                            # DUAL FORMAT SUPPORT RATIONALE:
+                            # The system is transitioning from nested dict format to flat string format.
+                            # - Legacy format (pre-PR#265): content = {"text": "...", "title": "..."}
+                            # - Current format (post-PR#265): content = "..."
+                            # Both formats must be supported during transition period to ensure:
+                            # 1. Backward compatibility with existing stored contexts
+                            # 2. No test failures during gradual migration
+                            # 3. Smooth rollout without breaking existing integrations
+                            # TODO: Remove dict format support in v2.0 after full migration
                             retrieved_context = retrieved_data.get("context", {})
                             retrieved_content = retrieved_context.get("content")
                             if isinstance(retrieved_content, dict):
+                                # Legacy nested dict format: extract text from dict
                                 retrieved_text = retrieved_content.get("text", "")
                             else:
+                                # Current flat string format: use content directly
                                 retrieved_text = retrieved_content or ""
 
                             # Compare with original content string
