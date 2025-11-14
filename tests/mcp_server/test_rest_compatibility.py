@@ -58,6 +58,38 @@ class TestContextEndpoints:
             assert result.message == "Context stored successfully"
 
     @pytest.mark.asyncio
+    async def test_create_context_returns_201_status(self):
+        """Test that POST /api/v1/contexts returns HTTP 201 status code."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        # Create a minimal FastAPI app with the router
+        app = FastAPI()
+        app.include_router(rest_compatibility.router)
+
+        client = TestClient(app)
+
+        mock_mcp_result = {
+            "success": True,
+            "id": "ctx-123",
+            "message": "Stored successfully"
+        }
+
+        with patch("src.mcp_server.rest_compatibility.forward_to_mcp_tool", new=AsyncMock(return_value=mock_mcp_result)):
+            response = client.post(
+                "/api/v1/contexts",
+                json={
+                    "content": "test content",
+                    "content_type": "context"
+                }
+            )
+
+            # Verify HTTP 201 Created status code
+            assert response.status_code == 201
+            assert response.json()["success"] is True
+            assert response.json()["context_id"] == "ctx-123"
+
+    @pytest.mark.asyncio
     async def test_create_context_failure(self):
         """Test context creation failure handling."""
         mock_request = Mock()
@@ -106,6 +138,11 @@ class TestContextEndpoints:
 
             assert result.success is True
             assert result.count == 2
+            # Verify 'contexts' field exists and matches results (for Sentinel compatibility)
+            assert hasattr(result, 'contexts'), "SearchResponse must have 'contexts' field for Sentinel checks"
+            assert len(result.contexts) == 2
+            assert result.contexts == result.results, "Both 'contexts' and 'results' fields should contain same data"
+            # Verify backward compatibility with 'results' field
             assert len(result.results) == 2
 
     @pytest.mark.asyncio

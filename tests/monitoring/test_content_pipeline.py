@@ -505,14 +505,130 @@ class TestContentPipelineMonitoring:
         mock_response = AsyncMock()
         mock_response.status = 400
         mock_response.text = AsyncMock(return_value="Bad Request")
-        
+
         mock_session = AsyncMock()
         mock_session.post.return_value.__aenter__.return_value = mock_response
-        
+
         with patch('aiohttp.ClientSession', return_value=mock_session):
             result = await check._test_content_lifecycle()
-        
+
         assert result["passed"] is False
         assert "Content lifecycle test failed at creation stage" in result["message"]
         assert len(result["lifecycle_stages"]) == 1
         assert result["lifecycle_stages"][0]["successful"] is False
+
+    @pytest.mark.asyncio
+    async def test_lifecycle_content_format_dict(self, check: ContentPipelineMonitoring) -> None:
+        """Test content lifecycle with nested dict content format (legacy format)."""
+        # Mock creation
+        mock_create_response = AsyncMock()
+        mock_create_response.status = 201
+        mock_create_response.json = AsyncMock(return_value={"context_id": "lifecycle_test_dict"})
+
+        # Mock retrieval with NESTED dict content format
+        mock_get_response = AsyncMock()
+        mock_get_response.status = 200
+        mock_get_response.json = AsyncMock(return_value={
+            "context": {
+                "context_id": "lifecycle_test_dict",
+                "content": {
+                    "text": "Content lifecycle test - 2025-01-01T00:00:00.000000"  # Nested dict format
+                }
+            }
+        })
+
+        # Mock search discovery
+        mock_search_response = AsyncMock()
+        mock_search_response.status = 200
+        mock_search_response.json = AsyncMock(return_value={
+            "contexts": [
+                {"context_id": "lifecycle_test_dict", "content": {"text": "Content lifecycle test"}}
+            ]
+        })
+
+        mock_session = AsyncMock()
+
+        def mock_request(method, url, **kwargs):
+            ctx = AsyncMock()
+            if method == "post" and "search" in url:
+                ctx.__aenter__ = AsyncMock(return_value=mock_search_response)
+            elif method == "get":
+                ctx.__aenter__ = AsyncMock(return_value=mock_get_response)
+            else:  # POST to create
+                ctx.__aenter__ = AsyncMock(return_value=mock_create_response)
+            return ctx
+
+        mock_session.post.side_effect = lambda url, **kwargs: mock_request("post", url, **kwargs)
+        mock_session.get.side_effect = lambda url, **kwargs: mock_request("get", url, **kwargs)
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            with patch('asyncio.sleep', return_value=None):
+                result = await check._test_content_lifecycle()
+
+        assert result["passed"] is True
+        assert "Content lifecycle" in result["message"]
+
+        # Verify retrieval stage handled nested dict format correctly
+        retrieval_stage = next((s for s in result["lifecycle_stages"] if s.get("stage") == "retrieval_by_id"), None)
+        assert retrieval_stage is not None
+        assert retrieval_stage["successful"] is True
+        # data_integrity check should work with nested dict format
+        assert "data_integrity" in retrieval_stage
+
+    @pytest.mark.asyncio
+    async def test_lifecycle_content_format_string(self, check: ContentPipelineMonitoring) -> None:
+        """Test content lifecycle with flat string content format (current format)."""
+        test_content_string = f"Content lifecycle test - {datetime.utcnow().isoformat()}"
+
+        # Mock creation
+        mock_create_response = AsyncMock()
+        mock_create_response.status = 201
+        mock_create_response.json = AsyncMock(return_value={"context_id": "lifecycle_test_string"})
+
+        # Mock retrieval with FLAT string content format
+        mock_get_response = AsyncMock()
+        mock_get_response.status = 200
+        mock_get_response.json = AsyncMock(return_value={
+            "context": {
+                "context_id": "lifecycle_test_string",
+                "content": test_content_string  # Flat string format
+            }
+        })
+
+        # Mock search discovery
+        mock_search_response = AsyncMock()
+        mock_search_response.status = 200
+        mock_search_response.json = AsyncMock(return_value={
+            "contexts": [
+                {"context_id": "lifecycle_test_string", "content": test_content_string}
+            ]
+        })
+
+        mock_session = AsyncMock()
+
+        def mock_request(method, url, **kwargs):
+            ctx = AsyncMock()
+            if method == "post" and "search" in url:
+                ctx.__aenter__ = AsyncMock(return_value=mock_search_response)
+            elif method == "get":
+                ctx.__aenter__ = AsyncMock(return_value=mock_get_response)
+            else:  # POST to create
+                ctx.__aenter__ = AsyncMock(return_value=mock_create_response)
+            return ctx
+
+        mock_session.post.side_effect = lambda url, **kwargs: mock_request("post", url, **kwargs)
+        mock_session.get.side_effect = lambda url, **kwargs: mock_request("get", url, **kwargs)
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            with patch('asyncio.sleep', return_value=None):
+                result = await check._test_content_lifecycle()
+
+        assert result["passed"] is True
+        assert "Content lifecycle" in result["message"]
+
+        # Verify retrieval stage handled flat string format correctly
+        retrieval_stage = next((s for s in result["lifecycle_stages"] if s.get("stage") == "retrieval_by_id"), None)
+        assert retrieval_stage is not None
+        assert retrieval_stage["successful"] is True
+        # data_integrity check should work with flat string format
+        assert "data_integrity" in retrieval_stage
