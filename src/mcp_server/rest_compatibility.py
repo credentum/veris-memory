@@ -62,9 +62,31 @@ class ContextResponse(BaseModel):
 
 
 class SearchResponse(BaseModel):
-    """Response model for search operations"""
+    """Response model for search operations.
+
+    DEPRECATION NOTICE:
+    The 'results' field is deprecated as of v1.1 and will be removed in v2.0.
+    Use 'contexts' field instead for forward compatibility.
+
+    Migration Guide:
+    - Old: response.results
+    - New: response.contexts
+
+    Both fields currently return the same data for backward compatibility.
+    """
     success: bool
-    results: List[Dict[str, Any]] = Field(default_factory=list)
+    contexts: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Search results. Primary field for Sentinel compatibility and future API versions."
+    )
+    results: Optional[List[Dict[str, Any]]] = Field(
+        None,
+        description=(
+            "DEPRECATED: Use 'contexts' instead. "
+            "This field will be removed in v2.0. "
+            "Kept for backward compatibility with legacy clients."
+        )
+    )
     count: int = 0
     message: Optional[str] = None
 
@@ -141,7 +163,7 @@ async def forward_to_mcp_tool(
 
 # === REST API Endpoints ===
 
-@router.post("/v1/contexts", response_model=ContextResponse)
+@router.post("/v1/contexts", response_model=ContextResponse, status_code=201)
 async def create_context(
     payload: ContextCreateRequest,
     request: Request
@@ -214,13 +236,15 @@ async def search_contexts(
             results = result.get("results", [])
             return SearchResponse(
                 success=True,
-                results=results,
+                contexts=results,  # Use 'contexts' for Sentinel compatibility
+                results=results,   # Keep 'results' for backward compatibility
                 count=len(results),
                 message=f"Found {len(results)} results"
             )
         else:
             return SearchResponse(
                 success=False,
+                contexts=[],
                 results=[],
                 count=0,
                 message=result.get("message", "Search failed")
