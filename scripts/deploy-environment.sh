@@ -268,10 +268,16 @@ done
 
 # CRITICAL: Remove fixed-name containers (livekit-server, voice-bot)
 echo "  → Force removing fixed-name containers (livekit-server, voice-bot)..."
-docker stop livekit-server voice-bot 2>/dev/null || true
-docker rm -f livekit-server voice-bot 2>/dev/null || true
-echo "  → Waiting 3 seconds for port release..."
-sleep 3
+# Check if containers exist first
+if docker ps -a | grep -E "livekit-server|voice-bot"; then
+    echo "    → Found existing containers, removing..."
+    docker stop livekit-server voice-bot 2>&1 | grep -v "No such container" || true
+    docker rm -f livekit-server voice-bot 2>&1 | grep -v "No such container" || true
+else
+    echo "    → No livekit/voice-bot containers found"
+fi
+echo "  → Waiting 5 seconds for port release..."
+sleep 5
 
 # CRITICAL: Remove Neo4j volumes to ensure password changes take effect
 echo -e "${YELLOW}🗑️  Removing Neo4j volumes for clean authentication...${NC}"
