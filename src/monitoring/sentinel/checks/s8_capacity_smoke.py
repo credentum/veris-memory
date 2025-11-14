@@ -17,6 +17,7 @@ This check performs capacity testing to validate:
 
 import asyncio
 import json
+import os
 import psutil
 import statistics
 import time
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 class CapacitySmoke(BaseCheck):
     """S8: Performance capacity testing for load validation."""
-    
+
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S8-capacity-smoke", "Performance capacity testing")
         self.base_url = config.get("veris_memory_url", "http://localhost:8000")
@@ -42,6 +43,20 @@ class CapacitySmoke(BaseCheck):
         self.timeout_seconds = config.get("s8_capacity_timeout_sec", 60)
         self.max_response_time_ms = config.get("s8_max_response_time_ms", 2000)
         self.max_error_rate_percent = config.get("s8_max_error_rate_percent", 5)
+
+        # Get API key from environment for authentication
+        self.api_key = os.getenv('SENTINEL_API_KEY')
+
+    def _get_headers(self) -> Dict[str, str]:
+        """Get headers for API requests including authentication."""
+        headers = {}
+        if self.api_key:
+            # Extract key portion from format: vmk_{prefix}_{hash}:user_id:role:is_agent
+            # Context-store expects only the key portion (before first colon)
+            api_key_parts = self.api_key.strip().split(":")
+            api_key = api_key_parts[0]
+            headers['X-API-Key'] = api_key
+        return headers
         
     async def run_check(self) -> CheckResult:
         """Execute comprehensive capacity smoke test."""
@@ -585,7 +600,10 @@ class CapacitySmoke(BaseCheck):
         """Make a single test request and measure response time."""
         start_time = time.time()
         try:
-            async with session.get(f"{self.base_url}{endpoint}") as response:
+            # Get authentication headers
+            headers = self._get_headers()
+
+            async with session.get(f"{self.base_url}{endpoint}", headers=headers) as response:
                 response_time = (time.time() - start_time) * 1000
                 await response.text()  # Read response body
                 

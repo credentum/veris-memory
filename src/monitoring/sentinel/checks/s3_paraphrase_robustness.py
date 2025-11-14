@@ -17,6 +17,7 @@ This check validates:
 
 import asyncio
 import math
+import os
 import random
 import statistics
 import time
@@ -44,7 +45,7 @@ EMBEDDING_SIMILARITY_THRESHOLD = 0.8
 
 class ParaphraseRobustness(BaseCheck):
     """S3: Paraphrase robustness testing for semantic consistency."""
-    
+
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S3-paraphrase-robustness", "Paraphrase robustness for semantic consistency")
         self.service_url = config.get("veris_memory_url", "http://localhost:8000")
@@ -52,6 +53,20 @@ class ParaphraseRobustness(BaseCheck):
         self.min_similarity_threshold = config.get("s3_min_similarity_threshold", 0.7)
         self.max_result_variance = config.get("s3_max_result_variance", 0.3)
         self.test_paraphrase_sets = config.get("s3_test_paraphrase_sets", self._get_default_paraphrase_sets())
+
+        # Get API key from environment for authentication
+        self.api_key = os.getenv('SENTINEL_API_KEY')
+
+    def _get_headers(self) -> Dict[str, str]:
+        """Get headers for API requests including authentication."""
+        headers = {}
+        if self.api_key:
+            # Extract key portion from format: vmk_{prefix}_{hash}:user_id:role:is_agent
+            # Context-store expects only the key portion (before first colon)
+            api_key_parts = self.api_key.strip().split(":")
+            api_key = api_key_parts[0]
+            headers['X-API-Key'] = api_key
+        return headers
         
     def _get_default_paraphrase_sets(self) -> List[Dict[str, Any]]:
         """Get default paraphrase test sets for semantic consistency testing."""
@@ -854,6 +869,9 @@ class ParaphraseRobustness(BaseCheck):
     async def _search_contexts(self, session: aiohttp.ClientSession, query: str, limit: int = 10) -> Dict[str, Any]:
         """Search for contexts using the service API."""
         try:
+            # Get authentication headers
+            headers = self._get_headers()
+
             search_url = f"{self.service_url}/api/v1/contexts/search"
             payload = {
                 "query": query,
@@ -861,7 +879,7 @@ class ParaphraseRobustness(BaseCheck):
                 "include_metadata": True
             }
 
-            async with session.post(search_url, json=payload) as response:
+            async with session.post(search_url, json=payload, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
                     # Fixed: REST API returns "results" not "contexts" (PR #240)

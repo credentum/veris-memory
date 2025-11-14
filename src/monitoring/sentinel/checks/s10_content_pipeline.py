@@ -17,6 +17,7 @@ This check validates:
 """
 
 import asyncio
+import os
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -41,11 +42,15 @@ MIN_CONCURRENT_SUCCESS = 4  # At least 80% of 5 operations
 
 class ContentPipelineMonitoring(BaseCheck):
     """S10: Content pipeline monitoring for data processing validation."""
-    
+
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S10-content-pipeline", "Content pipeline monitoring")
         self.veris_memory_url = config.get("veris_memory_url", "http://localhost:8000")
         self.timeout_seconds = config.get("s10_pipeline_timeout_sec", 60)
+
+        # Get API key from environment for authentication
+        self.api_key = os.getenv('SENTINEL_API_KEY')
+
         self.pipeline_stages = config.get("s10_pipeline_stages", [
             "ingestion",
             "validation", 
@@ -61,7 +66,18 @@ class ContentPipelineMonitoring(BaseCheck):
             "pipeline_throughput_per_min": 10,
             "storage_consistency_ratio": 0.95
         })
-        
+
+    def _get_headers(self) -> Dict[str, str]:
+        """Get headers for API requests including authentication."""
+        headers = {}
+        if self.api_key:
+            # Extract key portion from format: vmk_{prefix}_{hash}:user_id:role:is_agent
+            # Context-store expects only the key portion (before first colon)
+            api_key_parts = self.api_key.strip().split(":")
+            api_key = api_key_parts[0]
+            headers['X-API-Key'] = api_key
+        return headers
+
     def _get_default_test_samples(self) -> List[Dict[str, Any]]:
         """Default test content samples for pipeline validation."""
         return [
@@ -205,7 +221,10 @@ class ContentPipelineMonitoring(BaseCheck):
             ingestion_tests = []
             successful_ingestions = 0
             total_ingestion_time = 0.0
-            
+
+            # Get authentication headers
+            headers = self._get_headers()
+
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
@@ -232,7 +251,7 @@ class ContentPipelineMonitoring(BaseCheck):
                     ingestion_start = time.time()
                     try:
                         store_url = f"{self.veris_memory_url}/api/v1/contexts"
-                        async with session.post(store_url, json=ingestion_payload) as response:
+                        async with session.post(store_url, json=ingestion_payload, headers=headers) as response:
                             ingestion_latency = (time.time() - ingestion_start) * 1000
                             total_ingestion_time += ingestion_latency
                             
@@ -304,7 +323,10 @@ class ContentPipelineMonitoring(BaseCheck):
         """Validate all pipeline stages are functioning correctly."""
         try:
             stage_validations = []
-            
+
+            # Get authentication headers
+            headers = self._get_headers()
+
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
@@ -321,9 +343,9 @@ class ContentPipelineMonitoring(BaseCheck):
                 
                 for stage in self.pipeline_stages:
                     endpoint = stage_endpoints.get(stage, f"{self.veris_memory_url}/health/{stage}")
-                    
+
                     try:
-                        async with session.get(endpoint) as response:
+                        async with session.get(endpoint, headers=headers) as response:
                             if response.status == 200:
                                 health_data = await response.json()
                                 stage_validations.append({
@@ -344,7 +366,7 @@ class ContentPipelineMonitoring(BaseCheck):
                         # Fallback: Test stage through general health endpoint
                         try:
                             general_health_url = f"{self.veris_memory_url}/health/ready"
-                            async with session.get(general_health_url) as health_response:
+                            async with session.get(general_health_url, headers=headers) as health_response:
                                 if health_response.status == 200:
                                     # Assume stage is operational if general health is good
                                     stage_validations.append({
@@ -397,7 +419,10 @@ class ContentPipelineMonitoring(BaseCheck):
             retrieval_tests = []
             successful_retrievals = 0
             total_retrieval_time = 0.0
-            
+
+            # Get authentication headers
+            headers = self._get_headers()
+
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
@@ -421,7 +446,7 @@ class ContentPipelineMonitoring(BaseCheck):
                     
                     try:
                         search_url = f"{self.veris_memory_url}/api/v1/contexts/search"
-                        async with session.post(search_url, json=search_data) as response:
+                        async with session.post(search_url, json=search_data, headers=headers) as response:
                             retrieval_latency = (time.time() - retrieval_start) * 1000
                             total_retrieval_time += retrieval_latency
                             
@@ -490,7 +515,10 @@ class ContentPipelineMonitoring(BaseCheck):
         """Validate storage consistency across different storage backends."""
         try:
             consistency_tests = []
-            
+
+            # Get authentication headers
+            headers = self._get_headers()
+
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
@@ -515,10 +543,10 @@ class ContentPipelineMonitoring(BaseCheck):
                 for i in range(5):
                     test_content["title"] = f"Storage Consistency Test #{i+1}"
                     test_content["content"]["text"] = f"Storage consistency test content #{i+1} - {datetime.utcnow().isoformat()}"
-                    
+
                     try:
                         store_url = f"{self.veris_memory_url}/api/v1/contexts"
-                        async with session.post(store_url, json=test_content) as response:
+                        async with session.post(store_url, json=test_content, headers=headers) as response:
                             if response.status == 201:
                                 result_data = await response.json()
                                 context_id = result_data.get("context_id")
@@ -535,7 +563,7 @@ class ContentPipelineMonitoring(BaseCheck):
                 for context_id in stored_contexts:
                     try:
                         get_url = f"{self.veris_memory_url}/api/v1/contexts/{context_id}"
-                        async with session.get(get_url) as response:
+                        async with session.get(get_url, headers=headers) as response:
                             if response.status == 200:
                                 context_data = await response.json()
                                 
@@ -590,7 +618,10 @@ class ContentPipelineMonitoring(BaseCheck):
                 "latency_test": {},
                 "concurrent_load_test": {}
             }
-            
+
+            # Get authentication headers
+            headers = self._get_headers()
+
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
@@ -612,10 +643,10 @@ class ContentPipelineMonitoring(BaseCheck):
                             "operation_index": i
                         }
                     }
-                    
+
                     try:
                         store_url = f"{self.veris_memory_url}/api/v1/contexts"
-                        async with session.post(store_url, json=test_content) as response:
+                        async with session.post(store_url, json=test_content, headers=headers) as response:
                             if response.status == 201:
                                 throughput_operations += 1
                     except Exception:
@@ -637,7 +668,7 @@ class ContentPipelineMonitoring(BaseCheck):
                 
                 for i in range(3):
                     latency_start = time.time()
-                    
+
                     # Store content
                     test_content = {
                         "context_type": "latency_test",
@@ -647,10 +678,10 @@ class ContentPipelineMonitoring(BaseCheck):
                         },
                         "title": f"Latency Test #{i+1}"
                     }
-                    
+
                     try:
                         store_url = f"{self.veris_memory_url}/api/v1/contexts"
-                        async with session.post(store_url, json=test_content) as response:
+                        async with session.post(store_url, json=test_content, headers=headers) as response:
                             if response.status == 201:
                                 store_latency = (time.time() - latency_start) * 1000
                                 
@@ -660,9 +691,9 @@ class ContentPipelineMonitoring(BaseCheck):
                                     "query": f"Latency test content for measurement #{i+1}",
                                     "limit": 5
                                 }
-                                
+
                                 search_url = f"{self.veris_memory_url}/api/v1/contexts/search"
-                                async with session.post(search_url, json=search_data) as search_response:
+                                async with session.post(search_url, json=search_data, headers=headers) as search_response:
                                     if search_response.status == 200:
                                         search_latency = (time.time() - search_start) * 1000
                                         total_latency = store_latency + search_latency
@@ -687,7 +718,7 @@ class ContentPipelineMonitoring(BaseCheck):
                 
                 # Concurrent load test - test with concurrent operations
                 concurrent_start = time.time()
-                
+
                 async def concurrent_operation(session, index):
                     test_content = {
                         "context_type": "concurrent_test",
@@ -697,14 +728,14 @@ class ContentPipelineMonitoring(BaseCheck):
                         },
                         "title": f"Concurrent Test #{index}"
                     }
-                    
+
                     try:
                         store_url = f"{self.veris_memory_url}/api/v1/contexts"
-                        async with session.post(store_url, json=test_content) as response:
+                        async with session.post(store_url, json=test_content, headers=headers) as response:
                             return response.status == 201
                     except Exception:
                         return False
-                
+
                 # Run 5 concurrent operations
                 concurrent_tasks = [concurrent_operation(session, i) for i in range(5)]
                 concurrent_results = await asyncio.gather(*concurrent_tasks, return_exceptions=True)
@@ -745,20 +776,23 @@ class ContentPipelineMonitoring(BaseCheck):
         """Validate pipeline error handling and recovery mechanisms."""
         try:
             error_handling_tests = []
-            
+
+            # Get authentication headers
+            headers = self._get_headers()
+
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
-                
+
                 # Test 1: Invalid content format
                 try:
                     invalid_content = {
                         "invalid_field": "missing required fields",
                         "malformed": True
                     }
-                    
+
                     store_url = f"{self.veris_memory_url}/api/v1/contexts"
-                    async with session.post(store_url, json=invalid_content) as response:
+                    async with session.post(store_url, json=invalid_content, headers=headers) as response:
                         error_handling_tests.append({
                             "test": "invalid_content_format",
                             "expected_failure": True,
@@ -807,9 +841,9 @@ class ContentPipelineMonitoring(BaseCheck):
                         "query": "",  # Empty query
                         "limit": -1   # Invalid limit
                     }
-                    
+
                     search_url = f"{self.veris_memory_url}/api/v1/contexts/search"
-                    async with session.post(search_url, json=invalid_search) as response:
+                    async with session.post(search_url, json=invalid_search, headers=headers) as response:
                         error_handling_tests.append({
                             "test": "invalid_search_query",
                             "expected_failure": True,
@@ -829,8 +863,8 @@ class ContentPipelineMonitoring(BaseCheck):
                 try:
                     fake_context_id = "non_existent_context_id_12345"
                     get_url = f"{self.veris_memory_url}/api/v1/contexts/{fake_context_id}"
-                    
-                    async with session.get(get_url) as response:
+
+                    async with session.get(get_url, headers=headers) as response:
                         error_handling_tests.append({
                             "test": "non_existent_context",
                             "expected_failure": True,
@@ -872,11 +906,14 @@ class ContentPipelineMonitoring(BaseCheck):
         """Test complete content lifecycle from creation to retrieval."""
         try:
             lifecycle_stages = []
-            
+
+            # Get authentication headers
+            headers = self._get_headers()
+
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
-                
+
                 # Stage 1: Content Creation
                 lifecycle_content = {
                     "context_type": "lifecycle_test",
@@ -896,7 +933,7 @@ class ContentPipelineMonitoring(BaseCheck):
                 
                 try:
                     store_url = f"{self.veris_memory_url}/api/v1/contexts"
-                    async with session.post(store_url, json=lifecycle_content) as response:
+                    async with session.post(store_url, json=lifecycle_content, headers=headers) as response:
                         creation_latency = (time.time() - creation_start) * 1000
                         
                         if response.status == 201:
@@ -940,7 +977,7 @@ class ContentPipelineMonitoring(BaseCheck):
                 
                 try:
                     get_url = f"{self.veris_memory_url}/api/v1/contexts/{context_id}"
-                    async with session.get(get_url) as response:
+                    async with session.get(get_url, headers=headers) as response:
                         retrieval_latency = (time.time() - retrieval_start) * 1000
                         
                         if response.status == 200:
@@ -977,9 +1014,9 @@ class ContentPipelineMonitoring(BaseCheck):
                         "query": "Content lifecycle test",
                         "limit": 10
                     }
-                    
+
                     search_url = f"{self.veris_memory_url}/api/v1/contexts/search"
-                    async with session.post(search_url, json=search_data) as response:
+                    async with session.post(search_url, json=search_data, headers=headers) as response:
                         search_latency = (time.time() - search_start) * 1000
                         
                         if response.status == 200:

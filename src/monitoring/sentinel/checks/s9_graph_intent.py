@@ -16,6 +16,7 @@ This check validates:
 """
 
 import asyncio
+import os
 import random
 import time
 from datetime import datetime
@@ -47,17 +48,31 @@ INTENT_PRESERVATION_THRESHOLD = 0.7
 
 class GraphIntentValidation(BaseCheck):
     """S9: Graph intent validation for query correctness and relationship accuracy."""
-    
+
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S9-graph-intent", "Graph intent validation")
         self.veris_memory_url = config.get("veris_memory_url", "http://localhost:8000")
         self.timeout_seconds = config.get("s9_graph_timeout_sec", 45)
         self.max_traversal_depth = config.get("s9_max_traversal_depth", 3)
         self.graph_sample_size = config.get("s9_graph_sample_size", 15)
-        
+
+        # Get API key from environment for authentication
+        self.api_key = os.getenv('SENTINEL_API_KEY')
+
         # Graph intent test scenarios
         self.intent_scenarios = config.get("s9_intent_scenarios", self._get_default_intent_scenarios())
-        
+
+    def _get_headers(self) -> Dict[str, str]:
+        """Get headers for API requests including authentication."""
+        headers = {}
+        if self.api_key:
+            # Extract key portion from format: vmk_{prefix}_{hash}:user_id:role:is_agent
+            # Context-store expects only the key portion (before first colon)
+            api_key_parts = self.api_key.strip().split(":")
+            api_key = api_key_parts[0]
+            headers['X-API-Key'] = api_key
+        return headers
+
     def _get_default_intent_scenarios(self) -> List[Dict[str, Any]]:
         """Default graph intent test scenarios."""
         return [
@@ -217,7 +232,10 @@ class GraphIntentValidation(BaseCheck):
                 
                 # Store test contexts and get relationship analysis
                 context_ids = []
-                
+
+                # Get authentication headers
+                headers = self._get_headers()
+
                 async with aiohttp.ClientSession(
                     timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
                 ) as session:
@@ -250,7 +268,7 @@ class GraphIntentValidation(BaseCheck):
                         try:
                             for endpoint_url in endpoints_to_try:
                                 try:
-                                    async with session.post(endpoint_url, json=store_data) as response:
+                                    async with session.post(endpoint_url, json=store_data, headers=headers) as response:
                                         if response.status in [200, 201]:
                                             result_data = await response.json()
                                             context_id = result_data.get("context_id") or result_data.get("id")
@@ -304,22 +322,25 @@ class GraphIntentValidation(BaseCheck):
             }
     
     async def _analyze_context_relationships(
-        self, 
-        session: aiohttp.ClientSession, 
-        context_ids: List[str], 
+        self,
+        session: aiohttp.ClientSession,
+        context_ids: List[str],
         expected_relationships: List[str]
     ) -> float:
         """Analyze relationships between contexts and calculate accuracy."""
         try:
+            # Get authentication headers
+            headers = self._get_headers()
+
             # Search for each context and analyze related contexts
             relationship_matches = 0
             total_relationships = 0
-            
+
             for context_id in context_ids:
                 # Get context details to use as search query
                 get_url = f"{self.veris_memory_url}/api/v1/contexts/{context_id}"
                 try:
-                    async with session.get(get_url) as response:
+                    async with session.get(get_url, headers=headers) as response:
                         if response.status == 200:
                             context_data = await response.json()
                             context_text = context_data.get("content", {}).get("text", "")
@@ -331,7 +352,7 @@ class GraphIntentValidation(BaseCheck):
                             }
                             
                             search_url = f"{self.veris_memory_url}/api/v1/contexts/search"
-                            async with session.post(search_url, json=search_data) as search_response:
+                            async with session.post(search_url, json=search_data, headers=headers) as search_response:
                                 if search_response.status == 200:
                                     search_results = await search_response.json()
                                     related_contexts = search_results.get("contexts", [])
@@ -359,11 +380,14 @@ class GraphIntentValidation(BaseCheck):
         """Validate semantic connectivity in graph relationships."""
         try:
             connectivity_tests = []
-            
+
+            # Get authentication headers
+            headers = self._get_headers()
+
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
-                
+
                 # Test semantic connectivity with sample queries
                 test_queries = [
                     "database configuration",
@@ -378,10 +402,10 @@ class GraphIntentValidation(BaseCheck):
                         "query": query,
                         "limit": 10
                     }
-                    
+
                     search_url = f"{self.veris_memory_url}/api/v1/contexts/search"
                     try:
-                        async with session.post(search_url, json=search_data) as response:
+                        async with session.post(search_url, json=search_data, headers=headers) as response:
                             if response.status == 200:
                                 results = await response.json()
                                 contexts = results.get("contexts", [])
@@ -491,21 +515,24 @@ class GraphIntentValidation(BaseCheck):
             }
     
     async def _analyze_traversal_paths(
-        self, 
-        session: aiohttp.ClientSession, 
-        start_concept: str, 
+        self,
+        session: aiohttp.ClientSession,
+        start_concept: str,
         max_depth: int
     ) -> float:
         """Analyze traversal paths from a starting concept."""
         try:
+            # Get authentication headers
+            headers = self._get_headers()
+
             # Search for contexts related to the starting concept
             search_data = {
                 "query": start_concept,
                 "limit": 5
             }
-            
+
             search_url = f"{self.veris_memory_url}/api/v1/contexts/search"
-            async with session.post(search_url, json=search_data) as response:
+            async with session.post(search_url, json=search_data, headers=headers) as response:
                 if response.status == 200:
                     results = await response.json()
                     initial_contexts = results.get("contexts", [])
@@ -529,8 +556,8 @@ class GraphIntentValidation(BaseCheck):
                             "query": term,
                             "limit": 3
                         }
-                        
-                        async with session.post(search_url, json=term_search_data) as term_response:
+
+                        async with session.post(search_url, json=term_search_data, headers=headers) as term_response:
                             if term_response.status == 200:
                                 term_results = await term_response.json()
                                 related_contexts = term_results.get("contexts", [])
@@ -571,7 +598,10 @@ class GraphIntentValidation(BaseCheck):
         try:
             # Test clustering with diverse queries
             clustering_tests = []
-            
+
+            # Get authentication headers
+            headers = self._get_headers()
+
             test_clusters = [
                 {"theme": "database_operations", "query": "database setup configuration"},
                 {"theme": "user_management", "query": "user authentication authorization"},
@@ -592,10 +622,10 @@ class GraphIntentValidation(BaseCheck):
                         "query": query,
                         "limit": 8
                     }
-                    
+
                     search_url = f"{self.veris_memory_url}/api/v1/contexts/search"
                     try:
-                        async with session.post(search_url, json=search_data) as response:
+                        async with session.post(search_url, json=search_data, headers=headers) as response:
                             if response.status == 200:
                                 results = await response.json()
                                 contexts = results.get("contexts", [])
@@ -670,7 +700,10 @@ class GraphIntentValidation(BaseCheck):
         try:
             # Test inference with implicit relationships
             inference_tests = []
-            
+
+            # Get authentication headers
+            headers = self._get_headers()
+
             test_cases = [
                 {
                     "primary_concept": "error handling",
@@ -703,10 +736,10 @@ class GraphIntentValidation(BaseCheck):
                         "query": primary,
                         "limit": 5
                     }
-                    
+
                     search_url = f"{self.veris_memory_url}/api/v1/contexts/search"
                     try:
-                        async with session.post(search_url, json=search_data) as response:
+                        async with session.post(search_url, json=search_data, headers=headers) as response:
                             if response.status == 200:
                                 results = await response.json()
                                 contexts = results.get("contexts", [])
@@ -779,7 +812,10 @@ class GraphIntentValidation(BaseCheck):
         try:
             # Test graph coherence with cross-domain queries
             coherence_tests = []
-            
+
+            # Get authentication headers
+            headers = self._get_headers()
+
             cross_domain_queries = [
                 "database performance monitoring",
                 "user authentication security logging",
@@ -797,10 +833,10 @@ class GraphIntentValidation(BaseCheck):
                         "query": query,
                         "limit": 6
                     }
-                    
+
                     search_url = f"{self.veris_memory_url}/api/v1/contexts/search"
                     try:
-                        async with session.post(search_url, json=search_data) as response:
+                        async with session.post(search_url, json=search_data, headers=headers) as response:
                             if response.status == 200:
                                 results = await response.json()
                                 contexts = results.get("contexts", [])
@@ -863,7 +899,10 @@ class GraphIntentValidation(BaseCheck):
         """Test preservation of semantic intent in graph operations."""
         try:
             intent_tests = []
-            
+
+            # Get authentication headers
+            headers = self._get_headers()
+
             # Test intent preservation with complex queries
             intent_scenarios = [
                 {
@@ -896,10 +935,10 @@ class GraphIntentValidation(BaseCheck):
                         "query": intent,
                         "limit": 5
                     }
-                    
+
                     search_url = f"{self.veris_memory_url}/api/v1/contexts/search"
                     try:
-                        async with session.post(search_url, json=search_data) as response:
+                        async with session.post(search_url, json=search_data, headers=headers) as response:
                             if response.status == 200:
                                 results = await response.json()
                                 contexts = results.get("contexts", [])
