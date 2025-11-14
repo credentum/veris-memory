@@ -1,0 +1,27 @@
+# Nginx Security Proxy for Veris Memory Voice Services
+# Provides rate limiting, DDoS protection, and security headers
+
+FROM nginx:1.25-alpine
+
+# Install dependencies
+RUN apk add --no-cache \
+    curl \
+    openssl
+
+# Copy nginx configuration
+COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
+COPY docker/nginx/conf.d/ /etc/nginx/conf.d/
+
+# Create SSL directory (will be mounted from host or generated)
+RUN mkdir -p /etc/nginx/ssl
+
+# Create log directory
+RUN mkdir -p /var/log/nginx
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+EXPOSE 7880 8080 8443
+
+CMD ["nginx", "-g", "daemon off;"]
