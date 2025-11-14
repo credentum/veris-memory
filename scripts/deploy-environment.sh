@@ -430,27 +430,47 @@ echo "  → Compose file: $COMPOSE_FILE"
 echo -e "${BLUE}Step 1/3: Building images...${NC}"
 docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build 2>&1 | tail -20
 
-# STEP 2: Remove any containers created during build (prevents recreate issue)
-echo -e "${BLUE}Step 2/3: Removing containers that may have been created during build...${NC}"
+# STEP 2: Remove ALL containers for this project (prevents any recreate issues)
+echo -e "${BLUE}Step 2/3: Removing ALL existing containers for clean start...${NC}"
+
+# Remove ALL project containers (not just livekit/voice-bot)
+echo "  → Stopping all $PROJECT_NAME containers..."
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down --remove-orphans 2>&1 | grep -E "(Stopping|Removing)" || echo "  → No containers to stop"
+
+# Double-check livekit-server and voice-bot are gone
 LIVEKIT_IDS=$(docker ps -a -q --filter "name=livekit-server" 2>/dev/null || true)
 VOICEBOT_IDS=$(docker ps -a -q --filter "name=voice-bot" 2>/dev/null || true)
 if [ -n "$LIVEKIT_IDS" ]; then
-    echo "  → Removing livekit-server containers created during build"
+    echo "  → Force removing livekit-server containers"
     echo "$LIVEKIT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
 fi
 if [ -n "$VOICEBOT_IDS" ]; then
-    echo "  → Removing voice-bot containers created during build"
+    echo "  → Force removing voice-bot containers"
     echo "$VOICEBOT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
 fi
 
-# STEP 3: Start services WITHOUT --build (prevents recreate race condition)
-echo -e "${BLUE}Step 3/3: Starting services (without --build to prevent recreate issue)...${NC}"
+echo "  → Waiting 5 seconds for complete cleanup..."
+sleep 5
+
+# Verify no containers exist
+REMAINING=$(docker ps -a --filter "name=$PROJECT_NAME" --format "{{.Names}}" 2>/dev/null || true)
+REMAINING_FIXED=$(docker ps -a --filter "name=livekit-server" --filter "name=voice-bot" --format "{{.Names}}" 2>/dev/null || true)
+if [ -n "$REMAINING" ] || [ -n "$REMAINING_FIXED" ]; then
+    echo "  ⚠️  WARNING: Some containers still exist:"
+    docker ps -a --filter "name=$PROJECT_NAME" --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || true
+    docker ps -a --filter "name=livekit-server" --filter "name=voice-bot" --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || true
+else
+    echo "  ✅ All containers removed"
+fi
+
+# STEP 3: Start services with --force-recreate to ensure clean creation
+echo -e "${BLUE}Step 3/3: Starting services (--force-recreate for clean start)...${NC}"
 
 # Temporarily disable set -e to capture errors properly
 set +e
 
-# Capture output to show actual errors
-COMPOSE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d 2>&1)
+# Capture output to show actual errors - use --force-recreate to prevent docker from trying to reuse anything
+COMPOSE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --force-recreate 2>&1)
 COMPOSE_EXIT=$?
 
 # Re-enable set -e
