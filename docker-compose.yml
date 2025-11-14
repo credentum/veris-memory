@@ -267,96 +267,9 @@ services:
     networks:
       - context-store-network
 
-  # TeamAI Voice Platform Services
-  # LiveKit Server for Real-Time Voice (local development/testing)
-  # Note: Production uses LiveKit Cloud (LIVEKIT_API_WEBSOCKET)
-  livekit:
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile.livekit
-    image: veris-memory/livekit:latest-healthcheck
-    container_name: livekit-server
-    ports:
-      - "127.0.0.1:7880:7880"  # SECURITY: WebRTC/HTTP API - localhost only
-      - "127.0.0.1:7882:7882"  # SECURITY: Metrics - localhost only
-      - "127.0.0.1:3478:3478/udp"  # SECURITY: TURN UDP - localhost only (use SSH tunnel for remote)
-      - "127.0.0.1:5349:5349"  # SECURITY: TURN TLS - localhost only (use SSH tunnel for remote)
-    environment:
-      - "LIVEKIT_KEYS=${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
-      - LIVEKIT_WEBHOOK_URLS=${LIVEKIT_WEBHOOK_URLS:-}
-    volumes:
-      - ./docker/livekit/config.yaml:/etc/livekit.yaml:ro
-    networks:
-      - context-store-network
-      - voice-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7880"]
-      interval: 20s
-      timeout: 3s
-      retries: 5
-      start_period: 30s
-
-  # Voice Bot Service - Integrates LiveKit with MCP Memory
-  voice-bot:
-    build:
-      context: ./voice-bot
-      dockerfile: Dockerfile
-    container_name: voice-bot
-    environment:
-      # LiveKit Configuration (Cloud or Self-Hosted)
-      - LIVEKIT_URL=${LIVEKIT_API_WEBSOCKET:-ws://livekit:7880}
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
-
-      # MCP Server Connection (Sprint 13 compatible)
-      - MCP_SERVER_URL=http://context-store:8000
-      - MCP_API_KEY=${API_KEY_VOICEBOT}
-      - VOICE_BOT_AUTHOR_PREFIX=${VOICE_BOT_AUTHOR_PREFIX:-voice_bot}
-      - ENABLE_MCP_RETRY=${ENABLE_MCP_RETRY:-true}
-      - MCP_RETRY_ATTEMPTS=${MCP_RETRY_ATTEMPTS:-3}
-
-      # Redis for Session State
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379  # SECURITY: Redis with password auth
-
-      # Service Configuration
-      - SERVICE_NAME=voice-bot
-      - HOST=0.0.0.0
-      - PORT=8002
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
-
-      # Voice Configuration (OpenAI Whisper + TTS)
-      - STT_PROVIDER=${STT_PROVIDER:-whisper}
-      - TTS_PROVIDER=${TTS_PROVIDER:-openai}
-      - STT_API_KEY=${STT_API_KEY:-}
-      - TTS_API_KEY=${TTS_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-
-      # Feature Flags
-      - ENABLE_VOICE_COMMANDS=${ENABLE_VOICE_COMMANDS:-true}
-      - ENABLE_FACT_STORAGE=${ENABLE_FACT_STORAGE:-true}
-      - ENABLE_CONVERSATION_TRACE=${ENABLE_CONVERSATION_TRACE:-true}
-    ports:
-      - "127.0.0.1:8002:8002"  # SECURITY: Bind to localhost only
-    depends_on:
-      context-store:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - context-store-network
-      - voice-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    volumes:
-      - ./voice-bot/app:/app/app:ro
-      - voice-bot-logs:/app/logs
+  # Voice Platform Services
+  # NOTE: livekit and voice-bot services are defined in docker-compose.voice.yml
+  # This prevents port binding conflicts when using -f flag with multiple compose files
 
 volumes:
   qdrant_data:
@@ -369,13 +282,10 @@ volumes:
     driver: local
   sentinel_data:
     driver: local
-  voice-bot-logs:
-    driver: local
+  # voice-bot-logs volume is defined in docker-compose.voice.yml
 
 networks:
   context-store-network:
     driver: bridge
     name: veris-memory-dev_context-store-network
-  voice-network:
-    driver: bridge
-    name: veris-memory-dev_voice-network
+  # voice-network is defined in docker-compose.voice.yml
