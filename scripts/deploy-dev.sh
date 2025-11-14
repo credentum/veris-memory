@@ -133,10 +133,15 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
 
   # CRITICAL: Stop livekit-server and voice-bot with fixed container names
   echo "🛑 Stopping fixed-name containers (livekit-server, voice-bot)..."
-  docker stop livekit-server voice-bot 2>/dev/null || true
-  docker rm -f livekit-server voice-bot 2>/dev/null || true
-  echo "⏳ Waiting 3 seconds for port release..."
-  sleep 3
+  if docker ps -a | grep -E "livekit-server|voice-bot"; then
+    echo "  → Found existing containers, removing..."
+    docker stop livekit-server voice-bot 2>&1 | grep -v "No such container" || true
+    docker rm -f livekit-server voice-bot 2>&1 | grep -v "No such container" || true
+  else
+    echo "  → No livekit/voice-bot containers found"
+  fi
+  echo "⏳ Waiting 5 seconds for port release..."
+  sleep 5
 
   # Stop containers by port (more aggressive)
   for port in 8000 8001 8080 6333 7474 7687 6379 7880 7882 3478 5349; do
@@ -194,10 +199,15 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
 
     # CRITICAL: Stop livekit-server and voice-bot with fixed container names
     echo "🛑 Stopping fixed-name containers (livekit-server, voice-bot)..."
-    docker stop livekit-server voice-bot 2>/dev/null || true
-    docker rm -f livekit-server voice-bot 2>/dev/null || true
-    echo "⏳ Waiting 3 seconds for port release..."
-    sleep 3
+    if docker ps -a | grep -E "livekit-server|voice-bot"; then
+      echo "  → Found existing containers, removing..."
+      docker stop livekit-server voice-bot 2>&1 | grep -v "No such container" || true
+      docker rm -f livekit-server voice-bot 2>&1 | grep -v "No such container" || true
+    else
+      echo "  → No livekit/voice-bot containers found"
+    fi
+    echo "⏳ Waiting 5 seconds for port release..."
+    sleep 5
 
     # Stop containers on dev ports (standard ports we test with + livekit ports)
     for port in 8000 6333 7474 7687 6379 6334 7880 7882 3478 5349; do
