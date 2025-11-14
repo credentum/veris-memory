@@ -463,14 +463,14 @@ else
     echo "  ✅ All containers removed"
 fi
 
-# STEP 3: Start services with --force-recreate to ensure clean creation
-echo -e "${BLUE}Step 3/3: Starting services (--force-recreate for clean start)...${NC}"
+# STEP 3: Start services (containers already removed in Step 2, so this is a clean start)
+echo -e "${BLUE}Step 3/3: Starting services (clean start after removal)...${NC}"
 
 # Temporarily disable set -e to capture errors properly
 set +e
 
-# Capture output to show actual errors - use --force-recreate to prevent docker from trying to reuse anything
-COMPOSE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --force-recreate 2>&1)
+# Capture output to show actual errors - plain 'up -d' since all containers were removed in Step 2
+COMPOSE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d 2>&1)
 COMPOSE_EXIT=$?
 
 # Re-enable set -e
