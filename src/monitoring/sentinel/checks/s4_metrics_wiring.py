@@ -5,14 +5,27 @@ S4: Metrics Wiring Check
 Validates that monitoring infrastructure is correctly configured
 and metrics are being collected and exposed properly.
 
+IMPORTANT: Prometheus and Grafana are OPTIONAL dependencies.
+This check operates in two modes:
+
+1. Full Mode: When Prometheus/Grafana are configured, validates complete
+   monitoring stack including dashboards, alert rules, and data collection.
+
+2. Minimal Mode: When only service metrics endpoints exist, validates that
+   application metrics are being exposed correctly. Prometheus/Grafana checks
+   gracefully degrade and pass when these services are not available.
+
 This check validates:
-- Prometheus metrics endpoint availability
-- Expected metrics presence and format
-- Grafana dashboard accessibility
-- Alert rule configuration
-- Metric collection continuity
-- Dashboard data integration
-- Monitoring stack health
+- Service metrics endpoint availability (REQUIRED)
+- Expected metrics presence and format (REQUIRED)
+- Prometheus integration (OPTIONAL - simulation mode if not configured)
+- Grafana dashboard accessibility (OPTIONAL - simulation mode if not configured)
+- Alert rule configuration (OPTIONAL - simulation mode if not configured)
+- Metric collection continuity (REQUIRED)
+- Monitoring stack health (REQUIRED for service metrics only)
+
+Without Prometheus/Grafana, this check will still verify that your application
+is exposing metrics correctly and is ready for monitoring integration.
 """
 
 import asyncio
@@ -35,7 +48,16 @@ class MetricsWiring(BaseCheck):
     
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S4-metrics-wiring", "Metrics wiring validation")
-        self.metrics_endpoint = config.get("metrics_endpoint", "http://localhost:8000/metrics")
+        # Try multiple common metrics endpoints for better compatibility
+        base_url = config.get("veris_memory_url", "http://localhost:8000")
+        self.metrics_endpoints = config.get("metrics_endpoints", [
+            f"{base_url}/metrics",
+            "http://context-store:8000/metrics",
+            "http://localhost:8000/metrics",
+            "http://localhost:9090/metrics"  # Prometheus default
+        ])
+        # Keep single endpoint for backward compatibility (use first in list)
+        self.metrics_endpoint = self.metrics_endpoints[0]
         self.prometheus_url = config.get("prometheus_url", "http://localhost:9090")
         self.grafana_url = config.get("grafana_url", "http://localhost:3000")
         self.timeout_seconds = config.get("s4_metrics_timeout_sec", 30)
@@ -137,43 +159,57 @@ class MetricsWiring(BaseCheck):
     
     async def _check_metrics_endpoint(self) -> Dict[str, Any]:
         """Check that the metrics endpoint is accessible and returns data."""
+        # Try multiple endpoints to find working metrics
+        last_error = None
+        tried_endpoints = []
+
         try:
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
-                async with session.get(self.metrics_endpoint) as response:
-                    if response.status != 200:
-                        return {
-                            "passed": False,
-                            "message": f"Metrics endpoint returned status {response.status}",
-                            "status_code": response.status
-                        }
-                    
-                    content = await response.text()
-                    
-                    # Basic validation of Prometheus format
-                    if not content or len(content.strip()) == 0:
-                        return {
-                            "passed": False,
-                            "message": "Metrics endpoint returned empty content",
-                            "content_length": 0
-                        }
-                    
-                    # Count metrics lines (non-comment, non-empty)
-                    metric_lines = [
-                        line for line in content.split('\n')
-                        if line.strip() and not line.startswith('#')
-                    ]
-                    
-                    return {
-                        "passed": True,
-                        "message": f"Metrics endpoint accessible with {len(metric_lines)} metric lines",
-                        "status_code": response.status,
-                        "content_length": len(content),
-                        "metric_lines_count": len(metric_lines),
-                        "sample_metrics": metric_lines[:5]  # First 5 metrics as sample
-                    }
-                    
+                for endpoint in self.metrics_endpoints:
+                    tried_endpoints.append(endpoint)
+                    try:
+                        async with session.get(endpoint) as response:
+                            if response.status != 200:
+                                last_error = f"Status {response.status}"
+                                continue
+
+                            content = await response.text()
+
+                            # Basic validation of Prometheus format
+                            if not content or len(content.strip()) == 0:
+                                last_error = "Empty content"
+                                continue
+
+                            # Count metrics lines (non-comment, non-empty)
+                            metric_lines = [
+                                line for line in content.split('\n')
+                                if line.strip() and not line.startswith('#')
+                            ]
+
+                            # Success! Found working endpoint
+                            return {
+                                "passed": True,
+                                "message": f"Metrics endpoint accessible at {endpoint} with {len(metric_lines)} metric lines",
+                                "status_code": response.status,
+                                "endpoint_used": endpoint,
+                                "content_length": len(content),
+                                "metric_lines_count": len(metric_lines),
+                                "sample_metrics": metric_lines[:5]  # First 5 metrics as sample
+                            }
+                    except Exception as e:
+                        last_error = str(e)
+                        continue
+
+                # No endpoint worked
+                return {
+                    "passed": False,
+                    "message": f"Cannot connect to metrics endpoints. Tried {len(tried_endpoints)} endpoints. Last error: {last_error}",
+                    "tried_endpoints": tried_endpoints,
+                    "last_error": last_error
+                }
+
         except Exception as e:
             return {
                 "passed": False,

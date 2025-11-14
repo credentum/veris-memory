@@ -278,19 +278,27 @@ class TelegramAlerter:
                 self.message_queue.append(message)
             return False
         
+        # Validate and truncate message text if needed (Telegram max: 4096 characters)
+        message_text = message.text
+        if len(message_text) > 4096:
+            logger.warning(f"Telegram message truncated from {len(message_text)} to 4096 characters")
+            message_text = message_text[:4093] + "..."
+
         # Send via Telegram API
         try:
             async with aiohttp.ClientSession() as session:
                 url = f"{self.api_url}/sendMessage"
-                payload = {
+                # Telegram API requires form-data or application/x-www-form-urlencoded
+                # NOT application/json, so we use data= instead of json=
+                params = {
                     "chat_id": self.chat_id,
-                    "text": message.text,
+                    "text": message_text,
                     "parse_mode": message.parse_mode,
-                    "disable_web_page_preview": message.disable_web_page_preview,
-                    "disable_notification": message.disable_notification
+                    "disable_web_page_preview": str(message.disable_web_page_preview).lower(),
+                    "disable_notification": str(message.disable_notification).lower()
                 }
-                
-                async with session.post(url, json=payload) as response:
+
+                async with session.post(url, data=params) as response:
                     if response.status == 200:
                         result = await response.json()
                         if result.get("ok"):

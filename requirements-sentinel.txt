@@ -4,8 +4,28 @@ aiohttp-cors==0.7.0
 requests==2.31.0
 asyncio-mqtt==0.16.1
 
-# Optional: For advanced monitoring
-prometheus-client==0.19.0
+# ===================================================================
+# OPTIONAL DEPENDENCIES - Prometheus Integration
+# ===================================================================
+# NOTE: prometheus-client is NOT required for sentinel operation!
+#
+# Sentinel includes Prometheus integration checks (S4-metrics-wiring) that
+# run in "simulation mode" when Prometheus is not available. The checks will
+# gracefully handle missing Prometheus endpoints and report on available
+# metrics endpoints only.
+#
+# Only install prometheus-client if you want to:
+# 1. Export sentinel's own metrics to Prometheus
+# 2. Integrate with an existing Prometheus deployment
+# 3. Use Grafana dashboards that pull from Prometheus
+#
+# Without it, sentinel still monitors:
+# - Service health endpoints
+# - Application metrics from /metrics endpoints
+# - All other S1-S11 checks
+#
+# Uncomment the line below to enable Prometheus support:
+# prometheus-client==0.19.0
 
 # Development and testing
 pytest==7.4.3

@@ -38,10 +38,15 @@ class BackupRestore(BaseCheck):
     
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S6-backup-restore", "Backup/restore validation")
+        # Updated to match actual backup locations on host (mounted into container)
         self.backup_paths = config.get("backup_paths", [
-            "/var/backups/veris-memory",
-            "/opt/veris-memory/backups",
-            "/tmp/veris-backups"
+            "/backup/health",          # Health backups (every 6 hours)
+            "/backup/daily",           # Daily backups
+            "/backup/weekly",          # Weekly backups
+            "/backup/monthly",         # Monthly backups
+            "/backup/backup-ultimate", # Ultimate backups
+            "/backup",                 # Root backup directory
+            "/opt/veris-memory-backups" # Alternate location
         ])
         self.max_backup_age_hours = config.get("s6_backup_max_age_hours", 24)
         self.database_url = config.get("database_url", "postgresql://localhost/veris_memory")
