@@ -299,7 +299,12 @@ class TelegramAlerter:
                     "disable_notification": str(message.disable_notification).lower()
                 }
 
-                async with session.post(url, data=params) as response:
+                # Explicitly set Content-Type header for clarity
+                headers = {
+                    "Content-Type": "application/x-www-form-urlencoded"
+                }
+
+                async with session.post(url, data=params, headers=headers) as response:
                     if response.status == 200:
                         result = await response.json()
                         if result.get("ok"):

@@ -229,6 +229,10 @@ services:
     volumes:
       - sentinel_data:/var/lib/sentinel
       # Mount host backup directories for S6 backup validation (read-only)
+      # IMPORTANT: These directories must exist on the host for sentinel to validate backups
+      # If directories don't exist, sentinel S6 check will fail
+      # To create directories: mkdir -p /backup /opt/veris-memory-backups
+      # For custom paths, set environment variable: S6_BACKUP_PATHS=/custom/path
       - /backup:/backup:ro
       - /opt/veris-memory-backups:/opt/veris-memory-backups:ro
     ports:

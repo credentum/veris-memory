@@ -51,13 +51,27 @@ class MetricsWiring(BaseCheck):
         # Try multiple common metrics endpoints for better compatibility
         # PR #247: Use Docker service names with environment variable overrides
         import os
+        import re
 
         base_url = config.get("veris_memory_url", "http://context-store:8000")
 
-        # Allow service names to be overridden via environment variables
-        context_store_host = os.getenv("CONTEXT_STORE_HOST", "context-store:8000")
-        veris_memory_host = os.getenv("VERIS_MEMORY_HOST", "veris-memory:8000")
-        prometheus_host = os.getenv("PROMETHEUS_HOST", "prometheus:9090")
+        # Validate and get service host environment variables
+        # Format: hostname:port or hostname (no scheme allowed in host vars)
+        host_pattern = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*:\d{1,5}$|^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$')
+
+        def validate_host(env_var: str, default: str) -> str:
+            """Validate environment variable is valid hostname:port format."""
+            value = os.getenv(env_var, default)
+            # Remove any accidental http:// or https:// prefix
+            value = value.replace("http://", "").replace("https://", "")
+            if not host_pattern.match(value):
+                logger.warning(f"Invalid {env_var}='{value}' - using default '{default}'")
+                return default
+            return value
+
+        context_store_host = validate_host("CONTEXT_STORE_HOST", "context-store:8000")
+        veris_memory_host = validate_host("VERIS_MEMORY_HOST", "veris-memory:8000")
+        prometheus_host = validate_host("PROMETHEUS_HOST", "prometheus:9090")
 
         self.metrics_endpoints = config.get("metrics_endpoints", [
             f"{base_url}/metrics",
@@ -67,9 +81,21 @@ class MetricsWiring(BaseCheck):
         ])
         # Keep single endpoint for backward compatibility (use first in list)
         self.metrics_endpoint = self.metrics_endpoints[0]
+
+        # Validate URL environment variables (these should include http:// or https://)
+        url_pattern = re.compile(r'^https?://[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*:\d{1,5}$|^https?://[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$')
+
+        def validate_url(env_var: str, default: str) -> str:
+            """Validate environment variable is valid URL format."""
+            value = os.getenv(env_var)
+            if value and not url_pattern.match(value):
+                logger.warning(f"Invalid {env_var}='{value}' - using default '{default}'")
+                return default
+            return value or default
+
         # PR #247: Use Docker service names with environment variable overrides
-        self.prometheus_url = config.get("prometheus_url", os.getenv("PROMETHEUS_URL", f"http://{prometheus_host}"))
-        self.grafana_url = config.get("grafana_url", os.getenv("GRAFANA_URL", "http://grafana:3000"))
+        self.prometheus_url = config.get("prometheus_url", validate_url("PROMETHEUS_URL", f"http://{prometheus_host}"))
+        self.grafana_url = config.get("grafana_url", validate_url("GRAFANA_URL", "http://grafana:3000"))
         self.timeout_seconds = config.get("s4_metrics_timeout_sec", 30)
         # PR #240: Updated to match actual metrics exposed by /metrics endpoint
         # Current implementation exposes health status, uptime, and service info

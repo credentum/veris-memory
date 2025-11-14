@@ -68,11 +68,14 @@ class BackupRestore(BaseCheck):
 
                 # Validate path is within approved directories using os.path.commonpath
                 # This is TOCTOU-safe as we validate before use
+                # NOTE: Windows-specific behavior - paths on different drives will raise ValueError
                 is_valid = False
                 for approved_prefix in approved_prefixes:
                     try:
                         # Check if the common path is the approved prefix itself
                         # This ensures normalized_path is within or equal to approved_prefix
+                        # On Windows: ValueError if paths are on different drives (e.g., C:\ vs D:\)
+                        # On POSIX: ValueError if one path is absolute and other is relative (shouldn't happen here)
                         common = os.path.commonpath([normalized_path, approved_prefix])
                         if common == approved_prefix:
                             # Additional check: ensure the path doesn't escape via ..
@@ -80,14 +83,24 @@ class BackupRestore(BaseCheck):
                             if normalized_path == approved_prefix or normalized_path.startswith(approved_prefix + os.sep):
                                 is_valid = True
                                 break
-                    except ValueError:
-                        # Different drives on Windows or no common path
+                    except ValueError as e:
+                        # Windows: Different drives (e.g., C:\backup vs D:\backups)
+                        # POSIX: Should not happen (both paths are absolute after normpath)
+                        # Log at debug level as this is expected when checking multiple prefixes
+                        logger.debug(f"Path '{normalized_path}' not comparable with '{approved_prefix}': {e}")
+                        continue
+                    except Exception as e:
+                        # Unexpected errors in path comparison
+                        logger.warning(f"Unexpected error comparing paths '{normalized_path}' and '{approved_prefix}': {e}")
                         continue
 
                 if is_valid:
                     self.backup_paths.append(normalized_path)
                 else:
-                    logger.warning(f"Skipping backup path '{path}' - normalized to '{normalized_path}' which is not in approved directories")
+                    logger.warning(
+                        f"Skipping backup path '{path}' - normalized to '{normalized_path}' "
+                        f"which is not in approved directories: {approved_prefixes}"
+                    )
             except Exception as e:
                 logger.warning(f"Skipping invalid backup path '{path}': {e}")
 
