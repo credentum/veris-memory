@@ -978,14 +978,26 @@ class ContentPipelineMonitoring(BaseCheck):
                         
                         if response.status == 200:
                             retrieved_data = await response.json()
-                            
+
+                            # Extract retrieved content - handle both nested and flat formats
+                            retrieved_context = retrieved_data.get("context", {})
+                            retrieved_content = retrieved_context.get("content")
+                            if isinstance(retrieved_content, dict):
+                                retrieved_text = retrieved_content.get("text", "")
+                            else:
+                                retrieved_text = retrieved_content or ""
+
+                            # Compare with original content string
+                            original_text = lifecycle_content["content"]
+                            data_integrity = retrieved_text == original_text
+
                             lifecycle_stages.append({
                                 "stage": "retrieval_by_id",
                                 "successful": True,
                                 "latency_ms": retrieval_latency,
                                 "context_id": context_id,
                                 "status_code": response.status,
-                                "data_integrity": retrieved_data.get("content", {}).get("text") == lifecycle_content["content"]["text"]
+                                "data_integrity": data_integrity
                             })
                         else:
                             lifecycle_stages.append({
