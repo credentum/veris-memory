@@ -466,15 +466,56 @@ fi
 # STEP 3: Start services (containers already removed in Step 2, so this is a clean start)
 echo -e "${BLUE}Step 3/3: Starting services (clean start after removal, no rebuild)...${NC}"
 
-# Temporarily disable set -e to capture errors properly
+# Final safety check: Ensure NO containers exist with our project name or fixed names
+echo "  → Final container check before starting..."
+EXISTING_PROJECT=$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT_NAME" 2>/dev/null | wc -l)
+EXISTING_LIVEKIT=$(docker ps -aq --filter "name=livekit-server" 2>/dev/null | wc -l)
+EXISTING_VOICEBOT=$(docker ps -aq --filter "name=voice-bot" 2>/dev/null | wc -l)
+
+if [ "$EXISTING_PROJECT" -gt 0 ] || [ "$EXISTING_LIVEKIT" -gt 0 ] || [ "$EXISTING_VOICEBOT" -gt 0 ]; then
+    echo "  ⚠️  WARNING: Found existing containers that should have been removed:"
+    echo "    - Project containers: $EXISTING_PROJECT"
+    echo "    - LiveKit: $EXISTING_LIVEKIT"
+    echo "    - VoiceBot: $EXISTING_VOICEBOT"
+    echo "  → Forcing removal of ALL containers..."
+
+    # Nuclear option: remove all containers with our project label or fixed names
+    docker ps -aq --filter "label=com.docker.compose.project=$PROJECT_NAME" | xargs -r docker rm -f 2>/dev/null || true
+    docker ps -aq --filter "name=livekit-server" | xargs -r docker rm -f 2>/dev/null || true
+    docker ps -aq --filter "name=voice-bot" | xargs -r docker rm -f 2>/dev/null || true
+
+    echo "  → Waiting 5 seconds for ports to be released..."
+    sleep 5
+fi
+
+# Use separate create and start commands to avoid the recreate race condition
+echo "  → Creating containers without starting them..."
 set +e
-
-# Capture output to show actual errors - use --no-build since we already built in Step 1
-COMPOSE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --no-build 2>&1)
-COMPOSE_EXIT=$?
-
-# Re-enable set -e
+CREATE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" create --no-build 2>&1)
+CREATE_EXIT=$?
 set -e
+
+if [ $CREATE_EXIT -ne 0 ]; then
+    echo -e "${RED}❌ Container creation failed:${NC}"
+    echo "$CREATE_OUTPUT"
+    exit 1
+fi
+
+echo "  → Starting created containers..."
+set +e
+START_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" start 2>&1)
+START_EXIT=$?
+set -e
+
+if [ $START_EXIT -ne 0 ]; then
+    echo -e "${RED}❌ Container start failed:${NC}"
+    echo "$START_OUTPUT"
+    COMPOSE_OUTPUT="$CREATE_OUTPUT\n$START_OUTPUT"
+    COMPOSE_EXIT=$START_EXIT
+else
+    COMPOSE_OUTPUT="$CREATE_OUTPUT\n$START_OUTPUT"
+    COMPOSE_EXIT=0
+fi
 
 if [ $COMPOSE_EXIT -ne 0 ]; then
     echo ""
