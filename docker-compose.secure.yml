@@ -1,0 +1,291 @@
+version: "3.8"
+
+# SECURE DOCKER COMPOSE CONFIGURATION
+# Purpose: Production-ready configuration with security hardening
+# Based on: docker-compose.hetzner.yml with additional security enhancements
+#
+# Key Security Features:
+# - All database ports bound to localhost (127.0.0.1) only
+# - Redis authentication required
+# - Neo4j authentication enforced
+# - Resource limits to prevent DoS
+# - Health checks for all services
+# - Read-only containers where possible
+# - No new privileges flag
+# - Logging configured
+#
+# Access Requirements:
+# - Databases: localhost or VPN/Tailscale only
+# - APIs: localhost or VPN/Tailscale only
+# - Remote management: SSH tunnel or Tailscale
+
+services:
+  # Context Store MCP Server - Hardened Configuration
+  context-store:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"  # SECURITY: Bind to localhost only
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379  # SECURITY: Redis auth
+      - MCP_SERVER_PORT=8000
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+    volumes:
+      - ./data/context-store:/app/data:rw
+      - ./data/logs:/app/data/logs:rw
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - context-store-network
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    read_only: false  # Needs write access for application data
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=100m
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.0"
+        reservations:
+          memory: 512M
+          cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Vector Database (Qdrant) - Localhost Only
+  qdrant:
+    image: qdrant/qdrant:v1.12.1@sha256:d774e7bb65744454984c6021637a0da89271f30df15e48601a9fafc926d26b1f
+    ports:
+      - "127.0.0.1:6333:6333"  # SECURITY: Localhost only
+      - "127.0.0.1:6334:6334"  # SECURITY: Localhost only (gRPC)
+    volumes:
+      - qdrant_data:/qdrant/storage:rw
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__SERVICE__ENABLE_CORS=false  # SECURITY: Disable CORS in production
+      - QDRANT__SERVICE__MAX_REQUEST_SIZE_MB=32
+      # TODO: Add API key authentication when available
+      # - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - context-store-network
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+        reservations:
+          memory: 2G
+          cpus: "1.0"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Graph Database (Neo4j) - Localhost Only, Password Required
+  neo4j:
+    image: neo4j:5.15-community@sha256:69c579facb7acab1e98f28952b91144c89e469a081804a5dafebd6c3030433b8
+    ports:
+      - "127.0.0.1:7474:7474"  # SECURITY: Localhost only (HTTP)
+      - "127.0.0.1:7687:7687"  # SECURITY: Localhost only (Bolt)
+    volumes:
+      - neo4j_data:/data:rw
+      - neo4j_logs:/logs:rw
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}  # SECURITY: Password required
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_default__listen__address=0.0.0.0  # Listen inside container
+      - NEO4J_dbms_default__advertised__address=localhost
+      - NEO4J_dbms_connector_https_advertised__address=localhost:7473
+      - NEO4J_dbms_connector_http_advertised__address=localhost:7474
+      - NEO4J_dbms_connector_bolt_advertised__address=localhost:7687
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      # Security settings
+      - NEO4J_dbms_security_auth__enabled=true
+      - NEO4J_dbms_logs_security_level=INFO
+      # Memory settings
+      - NEO4J_server_memory_heap_initial__size=512M
+      - NEO4J_server_memory_heap_max__size=1G
+      - NEO4J_server_memory_pagecache_size=512M
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          "cypher-shell -u neo4j -p $$NEO4J_PASSWORD 'RETURN 1'",
+        ]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - context-store-network
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.5"
+        reservations:
+          memory: 1G
+          cpus: "0.5"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Cache/KV Store (Redis) - Localhost Only, Password Required
+  redis:
+    image: redis:7.2.5-alpine@sha256:6aaf3f5e6bc8a592fbfe2cccf19eb36d27c39d12dab4f4b01556b7449e7b1f44
+    ports:
+      - "127.0.0.1:6379:6379"  # SECURITY: Localhost only
+    volumes:
+      - redis_data:/data:rw
+    # SECURITY: Redis with authentication and secure defaults
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --tcp-keepalive 300
+      --timeout 0
+      --tcp-backlog 511
+      --databases 16
+      --protected-mode yes
+      --bind 0.0.0.0
+      --maxclients 10000
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - context-store-network
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    read_only: false  # Redis needs write access
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "0.5"
+        reservations:
+          memory: 512M
+          cpus: "0.25"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  qdrant_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/veris-memory/qdrant
+  neo4j_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/veris-memory/neo4j/data
+  neo4j_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/veris-memory/neo4j/logs
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/veris-memory/redis
+
+networks:
+  context-store-network:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-ctx-secure
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+      com.docker.network.driver.mtu: "1500"
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/24
+
+# SECURITY CHECKLIST:
+# ✓ All database ports bound to 127.0.0.1
+# ✓ Redis requires password authentication
+# ✓ Neo4j requires password authentication
+# ✓ No new privileges flag set
+# ✓ Resource limits configured
+# ✓ Health checks for all services
+# ✓ Logging configured with rotation
+# ✓ Secure defaults for all services
+# ✓ Isolated Docker network
+#
+# ACCESS METHODS:
+# - Local: Direct access via localhost
+# - Remote: SSH tunnel (ssh -L 8000:localhost:8000 user@server)
+# - Remote: Tailscale VPN (add TAILSCALE_AUTHKEY to .env)
+#
+# DEPLOYMENT:
+# 1. Copy .env.example to .env
+# 2. Set secure passwords: NEO4J_PASSWORD, REDIS_PASSWORD
+# 3. Create volume directories: mkdir -p /var/lib/veris-memory/{qdrant,neo4j/{data,logs},redis}
+# 4. Run: docker-compose -f docker-compose.secure.yml up -d
+# 5. Verify: ./scripts/security/security-audit.sh

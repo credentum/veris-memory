@@ -1,0 +1,88 @@
+# Security-focused pre-commit hooks
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Security validation for docker-compose.yml
+  - repo: local
+    hooks:
+      - id: validate-localhost-bindings
+        name: Validate all ports bound to localhost
+        entry: python scripts/pre-commit/validate_localhost_bindings.py
+        language: python
+        files: docker-compose.*\.yml$
+        pass_filenames: true
+
+      - id: validate-redis-auth
+        name: Validate Redis authentication configured
+        entry: python scripts/pre-commit/validate_redis_auth.py
+        language: python
+        files: docker-compose.*\.yml$
+        pass_filenames: true
+
+      - id: validate-no-default-passwords
+        name: Check for hardcoded passwords
+        entry: python scripts/pre-commit/validate_no_secrets.py
+        language: python
+        files: \.(yml|yaml|sh|py)$
+        pass_filenames: true
+
+  # Security tests must pass
+  - repo: local
+    hooks:
+      - id: security-tests
+        name: Run security tests
+        entry: pytest tests/security/ -v --tb=short
+        language: system
+        pass_filenames: false
+        stages: [commit]
+
+  # Secrets detection
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: package.lock.json
+
+  # YAML validation
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.32.0
+    hooks:
+      - id: yamllint
+        args: [--format, parsable, --strict]
+        files: \.(yml|yaml)$
+
+  # Shell script validation
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.5
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning]
+        files: \.sh$
+
+  # Python security checks
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: [-ll, -i]
+        files: \.py$
+
+  # Dockerfile security
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.1-beta
+    hooks:
+      - id: hadolint-docker
+        args: [--ignore, DL3008, --ignore, DL3009]
+        files: Dockerfile.*
+
+  # Documentation validation
+  - repo: local
+    hooks:
+      - id: validate-security-docs
+        name: Validate security documentation matches configs
+        entry: python scripts/pre-commit/validate_security_docs.py
+        language: python
+        files: (SECURITY.*\.md|docker-compose\.yml)$
+        pass_filenames: false
