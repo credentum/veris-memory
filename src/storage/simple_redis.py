@@ -36,16 +36,19 @@ class SimpleRedisClient:
             # Get Redis configuration from environment
             # First check REDIS_URL for Docker deployments
             redis_url = os.getenv("REDIS_URL")
+            password_from_url = None
             if redis_url:
-                # Parse redis://host:port format
+                # Parse redis://:password@host:port/db format
                 import re
-                url_match = re.match(r"^redis://([^:/]+):?(\d+)?/?(\d+)?", redis_url)
+                url_match = re.match(r"^redis://(?::([^@]+)@)?([^:/]+):?(\d+)?/?(\d+)?", redis_url)
                 if url_match:
-                    host = url_match.group(1)
-                    port = int(url_match.group(2)) if url_match.group(2) else 6379
-                    db = int(url_match.group(3)) if url_match.group(3) else 0
+                    password_from_url = url_match.group(1)  # Password (if present)
+                    host = url_match.group(2)
+                    port = int(url_match.group(3)) if url_match.group(3) else 6379
+                    db = int(url_match.group(4)) if url_match.group(4) else 0
                 else:
                     # Fallback to individual env vars
+                    logger.warning(f"Failed to parse REDIS_URL: {redis_url}, falling back to individual env vars")
                     host = os.getenv("REDIS_HOST", "redis")
                     port = int(os.getenv("REDIS_PORT", "6379"))
                     db = int(os.getenv("REDIS_DB", "0"))
@@ -66,9 +69,11 @@ class SimpleRedisClient:
                 "retry_on_timeout": True
             }
             
-            # Add password if provided
-            if redis_password:
-                connection_params["password"] = redis_password
+            # Add password with priority: parameter > URL > env var
+            password = redis_password or password_from_url or os.getenv("REDIS_PASSWORD")
+            if password:
+                connection_params["password"] = password
+                logger.debug("Using Redis password authentication")
             
             # Create Redis client
             self.client = redis.Redis(**connection_params)
@@ -76,8 +81,9 @@ class SimpleRedisClient:
             # Test connection
             self.client.ping()
             self.is_connected = True
-            
+
             logger.info(f"✅ SimpleRedisClient connected to {host}:{port}")
+            logger.debug(f"Connected to Redis at {host}:{port} db={db}")
             return True
             
         except Exception as e:
