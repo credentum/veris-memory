@@ -266,18 +266,41 @@ for service in context-store qdrant neo4j redis; do
     fi
 done
 
-# CRITICAL: Remove fixed-name containers (livekit-server, voice-bot)
+# CRITICAL: Remove ALL instances of fixed-name containers (livekit-server, voice-bot)
 echo "  → Force removing fixed-name containers (livekit-server, voice-bot)..."
-# Check if containers exist first
-if docker ps -a | grep -E "livekit-server|voice-bot"; then
-    echo "    → Found existing containers, removing..."
-    docker stop livekit-server voice-bot 2>&1 | grep -v "No such container" || true
-    docker rm -f livekit-server voice-bot 2>&1 | grep -v "No such container" || true
+# Find ALL containers with these names using filter (more reliable than grep)
+LIVEKIT_IDS=$(docker ps -a -q --filter "name=livekit-server" 2>/dev/null || true)
+VOICEBOT_IDS=$(docker ps -a -q --filter "name=voice-bot" 2>/dev/null || true)
+
+if [ -n "$LIVEKIT_IDS" ] || [ -n "$VOICEBOT_IDS" ]; then
+    echo "    → Found existing containers:"
+    docker ps -a --filter "name=livekit-server" --filter "name=voice-bot" --format "table {{.Names}}\t{{.Status}}" || true
+
+    # Remove by container ID (more reliable than by name)
+    if [ -n "$LIVEKIT_IDS" ]; then
+        echo "    → Removing livekit-server (IDs: $LIVEKIT_IDS)"
+        echo "$LIVEKIT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+    fi
+    if [ -n "$VOICEBOT_IDS" ]; then
+        echo "    → Removing voice-bot (IDs: $VOICEBOT_IDS)"
+        echo "$VOICEBOT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+    fi
 else
     echo "    → No livekit/voice-bot containers found"
 fi
-echo "  → Waiting 5 seconds for port release..."
-sleep 5
+
+# Kill any processes holding livekit ports (non-docker processes)
+echo "  → Checking for non-docker processes on livekit ports..."
+for port in 7880 7882 5349; do
+    PID=$(lsof -ti tcp:$port 2>/dev/null || true)
+    if [ -n "$PID" ]; then
+        echo "    → Found process $PID on port $port, killing..."
+        kill -9 $PID 2>/dev/null || true
+    fi
+done
+
+echo "  → Waiting 10 seconds for complete port release..."
+sleep 10
 
 # CRITICAL: Remove Neo4j volumes to ensure password changes take effect
 echo -e "${YELLOW}🗑️  Removing Neo4j volumes for clean authentication...${NC}"

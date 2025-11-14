@@ -131,17 +131,27 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker stop 2>/dev/null || true
   docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker rm 2>/dev/null || true
 
-  # CRITICAL: Stop livekit-server and voice-bot with fixed container names
+  # CRITICAL: Remove ALL instances of fixed-name containers
   echo "🛑 Stopping fixed-name containers (livekit-server, voice-bot)..."
-  if docker ps -a | grep -E "livekit-server|voice-bot"; then
-    echo "  → Found existing containers, removing..."
-    docker stop livekit-server voice-bot 2>&1 | grep -v "No such container" || true
-    docker rm -f livekit-server voice-bot 2>&1 | grep -v "No such container" || true
+  LIVEKIT_IDS=\$(docker ps -a -q --filter "name=livekit-server" 2>/dev/null || true)
+  VOICEBOT_IDS=\$(docker ps -a -q --filter "name=voice-bot" 2>/dev/null || true)
+
+  if [ -n "\$LIVEKIT_IDS" ] || [ -n "\$VOICEBOT_IDS" ]; then
+    echo "  → Found containers, removing by ID..."
+    [ -n "\$LIVEKIT_IDS" ] && echo "\$LIVEKIT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+    [ -n "\$VOICEBOT_IDS" ] && echo "\$VOICEBOT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
   else
     echo "  → No livekit/voice-bot containers found"
   fi
-  echo "⏳ Waiting 5 seconds for port release..."
-  sleep 5
+
+  # Kill non-docker processes on livekit ports
+  for port in 7880 7882 5349; do
+    PID=\$(lsof -ti tcp:\$port 2>/dev/null || true)
+    [ -n "\$PID" ] && kill -9 \$PID 2>/dev/null || true
+  done
+
+  echo "⏳ Waiting 10 seconds for port release..."
+  sleep 10
 
   # Stop containers by port (more aggressive)
   for port in 8000 8001 8080 6333 7474 7687 6379 7880 7882 3478 5349; do
@@ -197,17 +207,27 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     docker network rm veris-memory_context-store-network 2>/dev/null && echo "  ✓ Removed old network: veris-memory_context-store-network" || echo "  ℹ️ Old network not found (already removed)"
     docker network rm veris-memory_voice-network 2>/dev/null && echo "  ✓ Removed old network: veris-memory_voice-network" || echo "  ℹ️ Voice network not found"
 
-    # CRITICAL: Stop livekit-server and voice-bot with fixed container names
+    # CRITICAL: Remove ALL instances of fixed-name containers
     echo "🛑 Stopping fixed-name containers (livekit-server, voice-bot)..."
-    if docker ps -a | grep -E "livekit-server|voice-bot"; then
-      echo "  → Found existing containers, removing..."
-      docker stop livekit-server voice-bot 2>&1 | grep -v "No such container" || true
-      docker rm -f livekit-server voice-bot 2>&1 | grep -v "No such container" || true
+    LIVEKIT_IDS=\$(docker ps -a -q --filter "name=livekit-server" 2>/dev/null || true)
+    VOICEBOT_IDS=\$(docker ps -a -q --filter "name=voice-bot" 2>/dev/null || true)
+
+    if [ -n "\$LIVEKIT_IDS" ] || [ -n "\$VOICEBOT_IDS" ]; then
+      echo "  → Found containers, removing by ID..."
+      [ -n "\$LIVEKIT_IDS" ] && echo "\$LIVEKIT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+      [ -n "\$VOICEBOT_IDS" ] && echo "\$VOICEBOT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
     else
       echo "  → No livekit/voice-bot containers found"
     fi
-    echo "⏳ Waiting 5 seconds for port release..."
-    sleep 5
+
+    # Kill non-docker processes on livekit ports
+    for port in 7880 7882 5349; do
+      PID=\$(lsof -ti tcp:\$port 2>/dev/null || true)
+      [ -n "\$PID" ] && kill -9 \$PID 2>/dev/null || true
+    done
+
+    echo "⏳ Waiting 10 seconds for port release..."
+    sleep 10
 
     # Stop containers on dev ports (standard ports we test with + livekit ports)
     for port in 8000 6333 7474 7687 6379 6334 7880 7882 3478 5349; do
