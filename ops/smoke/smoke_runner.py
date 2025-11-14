@@ -282,13 +282,13 @@ class SmokeTestRunner:
     def test_dimension_consistency(self) -> TestResult:
         """Test dimension consistency across configs."""
         start = time.time()
-        
+
         try:
             # Check if production config exists
             import yaml
             from pathlib import Path
-            
-            config_path = Path("production_locked_config.yaml")
+
+            config_path = Path("config/production_locked_config.yaml")
             
             if not config_path.exists():
                 return TestResult(
