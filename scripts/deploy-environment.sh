@@ -420,21 +420,37 @@ else
     fi
 fi
 
-# Build and start services
+# Build and start services (FIXED: separate build from up to prevent recreate race condition)
 echo -e "${GREEN}🚀 Starting $ENVIRONMENT services...${NC}"
 echo -e "${BLUE}🔍 DEBUG: Using docker compose command with:${NC}"
 echo "  → Project: $PROJECT_NAME"
 echo "  → Compose file: $COMPOSE_FILE"
-echo "  → Full command: docker compose -p \"$PROJECT_NAME\" -f \"$COMPOSE_FILE\" up -d --build"
 
-# Try modern docker compose syntax first, capture full output for debugging
-echo -e "${BLUE}Running: docker compose -p \"$PROJECT_NAME\" -f \"$COMPOSE_FILE\" up -d --build${NC}"
+# STEP 1: Build images separately
+echo -e "${BLUE}Step 1/3: Building images...${NC}"
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build 2>&1 | tail -20
+
+# STEP 2: Remove any containers created during build (prevents recreate issue)
+echo -e "${BLUE}Step 2/3: Removing containers that may have been created during build...${NC}"
+LIVEKIT_IDS=$(docker ps -a -q --filter "name=livekit-server" 2>/dev/null || true)
+VOICEBOT_IDS=$(docker ps -a -q --filter "name=voice-bot" 2>/dev/null || true)
+if [ -n "$LIVEKIT_IDS" ]; then
+    echo "  → Removing livekit-server containers created during build"
+    echo "$LIVEKIT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+fi
+if [ -n "$VOICEBOT_IDS" ]; then
+    echo "  → Removing voice-bot containers created during build"
+    echo "$VOICEBOT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
+fi
+
+# STEP 3: Start services WITHOUT --build (prevents recreate race condition)
+echo -e "${BLUE}Step 3/3: Starting services (without --build to prevent recreate issue)...${NC}"
 
 # Temporarily disable set -e to capture errors properly
 set +e
 
 # Capture output to show actual errors
-COMPOSE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build 2>&1)
+COMPOSE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d 2>&1)
 COMPOSE_EXIT=$?
 
 # Re-enable set -e
