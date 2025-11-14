@@ -125,7 +125,40 @@ class SimpleRedisClient:
         except Exception as e:
             logger.error(f"Unexpected error in set(): {e}")
             return False
-    
+
+    def setex(self, key: str, time: int, value: str) -> bool:
+        """
+        Set a key-value pair in Redis with TTL (expiration time).
+
+        This method uses Redis SETEX command for atomic set-with-expiration.
+        Note: argument order matches Redis python client (key, time, value).
+
+        Args:
+            key: Redis key
+            time: TTL in seconds
+            value: Value to store
+
+        Returns:
+            bool: True if successful
+        """
+        try:
+            if not self.is_connected or not self.client:
+                logger.warning("Redis not connected, attempting reconnection...")
+                if not self.connect():
+                    return False
+
+            # Perform Redis SETEX operation
+            result = self.client.setex(key, time, value)
+            return bool(result)
+
+        except redis.ConnectionError as e:
+            logger.error(f"Redis connection error in setex(): {e}")
+            self.is_connected = False
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error in setex(): {e}")
+            return False
+
     def get(self, key: str) -> Optional[str]:
         """
         Get a value from Redis by key.
