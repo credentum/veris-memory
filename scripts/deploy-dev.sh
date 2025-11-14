@@ -131,8 +131,13 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker stop 2>/dev/null || true
   docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker rm 2>/dev/null || true
 
+  # CRITICAL: Stop livekit-server and voice-bot with fixed container names
+  echo "🛑 Stopping fixed-name containers (livekit-server, voice-bot)..."
+  docker stop livekit-server voice-bot 2>/dev/null || true
+  docker rm livekit-server voice-bot 2>/dev/null || true
+
   # Stop containers by port (more aggressive)
-  for port in 8000 8001 8080 6333 7474 7687 6379; do
+  for port in 8000 8001 8080 6333 7474 7687 6379 7880 7882 3478 5349; do
     container=\$(docker ps --filter "publish=\$port" --format "{{.Names}}" 2>/dev/null | head -1)
     if [ -n "\$container" ]; then
       echo "Stopping container on port \$port: \$container"
@@ -185,8 +190,13 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     docker network rm veris-memory_context-store-network 2>/dev/null && echo "  ✓ Removed old network: veris-memory_context-store-network" || echo "  ℹ️ Old network not found (already removed)"
     docker network rm veris-memory_voice-network 2>/dev/null && echo "  ✓ Removed old network: veris-memory_voice-network" || echo "  ℹ️ Voice network not found"
 
-    # Stop containers on dev ports (standard ports we test with)
-    for port in 8000 6333 7474 7687 6379 6334; do
+    # CRITICAL: Stop livekit-server and voice-bot with fixed container names
+    echo "🛑 Stopping fixed-name containers (livekit-server, voice-bot)..."
+    docker stop livekit-server voice-bot 2>/dev/null || true
+    docker rm livekit-server voice-bot 2>/dev/null || true
+
+    # Stop containers on dev ports (standard ports we test with + livekit ports)
+    for port in 8000 6333 7474 7687 6379 6334 7880 7882 3478 5349; do
       containers=\$(docker ps --filter "publish=\$port" --format "{{.Names}}" 2>/dev/null || true)
       if [ -n "\$containers" ]; then
         echo "Stopping containers on port \$port: \$containers"
