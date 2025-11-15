@@ -311,10 +311,13 @@ class GraphIntentValidation(BaseCheck):
                         })
                         
                         total_accuracy_score += relationship_accuracy
-            
+
+                    # Cleanup test data after scenario completes
+                    await self._cleanup_test_contexts(session, context_ids)
+
             avg_accuracy = total_accuracy_score / len(self.intent_scenarios) if self.intent_scenarios else 0.0
             accuracy_threshold = ACCURACY_THRESHOLD
-            
+
             return {
                 "passed": avg_accuracy >= accuracy_threshold,
                 "message": f"Relationship accuracy: {avg_accuracy:.2f} (threshold: {accuracy_threshold})",
@@ -352,6 +355,36 @@ class GraphIntentValidation(BaseCheck):
         else:
             # Unknown format
             return ""
+
+    async def _cleanup_test_contexts(
+        self,
+        session: aiohttp.ClientSession,
+        context_ids: List[str]
+    ) -> None:
+        """
+        Clean up test contexts after check completes.
+
+        Deletes test contexts created during S9 check to avoid polluting real data.
+        """
+        if not context_ids:
+            return
+
+        headers = self._get_headers()
+
+        for context_id in context_ids:
+            try:
+                delete_url = f"{self.veris_memory_url}/api/v1/contexts/{context_id}"
+                async with session.delete(delete_url, headers=headers) as response:
+                    if response.status in [200, 204, 404]:
+                        # 200/204: Successfully deleted, 404: Already gone
+                        logger.debug(f"Cleaned up test context: {context_id}")
+                    else:
+                        logger.warning(
+                            f"Failed to delete test context {context_id}: "
+                            f"status {response.status}"
+                        )
+            except Exception as e:
+                logger.warning(f"Error cleaning up test context {context_id}: {e}")
 
     async def _analyze_context_relationships(
         self,

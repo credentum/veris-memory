@@ -25,7 +25,7 @@ class TestS1ApiAuthentication:
     @pytest.mark.asyncio
     async def test_get_headers_with_api_key(self, config):
         """Test that _get_headers includes API key when available."""
-        with patch.dict('os.environ', {'API_KEY_MCP': 'test_api_key_123'}):
+        with patch.dict('os.environ', {'SENTINEL_API_KEY': 'test_api_key_123'}):
             check = VerisHealthProbe(config)
             headers = check._get_headers()
 
@@ -44,14 +44,14 @@ class TestS1ApiAuthentication:
     @pytest.mark.asyncio
     async def test_api_key_set_from_environment(self, config):
         """Test that API key is read from environment variable."""
-        with patch.dict('os.environ', {'API_KEY_MCP': 'env_api_key'}):
+        with patch.dict('os.environ', {'SENTINEL_API_KEY': 'env_api_key'}):
             check = VerisHealthProbe(config)
             assert check.api_key == 'env_api_key'
 
     @pytest.mark.asyncio
     async def test_liveness_check_includes_auth_header(self, config):
         """Test that liveness check includes authentication header."""
-        with patch.dict('os.environ', {'API_KEY_MCP': 'test_key'}):
+        with patch.dict('os.environ', {'SENTINEL_API_KEY': 'test_key'}):
             check = VerisHealthProbe(config)
 
             # Mock session
@@ -77,7 +77,7 @@ class TestS1ApiAuthentication:
     @pytest.mark.asyncio
     async def test_readiness_check_includes_auth_header(self, config):
         """Test that readiness check includes authentication header."""
-        with patch.dict('os.environ', {'API_KEY_MCP': 'test_key'}):
+        with patch.dict('os.environ', {'SENTINEL_API_KEY': 'test_key'}):
             check = VerisHealthProbe(config)
 
             # Mock session
@@ -110,7 +110,7 @@ class TestS1ApiAuthentication:
     @pytest.mark.asyncio
     async def test_full_check_with_authentication(self, config):
         """Test full run_check with authentication."""
-        with patch.dict('os.environ', {'API_KEY_MCP': 'full_test_key'}):
+        with patch.dict('os.environ', {'SENTINEL_API_KEY': 'full_test_key'}):
             check = VerisHealthProbe(config)
 
             # Mock aiohttp.ClientSession
@@ -183,7 +183,7 @@ class TestS1ApiAuthentication:
         ]
 
         for test_key in test_keys:
-            with patch.dict('os.environ', {'API_KEY_MCP': test_key}):
+            with patch.dict('os.environ', {'SENTINEL_API_KEY': test_key}):
                 check = VerisHealthProbe(config)
                 headers = check._get_headers()
 
@@ -192,7 +192,7 @@ class TestS1ApiAuthentication:
     @pytest.mark.asyncio
     async def test_headers_method_returns_dict(self, config):
         """Test that _get_headers always returns a dictionary."""
-        with patch.dict('os.environ', {'API_KEY_MCP': 'test'}):
+        with patch.dict('os.environ', {'SENTINEL_API_KEY': 'test'}):
             check = VerisHealthProbe(config)
             headers = check._get_headers()
 
@@ -207,7 +207,7 @@ class TestS1ApiAuthentication:
     @pytest.mark.asyncio
     async def test_api_key_not_logged(self, config):
         """Test that API key is not logged (security check)."""
-        with patch.dict('os.environ', {'API_KEY_MCP': 'secret_key_123'}):
+        with patch.dict('os.environ', {'SENTINEL_API_KEY': 'secret_key_123'}):
             check = VerisHealthProbe(config)
 
             # The API key should be stored but not in any public method output

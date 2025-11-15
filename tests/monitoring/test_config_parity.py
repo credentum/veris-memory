@@ -689,6 +689,94 @@ class TestConfigParity:
         assert check.expected_versions["uvicorn"] == "0.35"
 
     @pytest.mark.asyncio
+    async def test_updated_fastapi_uvicorn_versions(self):
+        """Test that version validation accepts updated FastAPI 0.121 and Uvicorn 0.38."""
+        # Create config with updated versions from Phase 1 & 2 fixes
+        config = SentinelConfig({
+            "veris_memory_url": "http://test:8000",
+            "s7_expected_versions": {
+                "python": "3.13",
+                "fastapi": "0.121",
+                "uvicorn": "0.38"
+            }
+        })
+
+        check = ConfigParity(config)
+
+        # Verify expected versions are set correctly
+        assert check.expected_versions["fastapi"] == "0.121"
+        assert check.expected_versions["uvicorn"] == "0.38"
+        assert check.expected_versions["python"] == "3.13"
+
+        # Mock version check with matching versions
+        mock_subprocess_result = MagicMock()
+        mock_subprocess_result.returncode = 0
+        mock_subprocess_result.stdout = "Python 3.13.1"
+
+        def mock_version(package):
+            if package == "fastapi":
+                return "0.121.2"
+            elif package == "uvicorn":
+                return "0.38.0"
+            return "1.0.0"
+
+        with patch('subprocess.run', return_value=mock_subprocess_result):
+            with patch('importlib.metadata.version', side_effect=mock_version):
+                mock_session = AsyncMock()
+                mock_session.get.side_effect = aiohttp.ClientError("Service not available")
+
+                with patch('aiohttp.ClientSession', return_value=mock_session):
+                    result = await check._validate_version_consistency()
+
+        # Should pass with matching versions
+        assert result["passed"] is True
+        assert "All component versions consistent" in result["message"]
+        assert len(result["version_issues"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_reject_old_fastapi_uvicorn_versions(self):
+        """Test that version validation rejects old FastAPI 0.115 and Uvicorn 0.32."""
+        # Create config expecting newer versions
+        config = SentinelConfig({
+            "veris_memory_url": "http://test:8000",
+            "s7_expected_versions": {
+                "python": "3.13",
+                "fastapi": "0.121",
+                "uvicorn": "0.38"
+            }
+        })
+
+        check = ConfigParity(config)
+
+        # Mock version check with old versions
+        mock_subprocess_result = MagicMock()
+        mock_subprocess_result.returncode = 0
+        mock_subprocess_result.stdout = "Python 3.13.1"
+
+        def mock_version(package):
+            if package == "fastapi":
+                return "0.115.0"  # Old version
+            elif package == "uvicorn":
+                return "0.32.0"  # Old version
+            return "1.0.0"
+
+        with patch('subprocess.run', return_value=mock_subprocess_result):
+            with patch('importlib.metadata.version', side_effect=mock_version):
+                mock_session = AsyncMock()
+                mock_session.get.side_effect = aiohttp.ClientError("Service not available")
+
+                with patch('aiohttp.ClientSession', return_value=mock_session):
+                    result = await check._validate_version_consistency()
+
+        # Should fail with version mismatches
+        assert result["passed"] is False
+        assert len(result["version_issues"]) >= 2
+
+        issues_text = " ".join(result["version_issues"])
+        assert "fastapi version mismatch: 0.115.0 vs expected 0.121" in issues_text
+        assert "uvicorn version mismatch: 0.32.0 vs expected 0.38" in issues_text
+
+    @pytest.mark.asyncio
     async def test_error_handling(self, check):
         """Test error handling in check methods."""
         # Test exception in environment variables check
