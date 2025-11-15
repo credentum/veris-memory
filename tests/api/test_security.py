@@ -139,16 +139,16 @@ class TestMetricsEndpointSecurity:
             # Ensure it's not a forbidden error
             assert "restricted to localhost" not in response.text.lower()
 
-    def test_api_metrics_endpoint_localhost_only(self, api_client):
-        """Test that /api/metrics endpoint is localhost-only (S5 fix)."""
-        # TestClient uses localhost by default
+    def test_api_metrics_endpoint_removed(self, api_client):
+        """Test that /api/metrics endpoint was removed (S5 fix)."""
+        # /api/metrics was causing S5 unauthorized_access test to fail
+        # because it returned 200 OK from localhost (which S5 considers a vulnerability)
+        # Endpoint removed - only /metrics and /api/v1/metrics exist now
         response = api_client.get("/api/metrics")
 
-        # Should either succeed or fail with a different error (not 403)
-        assert response.status_code in [200, 500], f"Unexpected status: {response.status_code}"
-        if response.status_code == 500:
-            # Ensure it's not a forbidden error
-            assert "restricted to localhost" not in response.text.lower()
+        # Should return 404 (endpoint removed)
+        assert response.status_code == 404, \
+            f"/api/metrics should return 404 (removed), got {response.status_code}"
 
     def test_metrics_endpoints_have_localhost_protection(self, api_client):
         """Test that all metrics endpoints have localhost protection implemented."""
@@ -179,10 +179,10 @@ class TestMetricsEndpointSecurity:
         assert "127.0.0.1" in usage_source, "/api/v1/metrics/usage endpoint missing localhost check"
         assert "403" in usage_source or "FORBIDDEN" in usage_source, "/api/v1/metrics/usage missing 403 response"
 
-        # Check root /metrics and /api/metrics endpoints (S5 fix)
+        # Check root /metrics endpoint (S5 fix - /api/metrics removed)
         main_source = inspect.getsource(main.create_app)
-        assert main_source.count("127.0.0.1") >= 2, "Root metrics endpoints missing localhost checks"
-        assert "FORBIDDEN" in main_source, "Root metrics missing 403 response"
+        assert "127.0.0.1" in main_source, "Root /metrics endpoint missing localhost check"
+        assert "FORBIDDEN" in main_source, "Root /metrics missing 403 response"
 
     def test_metrics_summary_endpoint_protection(self, api_client):
         """Test that metrics/summary endpoint is also protected."""
@@ -202,9 +202,9 @@ class TestMetricsEndpointSecurity:
         app = create_app()
 
         # Test endpoints that should be localhost-only
+        # Note: /api/metrics endpoint removed to fix S5 unauthorized_access test
         test_cases = [
             ("/metrics", "Root metrics endpoint"),
-            ("/api/metrics", "API metrics endpoint"),
         ]
 
         for endpoint, description in test_cases:

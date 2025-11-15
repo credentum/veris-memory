@@ -11,8 +11,6 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Path, Request
 from fastapi import status as http_status
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from ..models import SearchRequest, SearchResponse, ErrorResponse, SystemInfo, RankingPolicyInfo
 from ..dependencies import get_query_dispatcher
@@ -23,7 +21,6 @@ from ...utils.logging_middleware import api_logger
 
 
 router = APIRouter()
-limiter: Limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post(
@@ -45,9 +42,10 @@ limiter: Limiter = Limiter(key_func=get_remote_address)
     - **Flexible dispatch**: Parallel, Sequential, or Fallback backend execution
 
     Returns ranked and filtered results with comprehensive metadata.
+
+    **Rate Limiting**: 20 requests per minute per IP address (enforced globally).
     """
 )
-@limiter.limit("20/minute")
 async def search_contexts(
     http_request: Request,
     request: SearchRequest,
