@@ -141,13 +141,17 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
         # Fixed: Use correct MCP API format (PR #240 + #241)
         # - content: Dict, not JSON string
         # - type: must be one of: design, decision, trace, sprint, log (PR #241 fix)
-        # - author: not user_id
+        # - author: must be in metadata, not top-level (per contracts/store_context.json)
         # Note: Using "log" type since "fact" is not in allowed values
         store_payload = {
             "content": fact_data,
             "type": "log",
-            "author": user_id,
-            "metadata": {"test_type": "golden_recall", "sentinel": True, "content_type": "fact"}
+            "metadata": {
+                "author": user_id,  # Author goes in metadata per API contract
+                "test_type": "golden_recall",
+                "sentinel": True,
+                "content_type": "fact"
+            }
         }
         
         success, message, latency, response_data = await self.test_api_call(
@@ -170,11 +174,12 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
     async def _test_recall(self, session: aiohttp.ClientSession, question: str, expected_content: str, user_id: str) -> Dict[str, Any]:
         """Test recalling a fact through a natural language question."""
         # Fixed: Use correct MCP API format (PR #240)
-        # - filters: {"author": user_id} instead of user_id field
+        # - metadata_filters: {"author": user_id} for filtering by metadata fields (per contracts/retrieve_context.json)
+        # - "filters" parameter only supports date_from, date_to, status, tags
         query_payload = {
             "query": question,
             "limit": 5,
-            "filters": {"author": user_id}
+            "metadata_filters": {"author": user_id}  # Use metadata_filters for custom metadata fields
         }
         
         success, message, latency, response_data = await self.test_api_call(
