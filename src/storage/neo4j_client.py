@@ -500,22 +500,35 @@ class Neo4jInitializer:
         if not self.driver:
             raise RuntimeError("Not connected to Neo4j")
 
-        try:
-            with self.driver.session(database=self.database) as session:
-                result = session.run(cypher, parameters or {})
-                records = []
-                for record in result:
-                    # Convert neo4j record to dictionary with proper serialization
-                    record_dict = {}
-                    for key in record.keys():
-                        value = record[key]
-                        # Use serialization helper to handle all Neo4j types
-                        record_dict[key] = serialize_neo4j_value(value)
-                    records.append(record_dict)
-                return records
+        # Retry logic for "Session is closed" errors
+        # This handles cleanup scenarios where sessions may be closed prematurely
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                with self.driver.session(database=self.database) as session:
+                    result = session.run(cypher, parameters or {})
+                    records = []
+                    for record in result:
+                        # Convert neo4j record to dictionary with proper serialization
+                        record_dict = {}
+                        for key in record.keys():
+                            value = record[key]
+                            # Use serialization helper to handle all Neo4j types
+                            record_dict[key] = serialize_neo4j_value(value)
+                        records.append(record_dict)
+                    return records
 
-        except Exception as e:
-            raise RuntimeError(f"Failed to execute query: {e}")
+            except Exception as e:
+                error_msg = str(e).lower()
+                # Check if this is a "session is closed" error
+                if "session" in error_msg and ("closed" in error_msg or "invalid" in error_msg):
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Neo4j session closed, retrying with fresh session (attempt {attempt + 1}/{max_retries})")
+                        continue  # Retry with fresh session
+                    else:
+                        logger.error(f"Neo4j session still closed after {max_retries} attempts")
+                # Re-raise other errors or final retry failure
+                raise RuntimeError(f"Failed to execute query: {e}")
 
     def create_relationship(
         self,
