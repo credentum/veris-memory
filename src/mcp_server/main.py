@@ -290,6 +290,10 @@ KVBackend = _try_import_backend_component(
     "src.backends.kv_backend", "KVBackend", unified_backend_components, unified_backend_errors
 )
 
+TextSearchBackend = _try_import_backend_component(
+    "src.backends.text_backend", "TextSearchBackend", unified_backend_components, unified_backend_errors
+)
+
 create_embedding_generator = _try_import_backend_component(
     "src.core.embedding_config",
     "create_embedding_generator",
@@ -971,6 +975,17 @@ async def startup_event() -> None:
                         logger.info("✅ KV backend registered with MCP dispatcher")
                     except Exception as e:
                         logger.warning(f"⚠️ KV backend initialization failed: {e}")
+
+                # Initialize Text Backend (BM25 full-text search)
+                # Issue #311: Text backend was missing, causing hybrid search to only return vector results
+                if TextSearchBackend:
+                    try:
+                        text_backend = TextSearchBackend()
+                        query_dispatcher.register_backend("text", text_backend)
+                        logger.info("✅ Text backend registered with MCP dispatcher")
+                        logger.info("   Note: Text backend uses in-memory BM25 indexing")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Text backend initialization failed: {e}")
 
                 # Initialize unified RetrievalCore
                 retrieval_core = initialize_retrieval_core(query_dispatcher)
