@@ -17,6 +17,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.openapi.utils import get_openapi
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # API routes
 from .routes import search, health, metrics
@@ -52,9 +55,8 @@ Authorization: Bearer <your-token>
 
 ## Rate Limiting
 
-API requests are rate-limited per client. Default limits:
-- 1000 requests per hour for authenticated users
-- 100 requests per hour for unauthenticated requests
+API requests are rate-limited per client to prevent abuse. Current limits:
+- 20 requests per minute per IP address (applies to all endpoints)
 
 ## Error Handling
 
@@ -375,17 +377,22 @@ def create_openapi_schema(app: FastAPI) -> Dict[str, Any]:
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
-    
+
     app = FastAPI(
         title=API_TITLE,
         version=API_VERSION,
         description=API_DESCRIPTION,
         lifespan=lifespan,
         docs_url="/docs",
-        redoc_url="/redoc", 
+        redoc_url="/redoc",
         openapi_url="/openapi.json"
     )
-    
+
+    # Rate limiting (S5 security fix - prevent brute force attacks)
+    limiter = Limiter(key_func=get_remote_address)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
     # Security middleware
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])  # Configure appropriately for production
     

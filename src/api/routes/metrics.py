@@ -9,7 +9,7 @@ and observability data collection.
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from fastapi import status as http_status
 
 from ..models import MetricsSummary, ErrorResponse
@@ -28,22 +28,37 @@ router = APIRouter()
     summary="Get system metrics",
     description="""
     Get comprehensive system performance metrics.
-    
+
     Includes:
     - Request statistics and response times
     - Backend performance metrics
     - Search mode and ranking policy usage
     - Error rates and status code distributions
     - Resource utilization metrics
+
+    **Note**: Access restricted to localhost only for security.
     """
 )
 async def get_metrics(
+    request: Request,
     window_minutes: int = Query(60, ge=1, le=1440, description="Metrics time window in minutes"),
     include_details: bool = Query(True, description="Include detailed breakdown"),
     dispatcher: QueryDispatcher = Depends(get_query_dispatcher)
 ) -> Dict[str, Any]:
     """Get comprehensive system metrics."""
-    
+
+    # S5 security fix: Restrict metrics access to localhost only
+    client_ip = request.client.host if request.client else None
+    if client_ip not in ["127.0.0.1", "::1", "localhost"]:
+        api_logger.warning(
+            "Metrics access denied - not from localhost",
+            client_ip=client_ip
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Metrics endpoint is restricted to localhost access only"
+        )
+
     api_logger.info(
         "Collecting system metrics",
         window_minutes=window_minutes,
@@ -99,17 +114,32 @@ async def get_metrics(
     summary="Get metrics summary",
     description="""
     Get a structured summary of key performance metrics.
-    
+
     Provides a standardized metrics format suitable for
     monitoring systems and dashboards.
+
+    **Note**: Access restricted to localhost only for security.
     """
 )
 async def get_metrics_summary(
+    request: Request,
     window_minutes: int = Query(60, ge=1, le=1440, description="Metrics time window in minutes"),
     dispatcher: QueryDispatcher = Depends(get_query_dispatcher)
 ) -> MetricsSummary:
     """Get structured metrics summary."""
-    
+
+    # S5 security fix: Restrict metrics access to localhost only
+    client_ip = request.client.host if request.client else None
+    if client_ip not in ["127.0.0.1", "::1", "localhost"]:
+        api_logger.warning(
+            "Metrics summary access denied - not from localhost",
+            client_ip=client_ip
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Metrics endpoint is restricted to localhost access only"
+        )
+
     api_logger.info("Collecting metrics summary", window_minutes=window_minutes)
     
     try:
@@ -187,18 +217,33 @@ async def get_metrics_summary(
     summary="Get performance metrics",
     description="""
     Get detailed performance metrics for system optimization.
-    
+
     Includes response time distributions, throughput metrics,
     and resource utilization statistics.
+
+    **Note**: Access restricted to localhost only for security.
     """
 )
 async def get_performance_metrics(
+    request: Request,
     include_percentiles: bool = Query(True, description="Include response time percentiles"),
     include_backend_breakdown: bool = Query(True, description="Include per-backend metrics"),
     dispatcher: QueryDispatcher = Depends(get_query_dispatcher)
 ) -> Dict[str, Any]:
     """Get detailed performance metrics."""
-    
+
+    # S5 security fix: Restrict metrics access to localhost only
+    client_ip = request.client.host if request.client else None
+    if client_ip not in ["127.0.0.1", "::1", "localhost"]:
+        api_logger.warning(
+            "Metrics performance access denied - not from localhost",
+            client_ip=client_ip
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Metrics endpoint is restricted to localhost access only"
+        )
+
     api_logger.info(
         "Collecting performance metrics",
         include_percentiles=include_percentiles,
@@ -265,16 +310,31 @@ async def get_performance_metrics(
     summary="Get usage statistics",
     description="""
     Get usage statistics and patterns.
-    
+
     Includes search mode preferences, ranking policy usage,
     and feature utilization statistics.
+
+    **Note**: Access restricted to localhost only for security.
     """
 )
 async def get_usage_statistics(
+    request: Request,
     dispatcher: QueryDispatcher = Depends(get_query_dispatcher)
 ) -> Dict[str, Any]:
     """Get system usage statistics."""
-    
+
+    # S5 security fix: Restrict metrics access to localhost only
+    client_ip = request.client.host if request.client else None
+    if client_ip not in ["127.0.0.1", "::1", "localhost"]:
+        api_logger.warning(
+            "Metrics usage access denied - not from localhost",
+            client_ip=client_ip
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Metrics endpoint is restricted to localhost access only"
+        )
+
     api_logger.info("Collecting usage statistics")
     
     try:

@@ -31,6 +31,7 @@ opentelemetry-exporter-prometheus>=0.57b0
 aiohttp>=3.9.0
 aiohttp-cors>=0.7.0
 python-multipart>=0.0.6
+slowapi>=0.1.9
 
 # Data processing
 pyyaml>=6.0
