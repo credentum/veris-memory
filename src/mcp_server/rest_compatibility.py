@@ -40,8 +40,11 @@ router = APIRouter(prefix="/api", tags=["REST Compatibility"])
 class ContextCreateRequest(BaseModel):
     """Request model for POST /api/v1/contexts"""
     user_id: Optional[str] = Field(None, description="User identifier")
-    content: str = Field(..., description="Context content")
-    content_type: Optional[str] = Field("context", description="Type of content")
+    content: str = Field(..., description="Context content text")
+    content_type: Optional[str] = Field(
+        "log",
+        description="Type of content. Must be one of: design, decision, trace, sprint, log"
+    )
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata")
 
 
@@ -175,10 +178,12 @@ async def create_context(
     """
     try:
         # Map REST request to MCP tool payload
+        # IMPORTANT: MCP endpoint expects content as Dict[str, Any], not string
+        # Convert REST string content to MCP dict format
         mcp_payload = {
             "author": payload.user_id or "anonymous",
-            "content": payload.content,
-            "type": payload.content_type or "context",
+            "content": {"text": payload.content},  # Wrap string in dict with "text" key
+            "type": payload.content_type or "log",  # Default to "log" (valid MCP type)
             "metadata": payload.metadata or {}
         }
 
