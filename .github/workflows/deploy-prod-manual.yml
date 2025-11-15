@@ -35,6 +35,8 @@ jobs:
           # Mask secrets in logs
           echo "::add-mask::${{ secrets.HETZNER_SSH_KEY }}"
           echo "::add-mask::${{ secrets.NEO4J_PROD_PASSWORD }}"
+          echo "::add-mask::${{ secrets.NEO4J_RO_PASSWORD }}"
+          echo "::add-mask::${{ secrets.REDIS_PASSWORD }}"
           echo "::add-mask::${{ secrets.TAILSCALE_AUTHKEY }}"
           
           # Create SSH key with secure permissions
@@ -93,6 +95,8 @@ jobs:
             
             # Export production environment variables
             export NEO4J_PASSWORD='${{ secrets.NEO4J_PROD_PASSWORD }}'
+            export NEO4J_RO_PASSWORD='${{ secrets.NEO4J_RO_PASSWORD }}'
+            export REDIS_PASSWORD='${{ secrets.REDIS_PASSWORD }}'
             export TAILSCALE_AUTHKEY='${{ secrets.TAILSCALE_AUTHKEY }}'
             export TAILSCALE_HOSTNAME='veris-memory-prod'
             export ENVIRONMENT=prod

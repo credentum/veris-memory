@@ -49,6 +49,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
 
   # Export all secrets as environment variables for scripts to use
   export NEO4J_PASSWORD='$NEO4J_PASSWORD'
+  export NEO4J_RO_PASSWORD='$NEO4J_RO_PASSWORD'
   export TELEGRAM_BOT_TOKEN='$TELEGRAM_BOT_TOKEN'
   export TELEGRAM_CHAT_ID='$TELEGRAM_CHAT_ID'
   export API_KEY_MCP='$API_KEY_MCP'
@@ -281,6 +282,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
     # Note: Secrets are passed as environment variables from GitHub Actions
     {
       printf "NEO4J_PASSWORD=%s\\n" "\$NEO4J_PASSWORD"
+      printf "NEO4J_RO_PASSWORD=%s\\n" "\$NEO4J_RO_PASSWORD"
       printf "NEO4J_AUTH=neo4j/%s\\n" "\$NEO4J_PASSWORD"
 
       # SECURITY: Redis Password Authentication

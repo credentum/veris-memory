@@ -12,7 +12,8 @@ services:
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
-      - REDIS_URL=redis://redis:6379
+      - NEO4J_RO_PASSWORD=${NEO4J_RO_PASSWORD}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - MCP_SERVER_PORT=8000
       - LOG_LEVEL=info
       # Hetzner-specific configuration
@@ -141,14 +142,16 @@ services:
 
   # Cache/KV Store (Redis) - High-memory configuration
   redis:
-    image: redis:7.2.5-alpine@sha256:3d2c7e0e2cb6af5e43f3e21ec0fd3e0b4b4d5af5e4f0c9b4e8b0f8b0f8b0f8b0
+    image: redis:7.2.5-alpine@sha256:6aaf3f5e6bc8a592fbfe2cccf19eb36d27c39d12dab4f4b01556b7449e7b1f44
     ports:
       - "127.0.0.1:6379:6379" # Tailscale only
     volumes:
       # RAID1 NVMe storage for persistence
       - /raid1/docker-data/redis:/data
+    # SECURITY: Redis with password authentication
     command: >
       redis-server
+      --requirepass ${REDIS_PASSWORD}
       --appendonly yes
       --maxmemory 8gb
       --maxmemory-policy allkeys-lru
@@ -159,8 +162,9 @@ services:
       --timeout 0
       --tcp-backlog 511
       --databases 16
+      --protected-mode yes
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
