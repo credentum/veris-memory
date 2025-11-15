@@ -31,7 +31,13 @@ echo "✅ Required environment variables are set"
 
 # Pass environment variables and execute deployment on remote server
 # NOTE: Using unquoted heredoc to allow variable expansion
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 $HETZNER_USER@$HETZNER_HOST << EOSSH
+# SSH keepalive options prevent timeout during long Docker builds
+ssh -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=~/.ssh/known_hosts \
+    -o ServerAliveInterval=60 \
+    -o ServerAliveCountMax=20 \
+    -i ~/.ssh/id_ed25519 \
+    $HETZNER_USER@$HETZNER_HOST << EOSSH
   set -e
 
   echo "🔵 DEVELOPMENT DEPLOYMENT STARTING"
