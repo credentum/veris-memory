@@ -126,6 +126,9 @@ class SearchResultResponse(BaseModel):
     # Backend performance breakdown
     backend_timings: Dict[str, float] = Field(default_factory=dict, description="Per-backend timing breakdown")
     backends_used: List[str] = Field(default_factory=list, description="List of backends that were queried")
+
+    # Result source breakdown (Issue #311: visibility into hybrid search composition)
+    source_breakdown: Dict[str, int] = Field(default_factory=lambda: {}, description="Count of results from each source (vector, graph, text, kv)")
     
     @model_validator(mode='after')
     def total_count_matches_results(self):

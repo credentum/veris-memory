@@ -203,18 +203,25 @@ class QueryDispatcher:
             
             # Apply final limit
             final_results = ranked_results[:options.limit]
-            
+
+            # Calculate source breakdown (Issue #311: visibility into hybrid search composition)
+            source_breakdown = {}
+            for result in final_results:
+                source = result.source
+                source_breakdown[source] = source_breakdown.get(source, 0) + 1
+
             total_time = (time.time() - start_time) * 1000
-            
+
             search_logger.info(
                 f"Query dispatch completed",
                 total_time_ms=total_time,
                 backends_used=list(backends_used),
                 total_results=len(merged_results),
                 final_results=len(final_results),
+                source_breakdown=source_breakdown,
                 trace_id=trace_id
             )
-            
+
             return SearchResultResponse(
                 success=True,
                 results=final_results,
@@ -224,7 +231,8 @@ class QueryDispatcher:
                 response_time_ms=total_time,
                 trace_id=trace_id,
                 backend_timings=backend_timings,
-                backends_used=list(backends_used)
+                backends_used=list(backends_used),
+                source_breakdown=source_breakdown
             )
             
         except Exception as e:
@@ -404,6 +412,19 @@ class QueryDispatcher:
                     all_results[backend_name] = results
                     backend_timings[backend_name] = timing
                     backends_used.add(backend_name)
+                    # Issue #311: Log backend results for debugging hybrid search
+                    search_logger.info(
+                        "Backend '%s' returned %d results in %.1fms",
+                        backend_name,
+                        len(results),
+                        timing,
+                        extra={
+                            "backend": backend_name,
+                            "result_count": len(results),
+                            "timing_ms": timing,
+                            "trace_id": trace_id
+                        }
+                    )
                 except Exception as e:
                     search_logger.warning(f"Backend {backend_name} failed: {e}")
                     backend_timings[backend_name] = 0.0

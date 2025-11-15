@@ -85,6 +85,27 @@ def mock_kv_results():
     ]
 
 
+@pytest.fixture
+def mock_text_results():
+    """Create mock text search results (Issue #311)."""
+    return [
+        MemoryResult(
+            id="text_1",
+            text="Text result 1",
+            score=0.85,
+            source=ResultSource.TEXT,
+            type=ContentType.DOCUMENTATION
+        ),
+        MemoryResult(
+            id="text_2",
+            text="Text result 2",
+            score=0.75,
+            source=ResultSource.TEXT,
+            type=ContentType.CODE
+        )
+    ]
+
+
 class TestQueryDispatcher:
     """Test QueryDispatcher functionality."""
     
@@ -193,7 +214,57 @@ class TestQueryDispatcher:
         assert vector_backend.search_called_count == 1
         assert graph_backend.search_called_count == 1
         assert kv_backend.search_called_count == 1
-    
+
+    @pytest.mark.asyncio
+    async def test_hybrid_search_source_breakdown(
+        self, mock_vector_results, mock_graph_results, mock_kv_results, mock_text_results
+    ):
+        """Test that source_breakdown field correctly counts results from each backend (Issue #311)."""
+        dispatcher = QueryDispatcher()
+
+        # Register all 4 backends (vector, graph, text, kv)
+        vector_backend = MockBackend("vector", mock_vector_results)
+        graph_backend = MockBackend("graph", mock_graph_results)
+        text_backend = MockBackend("text", mock_text_results)
+        kv_backend = MockBackend("kv", mock_kv_results)
+
+        dispatcher.register_backend("vector", vector_backend)
+        dispatcher.register_backend("graph", graph_backend)
+        dispatcher.register_backend("text", text_backend)
+        dispatcher.register_backend("kv", kv_backend)
+
+        response = await dispatcher.dispatch_query(
+            "test query",
+            search_mode=SearchMode.HYBRID
+        )
+
+        assert response.success is True
+        assert response.search_mode_used == "hybrid"
+
+        # Verify source_breakdown field exists
+        assert hasattr(response, "source_breakdown")
+        assert response.source_breakdown is not None
+        assert isinstance(response.source_breakdown, dict)
+
+        # Verify source counts match actual results
+        expected_breakdown = {
+            "vector": 2,  # mock_vector_results has 2
+            "graph": 1,   # mock_graph_results has 1
+            "text": 2,    # mock_text_results has 2
+            "kv": 1       # mock_kv_results has 1
+        }
+
+        assert response.source_breakdown == expected_breakdown
+
+        # Verify sum of breakdown matches total results
+        total_from_breakdown = sum(response.source_breakdown.values())
+        assert total_from_breakdown == len(response.results)
+
+        # Verify each source is represented in results
+        result_sources = [r.source for r in response.results]
+        for source, count in response.source_breakdown.items():
+            assert result_sources.count(source) == count
+
     @pytest.mark.asyncio
     async def test_search_with_options(self, mock_vector_results):
         """Test search with custom options."""
