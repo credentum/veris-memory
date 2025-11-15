@@ -247,15 +247,21 @@ class GraphIntentValidation(BaseCheck):
                         # - content_type not context_type
                         # - content must be string, not dict
                         # - title should be in metadata, not top level
+
                         # MCP Type Validation: Must use valid MCP type (design|decision|trace|sprint|log)
-                        # Using "log" for sentinel monitoring test data
+                        # Using "log" because:
+                        # - "design"/"decision" are for product planning docs (not monitoring data)
+                        # - "trace" is for execution/debugging traces (not test scenarios)
+                        # - "sprint" is for sprint planning (not operational testing)
+                        # - "log" is for operational/monitoring/test data ✓ (most appropriate)
+                        # Original type "graph_intent_test" preserved in metadata.test_type for filtering
                         store_data = {
                             "content_type": "log",  # Changed from "graph_intent_test" (invalid) to "log" (valid MCP type)
                             "content": context_text,
                             "metadata": {
                                 "title": f"Graph Intent Test - {scenario_name} #{i+1}",
                                 "test_scenario": scenario_name,
-                                "test_type": "graph_intent_test",  # Moved invalid type value to metadata
+                                "test_type": "graph_intent_test",  # Original type preserved for filtering/search
                                 "scenario_index": i,
                                 "expected_relationships": expected_relationships,
                                 "test_timestamp": datetime.utcnow().isoformat()
