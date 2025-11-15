@@ -9,8 +9,10 @@ parameter validation and response formatting.
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Query, Path
+from fastapi import APIRouter, HTTPException, Depends, Query, Path, Request
 from fastapi import status as http_status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from ..models import SearchRequest, SearchResponse, ErrorResponse, SystemInfo, RankingPolicyInfo
 from ..dependencies import get_query_dispatcher
@@ -21,6 +23,7 @@ from ...utils.logging_middleware import api_logger
 
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post(
@@ -34,17 +37,19 @@ router = APIRouter()
     summary="Search contexts",
     description="""
     Search for contexts across multiple backends with advanced filtering and ranking.
-    
+
     Supports:
     - **Multi-backend search**: Vector (semantic), Graph (relational), Key-Value (exact)
     - **Intelligent ranking**: Default balanced, Code-focused, or Recency-prioritized
     - **Advanced filtering**: Time windows, content types, tags, scores, namespaces
     - **Flexible dispatch**: Parallel, Sequential, or Fallback backend execution
-    
+
     Returns ranked and filtered results with comprehensive metadata.
     """
 )
+@limiter.limit("20/minute")
 async def search_contexts(
+    http_request: Request,
     request: SearchRequest,
     dispatcher: QueryDispatcher = Depends(get_query_dispatcher)
 ) -> SearchResponse:
