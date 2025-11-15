@@ -13,13 +13,13 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Get environment argument (default to dev)
-ENVIRONMENT="${1:-dev}"
+# Get environment argument (default to development)
+ENVIRONMENT="${1:-development}"
 
 # Validate environment
-if [[ "$ENVIRONMENT" != "dev" && "$ENVIRONMENT" != "prod" ]]; then
+if [[ "$ENVIRONMENT" != "development" && "$ENVIRONMENT" != "production" ]]; then
     echo -e "${RED}❌ Error: Invalid environment '$ENVIRONMENT'${NC}"
-    echo "Usage: $0 [dev|prod]"
+    echo "Usage: $0 [development|production]"
     exit 1
 fi
 
@@ -27,7 +27,7 @@ echo -e "${CYAN}🚀 Starting $ENVIRONMENT Deployment${NC}"
 echo "================================================"
 
 # Configuration based on environment
-if [ "$ENVIRONMENT" = "dev" ]; then
+if [ "$ENVIRONMENT" = "development" ]; then
     echo -e "${YELLOW}📦 Deploying to DEVELOPMENT environment${NC}"
     PROJECT_NAME="veris-memory-dev"
     COMPOSE_FILE="docker-compose.yml"  # Use standard compose for dev
@@ -69,7 +69,7 @@ fi
 echo "  ✓ dockerfiles/Dockerfile exists"
 
 # Additional verification for production dockerfile if needed
-if [ "$ENVIRONMENT" = "prod" ] && grep -q "Dockerfile.flyio" "$COMPOSE_FILE" 2>/dev/null; then
+if [ "$ENVIRONMENT" = "production" ] && grep -q "Dockerfile.flyio" "$COMPOSE_FILE" 2>/dev/null; then
     if [ ! -f "dockerfiles/Dockerfile.flyio" ]; then
         echo -e "${RED}❌ Error: dockerfiles/Dockerfile.flyio not found${NC}"
         exit 1
@@ -78,9 +78,9 @@ if [ "$ENVIRONMENT" = "prod" ] && grep -q "Dockerfile.flyio" "$COMPOSE_FILE" 2>/
 fi
 
 # Check if environment-specific compose file exists
-if [ ! -f "$COMPOSE_FILE" ] && [ "$ENVIRONMENT" = "prod" ]; then
+if [ ! -f "$COMPOSE_FILE" ] && [ "$ENVIRONMENT" = "production" ]; then
     echo -e "${YELLOW}⚠️  Warning: $COMPOSE_FILE not found, creating from template${NC}"
-    # Create prod compose file if it doesn't exist
+    # Create production compose file if it doesn't exist
     cat > docker-compose.prod.yml << 'EOF'
 version: "3.8"
 
@@ -319,7 +319,7 @@ echo -e "${GREEN}✅ Volumes removed - fresh state ensured${NC}"
 
 # Stop any containers using our target ports
 echo -e "${BLUE}🔍 Checking for port conflicts...${NC}"
-if [ "$ENVIRONMENT" = "dev" ]; then
+if [ "$ENVIRONMENT" = "development" ]; then
     PORTS="$API_PORT $QDRANT_PORT $NEO4J_HTTP_PORT $NEO4J_BOLT_PORT $REDIS_PORT 6334 7880 7882 3478 5349"
 else
     PORTS="$API_PORT $QDRANT_PORT $NEO4J_HTTP_PORT $NEO4J_BOLT_PORT $REDIS_PORT 6335 7880 7882 3478 5349"
@@ -762,7 +762,7 @@ fi
 echo ""
 echo -e "${GREEN}🎉 $ENVIRONMENT deployment completed!${NC}"
 echo "================================================"
-if [ "$ENVIRONMENT" = "dev" ]; then
+if [ "$ENVIRONMENT" = "development" ]; then
     echo "Development services available at:"
     echo "  • MCP Server: http://localhost:8000"
     echo "  • REST API: http://localhost:8001"
