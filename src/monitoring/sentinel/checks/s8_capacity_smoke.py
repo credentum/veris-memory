@@ -41,7 +41,8 @@ class CapacitySmoke(BaseCheck):
         self.concurrent_requests = config.get("s8_capacity_concurrent_requests", 50)
         self.test_duration_seconds = config.get("s8_capacity_duration_sec", 30)
         self.timeout_seconds = config.get("s8_capacity_timeout_sec", 60)
-        self.max_response_time_ms = config.get("s8_max_response_time_ms", 2000)
+        # Increased from 2000ms to 2500ms to account for REST→MCP forwarding overhead (PR #269)
+        self.max_response_time_ms = config.get("s8_max_response_time_ms", 2500)
         self.max_error_rate_percent = config.get("s8_max_error_rate_percent", 5)
 
         # Get API key from environment for authentication

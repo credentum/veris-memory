@@ -340,6 +340,41 @@ validate_deployment() {
     log "✅ Deployment validation completed"
 }
 
+# Trigger post-deployment backup
+trigger_post_deployment_backup() {
+    log "💾 Triggering post-deployment backup to refresh backup data..."
+
+    ssh "$SSH_TARGET" "
+        cd $REMOTE_DIR
+
+        echo 'Creating post-deployment backup...'
+
+        # Check if backup script exists
+        if [ -f ./scripts/backup-production-final.sh ]; then
+            echo 'Running backup script...'
+            bash ./scripts/backup-production-final.sh || {
+                echo 'Warning: Backup script failed, but continuing deployment'
+                exit 0  # Don't fail deployment if backup fails
+            }
+        else
+            echo 'Warning: Backup script not found at ./scripts/backup-production-final.sh'
+            echo 'Attempting alternative backup methods...'
+
+            # Alternative: Trigger backup via API if available
+            if curl -f -s http://127.0.0.1:8001/admin/backup > /dev/null 2>&1; then
+                echo 'Triggered backup via API'
+            else
+                echo 'Warning: Could not trigger backup via API'
+                echo 'S6 backup validation may fail until next scheduled backup runs'
+            fi
+        fi
+
+        echo '✅ Post-deployment backup attempt completed'
+    " || warn "Post-deployment backup failed, but continuing deployment"
+
+    log "✅ Post-deployment backup triggered (S6 will validate on next run)"
+}
+
 # Performance test
 performance_test() {
     log "⚡ Running performance test on 64GB system..."
@@ -391,6 +426,7 @@ main() {
     validate_remote_environment
     deploy_services
     validate_deployment
+    trigger_post_deployment_backup  # Refresh backup data for S6 validation
     performance_test
     
     log "🎉 Monitoring deployment completed successfully!"

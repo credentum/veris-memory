@@ -52,7 +52,9 @@ class ConfigParity(BaseCheck):
             "NEO4J_URL",
             "NEO4J_URI",
             "REDIS_URL",
-            "TARGET_BASE_URL"
+            "TARGET_BASE_URL",
+            "MCP_INTERNAL_URL",      # REST compatibility layer internal URL (PR #269)
+            "MCP_FORWARD_TIMEOUT"    # REST to MCP forwarding timeout (PR #269)
         ])
         # Expected versions - Phase 4 Update (2025-11-08)
         #
