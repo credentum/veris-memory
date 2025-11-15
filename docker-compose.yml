@@ -153,6 +153,8 @@ services:
     volumes:
       - redis_data:/data
     # SECURITY: Redis with password authentication
+    # Password is required via --requirepass flag. If REDIS_PASSWORD is not set,
+    # the container will fail to start with an error about missing environment variable.
     command: >
       redis-server
       --requirepass ${REDIS_PASSWORD}
@@ -160,6 +162,14 @@ services:
       --maxmemory 512mb
       --maxmemory-policy allkeys-lru
       --protected-mode yes
+    # HEALTHCHECK BEHAVIOR:
+    # - If REDIS_PASSWORD is not set: Container fails to start (docker-compose error)
+    # - If REDIS_PASSWORD is wrong in healthcheck: Healthcheck fails, container marked unhealthy
+    # - If REDIS_PASSWORD is correct: Healthcheck succeeds, container marked healthy
+    #
+    # Debug failing healthchecks:
+    #   docker exec <container> redis-cli -a "$REDIS_PASSWORD" ping
+    #   docker inspect --format='{{.State.Health.Status}}' <container>
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 30s

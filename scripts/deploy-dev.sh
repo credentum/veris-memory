@@ -278,6 +278,58 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
       rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13 .env.tmp14 .env.tmp15
     fi
 
+    # SECURITY: Validate required secrets before writing to .env
+    echo "🔐 Validating required secrets..."
+    VALIDATION_FAILED=0
+
+    if [ -z "\$NEO4J_PASSWORD" ]; then
+      echo "❌ ERROR: NEO4J_PASSWORD is not set or empty!"
+      VALIDATION_FAILED=1
+    fi
+
+    if [ -z "\$NEO4J_RO_PASSWORD" ]; then
+      echo "❌ ERROR: NEO4J_RO_PASSWORD is not set or empty!"
+      echo "   This secret must be explicitly configured in GitHub Secrets."
+      echo "   No default fallback is allowed for security reasons."
+      VALIDATION_FAILED=1
+    fi
+
+    if [ -z "\$REDIS_PASSWORD" ]; then
+      echo "❌ ERROR: REDIS_PASSWORD is not set or empty!"
+      echo "   Redis requires authentication for security."
+      VALIDATION_FAILED=1
+    fi
+
+    # Check minimum password lengths
+    if [ -n "\$NEO4J_PASSWORD" ] && [ \${#NEO4J_PASSWORD} -lt 16 ]; then
+      echo "⚠️  WARNING: NEO4J_PASSWORD is less than 16 characters (current: \${#NEO4J_PASSWORD})"
+      echo "   Consider using a longer password for better security."
+    fi
+
+    if [ -n "\$NEO4J_RO_PASSWORD" ] && [ \${#NEO4J_RO_PASSWORD} -lt 16 ]; then
+      echo "⚠️  WARNING: NEO4J_RO_PASSWORD is less than 16 characters (current: \${#NEO4J_RO_PASSWORD})"
+      echo "   Consider using a longer password for better security."
+    fi
+
+    if [ -n "\$REDIS_PASSWORD" ] && [ \${#REDIS_PASSWORD} -lt 16 ]; then
+      echo "⚠️  WARNING: REDIS_PASSWORD is less than 16 characters (current: \${#REDIS_PASSWORD})"
+      echo "   Consider using a longer password for better security."
+    fi
+
+    if [ \$VALIDATION_FAILED -eq 1 ]; then
+      echo ""
+      echo "❌ DEPLOYMENT FAILED: Required secrets are missing!"
+      echo ""
+      echo "Fix by adding these secrets to GitHub Secrets:"
+      echo "  1. Go to: https://github.com/credentum/veris-memory/settings/secrets/actions"
+      echo "  2. Add the missing secrets listed above"
+      echo "  3. Re-run the deployment workflow"
+      echo ""
+      exit 1
+    fi
+
+    echo "✅ All required secrets are present and valid"
+
     # Write secrets to .env without echoing them
     # Note: Secrets are passed as environment variables from GitHub Actions
     {
