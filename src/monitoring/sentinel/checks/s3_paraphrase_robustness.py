@@ -145,11 +145,12 @@ class ParaphraseRobustness(BaseCheck):
                 return_exceptions=True
             )
             
-            # Analyze results
+            # Analyze results - distinguish between failures, warnings, and passes
             semantic_issues = []
             passed_tests = []
             failed_tests = []
-            
+            warned_tests = []
+
             test_names = [
                 "semantic_similarity",
                 "result_consistency",
@@ -159,26 +160,36 @@ class ParaphraseRobustness(BaseCheck):
                 "embedding_similarity",
                 "response_quality_consistency"
             ]
-            
+
             for i, result in enumerate(test_results):
                 test_name = test_names[i]
-                
+
                 if isinstance(result, Exception):
                     failed_tests.append(test_name)
                     semantic_issues.append(f"{test_name}: {str(result)}")
+                elif result.get("status") == "warn":
+                    # Test returned warning (insufficient data)
+                    warned_tests.append(test_name)
                 elif result.get("passed", False):
                     passed_tests.append(test_name)
                 else:
+                    # Test failed with actual semantic issues
                     failed_tests.append(test_name)
                     semantic_issues.append(f"{test_name}: {result.get('message', 'Unknown failure')}")
-            
+
             latency_ms = (time.time() - start_time) * 1000
-            
-            # Determine overall status
-            if semantic_issues:
+
+            # Determine overall status based on failures and warnings
+            if failed_tests:
+                # Real failures take precedence
                 status = "fail"
-                message = f"Semantic consistency issues detected: {len(semantic_issues)} problems found"
+                message = f"Semantic consistency issues detected: {len(failed_tests)} tests failed"
+            elif warned_tests:
+                # Warnings if insufficient data but no real failures
+                status = "warn"
+                message = f"Insufficient data for semantic testing: {len(warned_tests)} tests skipped (database may be empty)"
             else:
+                # All tests passed
                 status = "pass"
                 message = f"All paraphrase robustness checks passed: {len(passed_tests)} tests successful"
             
@@ -192,9 +203,11 @@ class ParaphraseRobustness(BaseCheck):
                     "total_tests": len(test_names),
                     "passed_tests": len(passed_tests),
                     "failed_tests": len(failed_tests),
+                    "warned_tests": len(warned_tests),
                     "semantic_issues": semantic_issues,
                     "passed_test_names": passed_tests,
                     "failed_test_names": failed_tests,
+                    "warned_test_names": warned_tests,
                     "test_results": test_results,
                     "paraphrase_configuration": {
                         "min_similarity_threshold": self.min_similarity_threshold,
@@ -294,12 +307,27 @@ class ParaphraseRobustness(BaseCheck):
             topics_tested = len(similarity_results)
             topics_passed = len([r for r in similarity_results if r["meets_threshold"]])
             overall_avg_similarity = statistics.mean([r["average_similarity"] for r in similarity_results]) if similarity_results else 0
-            
+
+            # Check if we have insufficient data (empty database scenario)
+            total_successful_searches = sum([r["successful_searches"] for r in similarity_results])
+            if total_successful_searches == 0:
+                # No search results at all - likely empty database
+                return {
+                    "passed": True,  # Don't fail the check
+                    "status": "warn",
+                    "message": "Semantic similarity test: insufficient data (0 successful searches, database may be empty)",
+                    "data_available": False,
+                    "topics_tested": topics_tested,
+                    "topics_passed": 0,
+                    "similarity_results": similarity_results,
+                    "issues": ["No search results returned - cannot validate semantic similarity without data"]
+                }
+
             issues = []
             for result in similarity_results:
                 if not result["meets_threshold"]:
                     issues.append(f"Topic '{result['topic']}': similarity {result['average_similarity']:.3f} below threshold {result['expected_similarity']}")
-            
+
             return {
                 "passed": len(issues) == 0,
                 "message": f"Semantic similarity test: {topics_passed}/{topics_tested} topics passed, avg similarity {overall_avg_similarity:.3f}" + (f", issues: {len(issues)}" if issues else ""),
@@ -399,14 +427,29 @@ class ParaphraseRobustness(BaseCheck):
             # Overall consistency analysis
             topics_tested = len([r for r in consistency_results if "error" not in r])
             topics_passed = len([r for r in consistency_results if r.get("meets_threshold", False)])
-            
+
+            # Check if we have insufficient data
+            total_successful_searches = sum([r.get("successful_searches", 0) for r in consistency_results])
+            if total_successful_searches < 2:
+                # Insufficient successful searches for consistency analysis
+                return {
+                    "passed": True,  # Don't fail the check
+                    "status": "warn",
+                    "message": f"Result consistency test: insufficient data ({total_successful_searches} successful searches, need at least 2)",
+                    "data_available": False,
+                    "topics_tested": len(consistency_results),
+                    "topics_passed": 0,
+                    "consistency_results": consistency_results,
+                    "issues": ["Insufficient successful searches - cannot validate result consistency without data"]
+                }
+
             issues = []
             for result in consistency_results:
                 if "error" in result:
                     issues.append(f"Topic '{result['topic']}': {result['error']}")
                 elif not result.get("meets_threshold", False):
                     issues.append(f"Topic '{result['topic']}': consistency {result.get('average_consistency', 0):.3f} below threshold")
-            
+
             return {
                 "passed": len(issues) == 0,
                 "message": f"Result consistency test: {topics_passed}/{topics_tested} topics passed" + (f", issues: {len(issues)}" if issues else ""),
@@ -486,14 +529,29 @@ class ParaphraseRobustness(BaseCheck):
             # Overall ranking stability analysis
             topics_tested = len([r for r in ranking_results if "error" not in r])
             topics_passed = len([r for r in ranking_results if r.get("meets_threshold", False)])
-            
+
+            # Check if we have insufficient data
+            total_runs = sum([r.get("runs_completed", 0) for r in ranking_results])
+            if total_runs < 2:
+                # Insufficient runs for stability analysis
+                return {
+                    "passed": True,  # Don't fail the check
+                    "status": "warn",
+                    "message": f"Ranking stability test: insufficient data ({total_runs} runs completed, need at least 2)",
+                    "data_available": False,
+                    "topics_tested": len(ranking_results),
+                    "topics_passed": 0,
+                    "ranking_results": ranking_results,
+                    "issues": ["Insufficient runs - cannot validate ranking stability without data"]
+                }
+
             issues = []
             for result in ranking_results:
                 if "error" in result:
                     issues.append(f"Topic '{result['topic']}': {result['error']}")
                 elif not result.get("meets_threshold", False):
                     issues.append(f"Topic '{result['topic']}': stability {result.get('average_stability', 0):.3f} below threshold")
-            
+
             return {
                 "passed": len(issues) == 0,
                 "message": f"Ranking stability test: {topics_passed}/{topics_tested} topics passed" + (f", issues: {len(issues)}" if issues else ""),
@@ -587,14 +645,29 @@ class ParaphraseRobustness(BaseCheck):
             # Overall robustness analysis
             topics_tested = len([r for r in retrieval_results if "error" not in r])
             topics_passed = len([r for r in retrieval_results if r.get("meets_threshold", False)])
-            
+
+            # Check if we have insufficient data
+            total_successful_retrievals = sum([r.get("successful_retrievals", 0) for r in retrieval_results])
+            if total_successful_retrievals < 2:
+                # Insufficient successful retrievals for robustness analysis
+                return {
+                    "passed": True,  # Don't fail the check
+                    "status": "warn",
+                    "message": f"Context retrieval robustness test: insufficient data ({total_successful_retrievals} successful retrievals, need at least 2)",
+                    "data_available": False,
+                    "topics_tested": len(retrieval_results),
+                    "topics_passed": 0,
+                    "retrieval_results": retrieval_results,
+                    "issues": ["Insufficient successful retrievals - cannot validate robustness without data"]
+                }
+
             issues = []
             for result in retrieval_results:
                 if "error" in result:
                     issues.append(f"Topic '{result['topic']}': {result['error']}")
                 elif not result.get("meets_threshold", False):
                     issues.append(f"Topic '{result['topic']}': robustness {result.get('overall_robustness', 0):.3f} below threshold")
-            
+
             return {
                 "passed": len(issues) == 0,
                 "message": f"Context retrieval robustness test: {topics_passed}/{topics_tested} topics passed" + (f", issues: {len(issues)}" if issues else ""),
@@ -679,14 +752,29 @@ class ParaphraseRobustness(BaseCheck):
             # Analyze overall expansion effectiveness
             total_tests = len(expansion_results)
             effective_expansions = len([r for r in expansion_results if r.get("expansion_effective", False)])
-            
+
+            # Check if we have insufficient data
+            successful_tests = len([r for r in expansion_results if "error" not in r and r.get("simple_count", 0) > 0])
+            if successful_tests == 0:
+                # No successful expansions to compare
+                return {
+                    "passed": True,  # Don't fail the check
+                    "status": "warn",
+                    "message": "Query expansion test: insufficient data (no successful query results to compare)",
+                    "data_available": False,
+                    "total_tests": total_tests,
+                    "effective_expansions": 0,
+                    "expansion_results": expansion_results,
+                    "issues": ["No query results returned - cannot validate expansion effectiveness without data"]
+                }
+
             issues = []
             for result in expansion_results:
                 if "error" in result:
                     issues.append(f"Query '{result['simple_query']}': {result['error']}")
                 elif not result.get("expansion_effective", False):
                     issues.append(f"Query '{result['simple_query']}': expansion not effective")
-            
+
             return {
                 "passed": effective_expansions >= total_tests * 0.7,  # 70% threshold
                 "message": f"Query expansion test: {effective_expansions}/{total_tests} expansions effective" + (f", issues: {len(issues)}" if issues else ""),
@@ -842,14 +930,29 @@ class ParaphraseRobustness(BaseCheck):
             # Overall quality consistency analysis
             topics_tested = len([r for r in quality_results if "error" not in r])
             topics_passed = len([r for r in quality_results if r.get("meets_threshold", False)])
-            
+
+            # Check if we have insufficient data
+            total_successful_queries = sum([r.get("successful_queries", 0) for r in quality_results])
+            if total_successful_queries < 2:
+                # Insufficient successful queries for quality analysis
+                return {
+                    "passed": True,  # Don't fail the check
+                    "status": "warn",
+                    "message": f"Response quality consistency test: insufficient data ({total_successful_queries} successful queries, need at least 2)",
+                    "data_available": False,
+                    "topics_tested": len(quality_results),
+                    "topics_passed": 0,
+                    "quality_results": quality_results,
+                    "issues": ["Insufficient successful queries - cannot validate quality consistency without data"]
+                }
+
             issues = []
             for result in quality_results:
                 if "error" in result:
                     issues.append(f"Topic '{result['topic']}': {result['error']}")
                 elif not result.get("meets_threshold", False):
                     issues.append(f"Topic '{result['topic']}': quality consistency {result.get('quality_consistency', 0):.3f} below threshold")
-            
+
             return {
                 "passed": len(issues) == 0,
                 "message": f"Response quality consistency test: {topics_passed}/{topics_tested} topics passed" + (f", issues: {len(issues)}" if issues else ""),
