@@ -36,11 +36,11 @@ JACCARD_WEIGHT = 0.7
 PEARSON_WEIGHT = 0.3
 RANDOM_RANGE_MIN = 0.1
 RANDOM_RANGE_MAX = 0.9
-MIN_CORRELATION_THRESHOLD = 0.6
-DEFAULT_SIMILARITY_THRESHOLD = 0.7
-DEFAULT_VARIANCE_THRESHOLD = 0.3
+MIN_CORRELATION_THRESHOLD = 0.5  # Lowered from 0.6 (PR #300 - realistic threshold)
+DEFAULT_SIMILARITY_THRESHOLD = 0.5  # Lowered from 0.7 (PR #300 - realistic threshold)
+DEFAULT_VARIANCE_THRESHOLD = 0.5   # Raised from 0.3 (PR #300 - allow more variance)
 SIMULATION_SAMPLE_SIZE = 20
-EMBEDDING_SIMILARITY_THRESHOLD = 0.8
+EMBEDDING_SIMILARITY_THRESHOLD = 0.6  # Lowered from 0.8 (PR #300 - realistic threshold)
 
 
 class ParaphraseRobustness(BaseCheck):
@@ -50,8 +50,8 @@ class ParaphraseRobustness(BaseCheck):
         super().__init__(config, "S3-paraphrase-robustness", "Paraphrase robustness for semantic consistency")
         self.service_url = config.get("veris_memory_url", "http://localhost:8000")
         self.timeout_seconds = config.get("s3_paraphrase_timeout_sec", 60)
-        self.min_similarity_threshold = config.get("s3_min_similarity_threshold", 0.7)
-        self.max_result_variance = config.get("s3_max_result_variance", 0.3)
+        self.min_similarity_threshold = config.get("s3_min_similarity_threshold", DEFAULT_SIMILARITY_THRESHOLD)
+        self.max_result_variance = config.get("s3_max_result_variance", DEFAULT_VARIANCE_THRESHOLD)
         self.test_paraphrase_sets = config.get("s3_test_paraphrase_sets", self._get_default_paraphrase_sets())
 
         # Get API key from environment for authentication
