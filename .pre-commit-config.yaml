@@ -64,6 +64,14 @@ repos:
       - id: detect-secrets
         args: ["--baseline", ".secrets.baseline"]
 
+  # Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.6
+    hooks:
+      - id: shellcheck
+        files: \.sh$
+        args: [-x, -e, SC1091]
+
   # Documentation
   - repo: https://github.com/pycqa/pydocstyle
     rev: 6.3.0

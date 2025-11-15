@@ -1,229 +1,200 @@
 #!/bin/bash
+# Sentinel Host-Based Checks Script
 #
-# Sentinel Host Checks - Firewall Monitoring
+# Runs security and system checks on the host machine that cannot be performed
+# from inside Docker containers (e.g., firewall status, host security settings).
 #
-# This script runs on the HOST (not in Docker) to check security configurations
-# that can only be validated from the host level.
+# This script submits results to the Sentinel API for S11 firewall status check.
 #
-# Installation:
-#   1. Copy to: /opt/veris-memory/scripts/sentinel-host-checks.sh
-#   2. Make executable: chmod +x /opt/veris-memory/scripts/sentinel-host-checks.sh
-#   3. Set HOST_CHECK_SECRET env var or add to /etc/environment
-#   4. Add to crontab: */5 * * * * /opt/veris-memory/scripts/sentinel-host-checks.sh
+# Usage:
+#   ./sentinel-host-checks.sh [--dry-run]
 #
-# Note: Removed 'set -e' for production resilience. Errors are handled explicitly.
+# Setup (run as root or with sudo):
+#   1. Copy this script to /opt/veris-memory/scripts/
+#   2. Make it executable: chmod +x /opt/veris-memory/scripts/sentinel-host-checks.sh
+#   3. Add to crontab: crontab -e
+#   4. Add line: */5 * * * * /opt/veris-memory/scripts/sentinel-host-checks.sh
+#
+# Requirements:
+#   - ufw (Uncomplicated Firewall) installed
+#   - curl installed
+#   - jq installed (for JSON validation)
+#   - sudo privileges (for UFW access)
+#   - Sentinel API accessible at http://localhost:9090
 
-# Exit codes
-EXIT_SUCCESS=0
-EXIT_FAILURE=1
+set -euo pipefail
 
 # Configuration
-SENTINEL_API_URL="${SENTINEL_API_URL:-http://localhost:9090}"
-CHECK_ID="S11-firewall-status"
-LOG_FILE="${LOG_FILE:-/var/log/sentinel-host-checks.log}"
-HOST_CHECK_SECRET="${HOST_CHECK_SECRET:-veris_host_check_default_secret_change_me}"
+SENTINEL_API_URL="http://localhost:9090"
+DRY_RUN=false
 
-# Validate HOST_CHECK_SECRET doesn't contain shell metacharacters
-validate_secret() {
-    local secret="$1"
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--dry-run]"
+            exit 1
+            ;;
+    esac
+done
 
-    # Check if secret contains dangerous characters
-    if echo "$secret" | grep -q '[;&|`$(){}[\]\\]'; then
-        echo "ERROR: HOST_CHECK_SECRET contains dangerous shell metacharacters" >&2
-        echo "Allowed characters: alphanumeric, dash, underscore, dot" >&2
-        return $EXIT_FAILURE
+# Check for required dependencies
+for cmd in curl jq; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "Error: Required command '$cmd' not found. Please install it." >&2
+        echo "  Ubuntu/Debian: sudo apt-get install $cmd" >&2
+        echo "  RHEL/CentOS: sudo yum install $cmd" >&2
+        exit 1
     fi
+done
 
-    # Check minimum length
-    if [ ${#secret} -lt 16 ]; then
-        echo "WARNING: HOST_CHECK_SECRET is shorter than recommended 16 characters" >&2
-    fi
-
-    return $EXIT_SUCCESS
-}
-
-# Validate secret on startup
-if ! validate_secret "$HOST_CHECK_SECRET"; then
-    echo "FATAL: Invalid HOST_CHECK_SECRET configuration" >&2
-    exit $EXIT_FAILURE
+# Validate sudo privileges (required for UFW access)
+if ! sudo -n true 2>/dev/null; then
+    echo "Error: This script requires sudo privileges to check UFW status." >&2
+    echo "Please run with sudo or configure passwordless sudo for this script." >&2
+    echo "Example: sudo $0" >&2
+    exit 1
 fi
 
-# Ensure log directory exists
-mkdir -p "$(dirname "$LOG_FILE")"
+# Colors (only if terminal supports it)
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    NC='\033[0m'
+else
+    RED=''
+    GREEN=''
+    YELLOW=''
+    NC=''
+fi
 
-# Function to log messages
 log() {
-    echo "[$(date -Iseconds)] $*" | tee -a "$LOG_FILE"
+    echo -e "${1}${2}${NC}"
 }
 
-# Function to check UFW status
-check_firewall_status() {
-    local status="unknown"
-    local is_active=false
-    local rule_count=0
-    local details=""
-    local error_msg=""
+# Check if UFW is installed
+if ! command -v ufw &> /dev/null; then
+    STATUS="fail"
+    MESSAGE="❌ UFW firewall not installed"
+    DETAILS='{
+        "ufw_installed": false,
+        "recommendation": "Install UFW: sudo apt-get install ufw"
+    }'
+else
+    # Get UFW status
+    UFW_STATUS=$(sudo ufw status 2>/dev/null || echo "error")
 
-    # Try to get UFW status
-    if command -v ufw >/dev/null 2>&1; then
-        if ufw_output=$(sudo ufw status verbose 2>&1); then
-            # Check if firewall is active
-            if echo "$ufw_output" | grep -q "Status: active"; then
-                is_active=true
-                status="pass"
+    if [ "$UFW_STATUS" = "error" ]; then
+        STATUS="fail"
+        MESSAGE="❌ Cannot check UFW status (permission denied or UFW not running)"
+        DETAILS='{
+            "ufw_installed": true,
+            "ufw_accessible": false,
+            "error": "Permission denied or UFW not running",
+            "recommendation": "Run this script with sudo or check UFW installation"
+        }'
+    elif echo "$UFW_STATUS" | grep -q "Status: active"; then
+        # Firewall is active
+        ACTIVE_RULES=$(echo "$UFW_STATUS" | grep -c "ALLOW\|DENY\|REJECT" || echo 0)
 
-                # Count rules
-                rule_count=$(echo "$ufw_output" | grep -c "ALLOW\|DENY" || echo "0")
+        # Check for critical ports
+        CRITICAL_PORTS_PROTECTED=0
+        CRITICAL_PORTS_EXPOSED=0
 
-                details="UFW active with $rule_count rules configured"
-            else
-                is_active=false
-                status="fail"
-                details="UFW is installed but DISABLED - critical security risk"
-                error_msg="Firewall is disabled. Run: sudo ufw --force enable"
-            fi
-        else
-            status="fail"
-            error_msg="Failed to check UFW status: $ufw_output"
-            details="Cannot check UFW status - permission denied or UFW error"
+        # Check if SSH (22) is configured
+        if echo "$UFW_STATUS" | grep -q "22/tcp"; then
+            CRITICAL_PORTS_PROTECTED=$((CRITICAL_PORTS_PROTECTED + 1))
         fi
-    else
-        # UFW not installed
-        status="fail"
-        error_msg="UFW not installed on this system"
-        details="UFW package not found. Install with: sudo apt-get install ufw"
-    fi
 
-    # Check for required ports (basic security validation)
-    local missing_rules=""
-    if [ "$is_active" = true ]; then
-        # Check critical ports
-        for port in 22 8000 8001 8080 9090; do
-            if ! echo "$ufw_output" | grep -q "$port"; then
-                missing_rules="${missing_rules}${port},"
-            fi
-        done
-
-        if [ -n "$missing_rules" ]; then
-            status="warn"
-            details="$details (missing rules for ports: ${missing_rules%,})"
+        # Check if HTTP (80) is configured
+        if echo "$UFW_STATUS" | grep -q "80/tcp"; then
+            CRITICAL_PORTS_PROTECTED=$((CRITICAL_PORTS_PROTECTED + 1))
         fi
-    fi
 
-    # Build JSON result
-    local timestamp=$(date -Iseconds)
-    local latency_ms=50  # Approximate
+        # Check if HTTPS (443) is configured
+        if echo "$UFW_STATUS" | grep -q "443/tcp"; then
+            CRITICAL_PORTS_PROTECTED=$((CRITICAL_PORTS_PROTECTED + 1))
+        fi
 
-    local json_payload=$(cat <<EOF
+        STATUS="pass"
+        MESSAGE="✅ Firewall active with ${ACTIVE_RULES} rules (${CRITICAL_PORTS_PROTECTED}/3 critical ports configured)"
+        DETAILS=$(cat <<EOF
 {
-  "check_id": "$CHECK_ID",
-  "timestamp": "$timestamp",
-  "status": "$status",
-  "latency_ms": $latency_ms,
-  "message": "$details",
-  "details": {
-    "ufw_active": $is_active,
-    "rule_count": $rule_count,
-    "missing_rules": "$missing_rules",
-    "error": "$error_msg",
-    "check_method": "host-based",
-    "hostname": "$(hostname)"
-  }
+    "ufw_installed": true,
+    "ufw_status": "active",
+    "active_rules": ${ACTIVE_RULES},
+    "critical_ports_protected": ${CRITICAL_PORTS_PROTECTED},
+    "ssh_configured": $(echo "$UFW_STATUS" | grep -q "22/tcp" && echo "true" || echo "false"),
+    "http_configured": $(echo "$UFW_STATUS" | grep -q "80/tcp" && echo "true" || echo "false"),
+    "https_configured": $(echo "$UFW_STATUS" | grep -q "443/tcp" && echo "true" || echo "false")
+}
+EOF
+)
+    else
+        # Firewall is inactive
+        STATUS="fail"
+        MESSAGE="❌ Firewall is INACTIVE - system is exposed!"
+        DETAILS='{
+            "ufw_installed": true,
+            "ufw_status": "inactive",
+            "security_risk": "high",
+            "recommendation": "Enable firewall: sudo ufw enable"
+        }'
+    fi
+fi
+
+# Prepare JSON payload for Sentinel API
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Build and validate JSON payload with jq
+PAYLOAD=$(cat <<EOF | jq -c '.'
+{
+    "check_id": "S11-firewall-status",
+    "timestamp": "${TIMESTAMP}",
+    "status": "${STATUS}",
+    "message": "${MESSAGE}",
+    "details": ${DETAILS}
 }
 EOF
 )
 
-    echo "$json_payload"
-}
+# Validate JSON was created successfully
+if [ -z "$PAYLOAD" ] || [ "$PAYLOAD" = "null" ]; then
+    echo "Error: Failed to create valid JSON payload" >&2
+    exit 1
+fi
 
-# Function to send result to Sentinel API
-send_to_sentinel() {
-    local payload="$1"
-    local response
-    local http_code
-    local response_body
-    local exit_code
+if [ "$DRY_RUN" = true ]; then
+    log "${YELLOW}" "[DRY RUN] Would submit to Sentinel API:"
+    echo "$PAYLOAD" | jq '.' 2>/dev/null || echo "$PAYLOAD"
+    exit 0
+fi
 
-    # Check if secret is configured
-    if [ "$HOST_CHECK_SECRET" = "veris_host_check_default_secret_change_me" ]; then
-        log "⚠️  WARNING: Using default HOST_CHECK_SECRET. Set a unique secret in environment."
-    fi
+# Submit to Sentinel API with validated JSON
+RESPONSE=$(curl -s -X POST \
+    "${SENTINEL_API_URL}/api/v1/host-checks/S11-firewall-status" \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD" \
+    2>&1 || echo "error")
 
-    # Send to Sentinel API with authentication
-    response=$(curl -s -w "\n%{http_code}" -X POST \
-        "$SENTINEL_API_URL/host-checks/firewall" \
-        -H "Content-Type: application/json" \
-        -H "X-Host-Secret: $HOST_CHECK_SECRET" \
-        -d "$payload" \
-        --max-time 5 2>&1)
-    exit_code=$?
+if echo "$RESPONSE" | grep -q "success"; then
+    log "${GREEN}" "✅ Firewall check submitted to Sentinel API"
+else
+    log "${RED}" "❌ Failed to submit to Sentinel API: $RESPONSE"
+    exit 1
+fi
 
-    if [ $exit_code -ne 0 ]; then
-        log "❌ Failed to connect to Sentinel API at $SENTINEL_API_URL (curl exit code: $exit_code)"
-        return $EXIT_FAILURE
-    fi
+# Output summary to stdout (for cron logging)
+if [ "$STATUS" = "pass" ]; then
+    log "${GREEN}" "$MESSAGE"
+else
+    log "${RED}" "$MESSAGE"
+fi
 
-    http_code=$(echo "$response" | tail -n1)
-    response_body=$(echo "$response" | sed '$d')
-
-    if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
-        log "✅ Firewall check sent to Sentinel successfully (HTTP $http_code)"
-        return $EXIT_SUCCESS
-    elif [ "$http_code" = "401" ] || [ "$http_code" = "403" ]; then
-        log "🔒 Authentication failed (HTTP $http_code). Check HOST_CHECK_SECRET matches Sentinel configuration."
-        return $EXIT_FAILURE
-    else
-        log "⚠️  Sentinel API returned HTTP $http_code: $response_body"
-        return $EXIT_FAILURE
-    fi
-}
-
-# Main execution
-main() {
-    local check_result
-    local status
-    local message
-    local send_result
-
-    log "Starting firewall status check..."
-
-    # Check firewall status
-    check_result=$(check_firewall_status)
-    if [ $? -ne 0 ] || [ -z "$check_result" ]; then
-        log "❌ Failed to perform firewall check"
-        return $EXIT_FAILURE
-    fi
-
-    # Log the result (handle jq errors gracefully)
-    status=$(echo "$check_result" | jq -r '.status' 2>/dev/null)
-    if [ $? -ne 0 ]; then
-        log "⚠️  Failed to parse check result JSON"
-        status="unknown"
-    fi
-
-    message=$(echo "$check_result" | jq -r '.message' 2>/dev/null)
-    if [ $? -ne 0 ]; then
-        message="Failed to parse message"
-    fi
-
-    log "Firewall check result: [$status] $message"
-
-    # Send to Sentinel
-    send_to_sentinel "$check_result"
-    send_result=$?
-
-    if [ $send_result -eq $EXIT_SUCCESS ]; then
-        log "Host check cycle completed successfully"
-        return $EXIT_SUCCESS
-    else
-        log "Warning: Could not send result to Sentinel (API may be down or authentication failed)"
-        return $EXIT_FAILURE
-    fi
-}
-
-# Run main function and handle its exit code
-main "$@"
-exit_code=$?
-
-# Exit with appropriate code (for cron monitoring)
-exit $exit_code
+exit 0
