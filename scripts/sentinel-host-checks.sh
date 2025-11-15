@@ -18,6 +18,8 @@
 # Requirements:
 #   - ufw (Uncomplicated Firewall) installed
 #   - curl installed
+#   - jq installed (for JSON validation)
+#   - sudo privileges (for UFW access)
 #   - Sentinel API accessible at http://localhost:9090
 
 set -euo pipefail
@@ -40,6 +42,24 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Check for required dependencies
+for cmd in curl jq; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "Error: Required command '$cmd' not found. Please install it." >&2
+        echo "  Ubuntu/Debian: sudo apt-get install $cmd" >&2
+        echo "  RHEL/CentOS: sudo yum install $cmd" >&2
+        exit 1
+    fi
+done
+
+# Validate sudo privileges (required for UFW access)
+if ! sudo -n true 2>/dev/null; then
+    echo "Error: This script requires sudo privileges to check UFW status." >&2
+    echo "Please run with sudo or configure passwordless sudo for this script." >&2
+    echo "Example: sudo $0" >&2
+    exit 1
+fi
 
 # Colors (only if terminal supports it)
 if [ -t 1 ]; then
@@ -131,7 +151,9 @@ fi
 
 # Prepare JSON payload for Sentinel API
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-PAYLOAD=$(cat <<EOF
+
+# Build and validate JSON payload with jq
+PAYLOAD=$(cat <<EOF | jq -c '.'
 {
     "check_id": "S11-firewall-status",
     "timestamp": "${TIMESTAMP}",
@@ -142,13 +164,19 @@ PAYLOAD=$(cat <<EOF
 EOF
 )
 
+# Validate JSON was created successfully
+if [ -z "$PAYLOAD" ] || [ "$PAYLOAD" = "null" ]; then
+    echo "Error: Failed to create valid JSON payload" >&2
+    exit 1
+fi
+
 if [ "$DRY_RUN" = true ]; then
     log "${YELLOW}" "[DRY RUN] Would submit to Sentinel API:"
     echo "$PAYLOAD" | jq '.' 2>/dev/null || echo "$PAYLOAD"
     exit 0
 fi
 
-# Submit to Sentinel API
+# Submit to Sentinel API with validated JSON
 RESPONSE=$(curl -s -X POST \
     "${SENTINEL_API_URL}/api/v1/host-checks/S11-firewall-status" \
     -H "Content-Type: application/json" \
