@@ -900,6 +900,60 @@ class TestQuery:
         assert len(result) == 1
         assert result[0]["node"] == {"property1": "value1", "property2": "value2"}
 
+    @patch('src.storage.neo4j_client.logger')
+    def test_query_retry_on_session_closed(self, mock_logger):
+        """Test query retry logic when Neo4j session is closed
+
+        Verifies that:
+        1. Query retries with fresh session when "Session is closed" error occurs
+        2. Logger warning is called on retry attempt
+        3. Query succeeds on second attempt
+        """
+        config = {"neo4j": {"database": "test_db"}}
+        initializer = Neo4jInitializer(config=config)
+
+        mock_driver = MagicMock()
+
+        # First attempt: session raises "Session is closed" error
+        mock_session_closed = MagicMock()
+        mock_session_closed.run.side_effect = Exception("Session is closed")
+
+        # Second attempt: session succeeds
+        mock_session_success = MagicMock()
+        mock_result = MagicMock()
+        mock_record = MagicMock()
+        mock_record.keys.return_value = ["id"]
+        mock_record.__getitem__.return_value = 123
+        mock_result.__iter__.return_value = [mock_record]
+        mock_session_success.run.return_value = mock_result
+
+        # Configure driver to return different sessions on each call
+        mock_driver.session.return_value.__enter__.side_effect = [
+            mock_session_closed,  # First attempt fails
+            mock_session_success  # Second attempt succeeds
+        ]
+
+        initializer.driver = mock_driver
+
+        # Execute query - should succeed after retry
+        cypher = "MATCH (c:Context {id: $id}) RETURN c.id as id"
+        parameters = {"id": "test-id"}
+        result = initializer.query(cypher, parameters)
+
+        # Verify query succeeded
+        assert len(result) == 1
+        assert result[0] == {"id": 123}
+
+        # Verify logger.warning was called for retry attempt
+        mock_logger.warning.assert_called_once()
+        warning_call = mock_logger.warning.call_args[0][0]
+        assert "session closed" in warning_call.lower()
+        assert "retrying" in warning_call.lower()
+        assert "attempt 1/2" in warning_call.lower()
+
+        # Verify driver.session was called twice (initial + retry)
+        assert mock_driver.session.call_count == 2
+
     def test_query_exception(self):
         """Test query execution with exception"""
         config = {"neo4j": {"database": "test_db"}}
