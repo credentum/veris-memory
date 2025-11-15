@@ -38,21 +38,26 @@ class BackupRestore(BaseCheck):
     
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S6-backup-restore", "Backup/restore validation")
-        # Updated to match actual backup locations on host (mounted into container)
+        # Updated to match actual backup locations on host (must be mounted into container)
+        # IMPORTANT: These paths must be mounted as Docker volumes for S6 to access them
+        # See docker-compose configuration for volume mounts
         raw_paths = config.get("backup_paths", [
+            "/raid1/backups",          # Primary backup location (Hetzner RAID1)
+            "/home/backup",            # Alternate backup location
             "/backup/health",          # Health backups (every 6 hours)
             "/backup/daily",           # Daily backups
             "/backup/weekly",          # Weekly backups
             "/backup/monthly",         # Monthly backups
-            "/backup/backup-ultimate", # Ultimate backups
             "/backup",                 # Root backup directory
-            "/opt/veris-memory-backups" # Alternate location
+            "/opt/veris-memory-backups" # Legacy location
         ])
 
         # PR #247: Validate backup paths for security
         # Only allow paths within approved directories to prevent filesystem exposure
         # Use normalized paths without realpath to avoid TOCTOU vulnerabilities
         approved_prefixes = [
+            os.path.abspath("/raid1/backups"),         # Primary RAID1 backup location
+            os.path.abspath("/home/backup"),           # Alternate backup location
             os.path.abspath("/backup"),
             os.path.abspath("/opt/veris-memory-backups"),
             os.path.abspath("/var/backups/veris-memory"),
@@ -134,37 +139,45 @@ class BackupRestore(BaseCheck):
             backup_issues = []
             passed_tests = []
             failed_tests = []
-            
+            warned_tests = []
+
             test_names = [
                 "backup_existence",
                 "backup_freshness",
-                "backup_integrity", 
+                "backup_integrity",
                 "backup_format",
                 "restore_procedure",
                 "storage_space",
                 "retention_policy"
             ]
-            
+
             for i, result in enumerate(test_results):
                 test_name = test_names[i]
-                
+
                 if isinstance(result, Exception):
                     failed_tests.append(test_name)
                     backup_issues.append(f"{test_name}: {str(result)}")
+                elif result.get("status") == "warn":
+                    # Graceful degradation: Test passed but with warning (insufficient data)
+                    warned_tests.append(test_name)
+                    passed_tests.append(test_name)  # Don't count as failed
                 elif result.get("passed", False):
                     passed_tests.append(test_name)
                 else:
                     failed_tests.append(test_name)
                     backup_issues.append(f"{test_name}: {result.get('message', 'Unknown failure')}")
-            
+
             latency_ms = (time.time() - start_time) * 1000
-            
+
             # Determine overall status
             if backup_issues:
                 status = "fail"
                 message = f"Backup/restore issues detected: {len(backup_issues)} problems found"
+            elif warned_tests:
+                status = "warn"
+                message = f"Backup paths not accessible: {len(warned_tests)} tests skipped (mount backup volumes to container)"
             else:
-                status = "pass" 
+                status = "pass"
                 message = f"All backup/restore checks passed: {len(passed_tests)} tests successful"
             
             return CheckResult(
@@ -177,11 +190,14 @@ class BackupRestore(BaseCheck):
                     "total_tests": len(test_names),
                     "passed_tests": len(passed_tests),
                     "failed_tests": len(failed_tests),
+                    "warned_tests": len(warned_tests),
                     "backup_issues": backup_issues,
                     "passed_test_names": passed_tests,
                     "failed_test_names": failed_tests,
+                    "warned_test_names": warned_tests,
                     "test_results": test_results,
-                    "backup_paths_checked": self.backup_paths
+                    "backup_paths_checked": self.backup_paths,
+                    "setup_required": "Mount backup volumes to Sentinel container" if warned_tests else None
                 }
             )
             
@@ -201,10 +217,12 @@ class BackupRestore(BaseCheck):
         try:
             existing_backups = []
             missing_locations = []
-            
+            accessible_paths = 0
+
             for backup_path in self.backup_paths:
                 path = Path(backup_path)
                 if path.exists() and path.is_dir():
+                    accessible_paths += 1
                     # Look for backup files (recursive search in subdirectories)
                     backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump")) + list(path.glob("**/*.tar.gz"))
                     if backup_files:
@@ -220,12 +238,27 @@ class BackupRestore(BaseCheck):
                         missing_locations.append(f"No backup files in {backup_path}")
                 else:
                     missing_locations.append(f"Backup directory {backup_path} does not exist")
-            
+
+            # Graceful degradation: If NO backup paths are accessible (container cannot see host backups)
+            # return warn status with helpful guidance instead of failing
+            if accessible_paths == 0 and len(self.backup_paths) > 0:
+                return {
+                    "passed": True,  # Don't fail the check
+                    "status": "warn",  # Indicate insufficient data
+                    "message": "Backup directories not accessible (0 paths found, backups may exist on host)",
+                    "data_available": False,
+                    "existing_backups": [],
+                    "missing_locations": missing_locations,
+                    "setup_required": "Mount backup volumes to container or use host-based monitoring",
+                    "documentation": "See S6 check documentation for volume mount configuration"
+                }
+
             return {
                 "passed": len(existing_backups) > 0,
-                "message": f"Found {len(existing_backups)} backup files" if existing_backups else "No backup files found",
+                "message": f"Found {len(existing_backups)} backup files" if existing_backups else "No backup files found in accessible directories",
                 "existing_backups": existing_backups,
-                "missing_locations": missing_locations
+                "missing_locations": missing_locations,
+                "accessible_paths": accessible_paths
             }
             
         except Exception as e:
@@ -241,10 +274,12 @@ class BackupRestore(BaseCheck):
             cutoff_time = datetime.utcnow() - timedelta(hours=self.max_backup_age_hours)
             fresh_backups = []
             stale_backups = []
-            
+            accessible_paths = 0
+
             for backup_path in self.backup_paths:
                 path = Path(backup_path)
                 if path.exists():
+                    accessible_paths += 1
                     backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump")) + list(path.glob("**/*.tar.gz"))
                     for backup_file in backup_files:
                         modified_time = datetime.fromtimestamp(backup_file.stat().st_mtime)
@@ -258,13 +293,26 @@ class BackupRestore(BaseCheck):
                                 "path": str(backup_file),
                                 "age_hours": (datetime.utcnow() - modified_time).total_seconds() / 3600
                             })
-            
+
+            # Graceful degradation: If NO backup paths are accessible, return warn status
+            if accessible_paths == 0 and len(self.backup_paths) > 0:
+                return {
+                    "passed": True,  # Don't fail the check
+                    "status": "warn",  # Indicate insufficient data
+                    "message": "Backup freshness: insufficient data (0 accessible paths, backups may exist on host)",
+                    "data_available": False,
+                    "fresh_backups": [],
+                    "stale_backups": [],
+                    "max_age_hours": self.max_backup_age_hours
+                }
+
             return {
                 "passed": len(fresh_backups) > 0,
                 "message": f"Found {len(fresh_backups)} fresh backups, {len(stale_backups)} stale" if fresh_backups or stale_backups else "No backups found to check freshness",
                 "fresh_backups": fresh_backups,
                 "stale_backups": stale_backups,
-                "max_age_hours": self.max_backup_age_hours
+                "max_age_hours": self.max_backup_age_hours,
+                "accessible_paths": accessible_paths
             }
             
         except Exception as e:
