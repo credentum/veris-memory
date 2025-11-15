@@ -594,7 +594,20 @@ class CapacitySmoke(BaseCheck):
                 coefficient_of_variation = std_dev / avg_response_time if avg_response_time > 0 else 0
                 if coefficient_of_variation > 1.0:  # High variability
                     issues.append(f"High response time variability (CV: {coefficient_of_variation:.2f})")
-            
+
+            # PR #274: Check application-only latency if metrics endpoint provides breakdown
+            # This enables detection of pure application performance regressions independent
+            # of REST→MCP forwarding overhead added in PR #269
+            app_latency_result = await self._check_application_latency_breakdown()
+            if app_latency_result.get("breakdown_available"):
+                app_latency = app_latency_result.get("application_latency_ms", 0)
+                forwarding_latency = app_latency_result.get("forwarding_latency_ms", 0)
+                if app_latency > self.app_latency_threshold_ms:
+                    issues.append(
+                        f"Application latency {app_latency:.1f}ms exceeds threshold {self.app_latency_threshold_ms}ms "
+                        f"(performance regression detected, forwarding: {forwarding_latency:.1f}ms)"
+                    )
+
             return {
                 "passed": len(issues) == 0,
                 "message": f"Response time test: avg {avg_response_time:.1f}ms, P95 {p95_response_time:.1f}ms" + (f", issues: {', '.join(issues)}" if issues else ""),
@@ -606,6 +619,7 @@ class CapacitySmoke(BaseCheck):
                 "min_response_time_ms": min_response_time,
                 "max_response_time_ms": max_response_time,
                 "response_time_samples": response_times[-10:],  # Last 10 samples
+                "app_latency_breakdown": app_latency_result if app_latency_result.get("breakdown_available") else None,
                 "issues": issues
             }
             
@@ -616,6 +630,59 @@ class CapacitySmoke(BaseCheck):
                 "error": str(e)
             }
     
+    async def _check_application_latency_breakdown(self) -> Dict[str, Any]:
+        """Check if metrics endpoint provides latency breakdown for application-only monitoring.
+
+        PR #274: Enables detection of pure application performance regressions independent
+        of REST→MCP forwarding overhead added in PR #269.
+
+        Returns:
+            Dict containing:
+            - breakdown_available (bool): Whether metrics endpoint provides latency breakdown
+            - application_latency_ms (float): Application processing time (excludes forwarding)
+            - forwarding_latency_ms (float): REST→MCP forwarding overhead
+            - total_latency_ms (float): Total request latency
+            - error (str): Error message if check failed
+        """
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as session:
+                headers = self._get_headers()
+                async with session.get(f"{self.base_url}/metrics", headers=headers) as response:
+                    if response.status != 200:
+                        return {
+                            "breakdown_available": False,
+                            "error": f"Metrics endpoint returned HTTP {response.status}"
+                        }
+
+                    metrics_data = await response.json()
+
+                    # Check if latency breakdown is available
+                    if "application_latency_ms" in metrics_data and "forwarding_latency_ms" in metrics_data:
+                        app_latency = float(metrics_data["application_latency_ms"])
+                        forwarding_latency = float(metrics_data["forwarding_latency_ms"])
+                        total_latency = app_latency + forwarding_latency
+
+                        return {
+                            "breakdown_available": True,
+                            "application_latency_ms": app_latency,
+                            "forwarding_latency_ms": forwarding_latency,
+                            "total_latency_ms": total_latency
+                        }
+                    else:
+                        # Metrics endpoint doesn't provide breakdown yet
+                        return {
+                            "breakdown_available": False,
+                            "error": "Metrics endpoint does not provide latency breakdown (application_latency_ms, forwarding_latency_ms)"
+                        }
+
+        except Exception as e:
+            return {
+                "breakdown_available": False,
+                "error": f"Failed to check metrics endpoint: {str(e)}"
+            }
+
     async def _make_test_request(
         self,
         session: aiohttp.ClientSession,
@@ -631,14 +698,14 @@ class CapacitySmoke(BaseCheck):
             async with session.get(f"{self.base_url}{endpoint}", headers=headers) as response:
                 response_time = (time.time() - start_time) * 1000
                 await response.text()  # Read response body
-                
+
                 return {
                     "test_id": test_id,
                     "status_code": response.status,
                     "response_time": response_time,
                     "error": None if response.status == 200 else f"HTTP {response.status}"
                 }
-                
+
         except Exception as e:
             response_time = (time.time() - start_time) * 1000
             return {
