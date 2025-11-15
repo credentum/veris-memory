@@ -54,12 +54,20 @@ async def main():
         # Start API server if not disabled
         if not args.no_api:
             api = SentinelAPI(runner, config)
+
+            # Configure S11 with API instance for host-based monitoring
+            # This solves the initialization order problem where checks are created
+            # before the API exists (fixes issue #280)
+            if "S11-firewall-status" in runner.checks:
+                runner.checks["S11-firewall-status"].set_api_instance(api)
+                logger.info("✅ S11 configured for host-based firewall monitoring")
+
             app_runner = web.AppRunner(api.app)
             await app_runner.setup()
             site = web.TCPSite(app_runner, '0.0.0.0', args.api_port)
             await site.start()
             logger.info(f"✅ API server started on port {args.api_port}")
-        
+
         # Start monitoring
         logger.info("✅ Starting monitoring checks")
         await runner.start()

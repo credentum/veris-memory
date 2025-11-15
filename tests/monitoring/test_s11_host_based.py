@@ -271,6 +271,91 @@ class TestS11HostBasedCheck:
         assert "check_method" in result.details
 
 
+class TestS11LazyAPIInjection:
+    """Test lazy API instance injection (issue #280 fix)."""
+
+    @pytest.fixture
+    def config(self):
+        """Create test configuration."""
+        return SentinelConfig()
+
+    @pytest.fixture
+    def mock_api(self):
+        """Create mock API instance."""
+        api = MagicMock()
+        api.get_host_check_result = MagicMock()
+        return api
+
+    @pytest.mark.asyncio
+    async def test_set_api_instance_after_initialization(self, config, mock_api):
+        """Test that API instance can be set after check initialization."""
+        # Create check without API instance (simulates initialization order in __main__.py)
+        check = S11FirewallStatus(config, api_instance=None)
+
+        # Verify it warns initially
+        result_before = await check.run_check()
+        assert result_before.status == "warn"
+        assert "not configured" in result_before.message
+
+        # Now set the API instance (simulates fix in __main__.py)
+        check.set_api_instance(mock_api)
+
+        # Verify API instance is set
+        assert check.api_instance is mock_api
+
+    @pytest.mark.asyncio
+    async def test_works_after_api_injection(self, config, mock_api):
+        """Test that check works correctly after API injection."""
+        # Create check without API
+        check = S11FirewallStatus(config, api_instance=None)
+
+        # Inject API
+        check.set_api_instance(mock_api)
+
+        # Setup mock to return fresh data
+        fresh_result = CheckResult(
+            check_id="S11-firewall-status",
+            timestamp=datetime.now() - timedelta(minutes=1),
+            status="pass",
+            latency_ms=50.0,
+            message="Firewall active with 5 rules",
+            details={"ufw_active": True, "rules": 5}
+        )
+        mock_api.get_host_check_result.return_value = fresh_result
+
+        # Run check and verify it works
+        result = await check.run_check()
+
+        assert result.status == "pass"
+        assert "Firewall active" in result.message
+        assert result.details["ufw_active"] is True
+        assert result.details["rules"] == 5
+        mock_api.get_host_check_result.assert_called_once_with("S11-firewall-status")
+
+    @pytest.mark.asyncio
+    async def test_api_instance_none_initially(self, config):
+        """Test that api_instance is None when not provided."""
+        check = S11FirewallStatus(config)
+        assert check.api_instance is None
+
+    @pytest.mark.asyncio
+    async def test_api_instance_provided_at_init(self, config, mock_api):
+        """Test that api_instance can still be provided at initialization."""
+        check = S11FirewallStatus(config, api_instance=mock_api)
+        assert check.api_instance is mock_api
+
+    @pytest.mark.asyncio
+    async def test_api_instance_can_be_replaced(self, config, mock_api):
+        """Test that api_instance can be replaced with set_api_instance."""
+        old_api = MagicMock()
+        check = S11FirewallStatus(config, api_instance=old_api)
+        assert check.api_instance is old_api
+
+        # Replace with new API
+        check.set_api_instance(mock_api)
+        assert check.api_instance is mock_api
+
+
 class TestS11CalculateLatency:
     """Test latency calculation method."""
 
