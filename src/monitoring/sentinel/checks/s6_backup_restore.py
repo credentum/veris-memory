@@ -40,28 +40,28 @@ class BackupRestore(BaseCheck):
         super().__init__(config, "S6-backup-restore", "Backup/restore validation")
         # Updated to match actual backup locations on host (must be mounted into container)
         # IMPORTANT: These paths must be mounted as Docker volumes for S6 to access them
+        # Primary backup location: /backup (RAID1 array /dev/md2 - 436G total)
         # See docker-compose configuration for volume mounts
         raw_paths = config.get("backup_paths", [
-            "/raid1/backups",          # Primary backup location (Hetzner RAID1)
-            "/home/backup",            # Alternate backup location
-            "/backup/health",          # Health backups (every 6 hours)
-            "/backup/daily",           # Daily backups
-            "/backup/weekly",          # Weekly backups
-            "/backup/monthly",         # Monthly backups
-            "/backup",                 # Root backup directory
-            "/opt/veris-memory-backups" # Legacy location
+            "/backup/health",           # Health check backups
+            "/backup/daily",            # Daily backups
+            "/backup/weekly",           # Weekly archive
+            "/backup/monthly",          # Monthly archive
+            "/backup/backup-weekly",    # Weekly backups
+            "/backup/backup-monthly",   # Monthly backups
+            "/backup/backup-ultimate",  # Ultimate backups (most recent)
+            "/backup/restic-repo",      # Restic backup repository
+            "/backup",                  # Root backup directory (RAID1)
         ])
 
         # PR #247: Validate backup paths for security
         # Only allow paths within approved directories to prevent filesystem exposure
         # Use normalized paths without realpath to avoid TOCTOU vulnerabilities
         approved_prefixes = [
-            os.path.abspath("/raid1/backups"),         # Primary RAID1 backup location
-            os.path.abspath("/home/backup"),           # Alternate backup location
-            os.path.abspath("/backup"),
-            os.path.abspath("/opt/veris-memory-backups"),
-            os.path.abspath("/var/backups/veris-memory"),
-            os.path.abspath("/tmp/veris-backups")
+            os.path.abspath("/backup"),                    # Primary RAID1 backup location
+            os.path.abspath("/opt/veris-memory-backups"),  # Alternate location
+            os.path.abspath("/var/backups/veris-memory"),  # Standard backup location
+            os.path.abspath("/tmp/veris-backups")          # Temporary backups
         ]
         self.backup_paths = []
         for path in raw_paths:

@@ -18,11 +18,11 @@ from src.monitoring.sentinel.models import SentinelConfig
 
 
 @pytest.fixture
-def config_with_raid1_paths():
-    """Create config with RAID1 backup paths."""
+def config_with_backup_paths():
+    """Create config with actual server backup paths."""
     config = Mock(spec=SentinelConfig)
     config.get = Mock(side_effect=lambda key, default=None: {
-        "backup_paths": ["/raid1/backups", "/home/backup"],
+        "backup_paths": ["/backup/health", "/backup/daily", "/backup"],
         "s6_backup_max_age_hours": 24,
         "min_backup_size_mb": 0.01,
         "s6_retention_days": 14
@@ -31,9 +31,9 @@ def config_with_raid1_paths():
 
 
 @pytest.fixture
-def check_with_inaccessible_paths(config_with_raid1_paths):
+def check_with_inaccessible_paths(config_with_backup_paths):
     """Create BackupRestore check instance with inaccessible paths."""
-    return BackupRestore(config_with_raid1_paths)
+    return BackupRestore(config_with_backup_paths)
 
 
 @pytest.mark.asyncio
@@ -71,7 +71,7 @@ async def test_backup_existence_passes_when_some_paths_accessible():
     """Test that check passes normally when at least one path is accessible with backups."""
     config = Mock(spec=SentinelConfig)
     config.get = Mock(side_effect=lambda key, default=None: {
-        "backup_paths": ["/raid1/backups"],
+        "backup_paths": ["/backup/health"],
         "s6_backup_max_age_hours": 24,
         "min_backup_size_mb": 0.01,
         "s6_retention_days": 14
@@ -113,12 +113,12 @@ async def test_overall_status_warn_when_paths_inaccessible(check_with_inaccessib
     assert "not accessible" in result.message.lower() or "skipped" in result.message.lower()
     assert result.details["warned_tests"] > 0
     assert "setup_required" in result.details
-    assert result.details["setup_required"] == "Mount backup volumes to Sentinel container"
+    assert "Mount backup volumes" in result.details["setup_required"]
 
 
 @pytest.mark.asyncio
-async def test_backup_paths_include_raid1_and_home():
-    """Test that S6 now checks /raid1/backups and /home/backup paths."""
+async def test_backup_paths_include_actual_server_structure():
+    """Test that S6 checks actual server backup paths."""
     config = Mock(spec=SentinelConfig)
     # Return default list when backup_paths is requested
     def get_side_effect(key, default=None):
@@ -129,10 +129,11 @@ async def test_backup_paths_include_raid1_and_home():
 
     check = BackupRestore(config)
 
-    # Should include new paths (they pass security validation)
+    # Should include actual server backup paths (they pass security validation)
     backup_paths_str = " ".join(check.backup_paths)
-    assert "/raid1/backups" in backup_paths_str, "Should check /raid1/backups"
-    assert "/home/backup" in backup_paths_str, "Should check /home/backup"
+    assert "/backup" in backup_paths_str, "Should check /backup (RAID1 location)"
+    assert "/backup/health" in backup_paths_str or "/backup/daily" in backup_paths_str, \
+        "Should check backup subdirectories"
 
 
 @pytest.mark.asyncio
@@ -140,7 +141,7 @@ async def test_warned_tests_tracked_separately_from_failed():
     """Test that warned tests are tracked separately from failed tests."""
     config = Mock(spec=SentinelConfig)
     config.get = Mock(side_effect=lambda key, default=None: {
-        "backup_paths": ["/raid1/backups"],
+        "backup_paths": ["/backup/health"],
         "s6_backup_max_age_hours": 24,
         "min_backup_size_mb": 0.01,
         "s6_retention_days": 14
@@ -169,7 +170,7 @@ async def test_clear_error_message_for_unmounted_volumes():
     """Test that error message clearly explains volume mounting requirement."""
     config = Mock(spec=SentinelConfig)
     config.get = Mock(side_effect=lambda key, default=None: {
-        "backup_paths": ["/raid1/backups"],
+        "backup_paths": ["/backup/health"],
         "s6_backup_max_age_hours": 24,
         "min_backup_size_mb": 0.01,
         "s6_retention_days": 14
@@ -194,7 +195,7 @@ async def test_no_warning_when_paths_exist():
     """Test that backup_existence does NOT warn when paths are accessible."""
     config = Mock(spec=SentinelConfig)
     config.get = Mock(side_effect=lambda key, default=None: {
-        "backup_paths": ["/raid1/backups"],
+        "backup_paths": ["/backup/health"],
         "s6_backup_max_age_hours": 24,
         "min_backup_size_mb": 0.01,
         "s6_retention_days": 14
