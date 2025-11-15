@@ -29,11 +29,13 @@ logger = logging.getLogger(__name__)
 
 class SentinelAPI:
     """Web API for Sentinel monitoring system."""
-    
+
     def __init__(self, runner: SentinelRunner, config: SentinelConfig):
         self.runner = runner
         self.config = config
         self.app = web.Application()
+        # Storage for host-based check results (e.g., firewall status from host script)
+        self._host_check_results: Dict[str, Any] = {}
         self._setup_routes()
         self._setup_cors()
     
@@ -47,6 +49,8 @@ class SentinelAPI:
         self.app.router.add_get('/health', self.health_check)
         self.app.router.add_post('/start', self.start_monitoring)
         self.app.router.add_post('/stop', self.stop_monitoring)
+        # Host-based check result submission endpoint (for S11, etc.)
+        self.app.router.add_post('/host-checks/{check_id}', self.submit_host_check_result)
     
     def _setup_cors(self) -> None:
         """Setup CORS for API access."""
@@ -274,6 +278,69 @@ class SentinelAPI:
                 'timestamp': datetime.utcnow().isoformat()
             }, status=500)
     
+    def get_host_check_result(self, check_id: str) -> Optional[Any]:
+        """
+        Get the most recent host-based check result for a given check ID.
+
+        Used by checks like S11 (firewall) that rely on host-based monitoring
+        scripts to submit results via the API.
+
+        Args:
+            check_id: The check ID to retrieve results for (e.g., "S11-firewall-status")
+
+        Returns:
+            CheckResult object if available, None otherwise
+        """
+        return self._host_check_results.get(check_id)
+
+    async def submit_host_check_result(self, request: Request) -> Response:
+        """
+        Submit a host-based check result from host monitoring script.
+
+        Endpoint: POST /host-checks/{check_id}
+        Body: {
+            "status": "pass|warn|fail",
+            "message": "Status message",
+            "details": {...}
+        }
+        """
+        check_id = request.match_info['check_id']
+
+        try:
+            data = await request.json()
+
+            # Import CheckResult here to avoid circular imports
+            from .models import CheckResult
+
+            # Create CheckResult from submitted data
+            result = CheckResult(
+                check_id=check_id,
+                timestamp=datetime.utcnow(),
+                status=data.get('status', 'unknown'),
+                latency_ms=0.0,  # Not applicable for host-based checks
+                message=data.get('message', 'Host-based check result'),
+                details=data.get('details', {})
+            )
+
+            # Store the result
+            self._host_check_results[check_id] = result
+
+            logger.info(f"Received host check result for {check_id}: {result.status}")
+
+            return web.json_response({
+                'success': True,
+                'message': f'Host check result stored for {check_id}',
+                'timestamp': datetime.utcnow().isoformat()
+            })
+
+        except Exception as e:
+            logger.error(f"Submit host check error: {e}")
+            return web.json_response({
+                'success': False,
+                'error': str(e),
+                'timestamp': datetime.utcnow().isoformat()
+            }, status=500)
+
     def get_app(self) -> web.Application:
         """Get the aiohttp application."""
         return self.app
