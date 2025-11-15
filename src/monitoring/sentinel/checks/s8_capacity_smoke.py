@@ -100,9 +100,8 @@ class CapacitySmoke(BaseCheck):
                 "response_times",
                 "resource_exhaustion_attacks"  # NEW
             ]
-            
-            for i, result in enumerate(test_results):
-                test_name = test_names[i]
+
+            for test_name, result in zip(test_names, test_results):
                 
                 if isinstance(result, Exception):
                     failed_tests.append(test_name)
