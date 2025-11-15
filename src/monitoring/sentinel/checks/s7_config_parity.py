@@ -225,6 +225,30 @@ class ConfigParity(BaseCheck):
                 # This is a warning, not a critical failure
                 logger.warning("DATABASE_URL does not contain a recognized database protocol")
 
+            # Validate MCP_INTERNAL_URL format if set (PR #274)
+            mcp_url = os.environ.get("MCP_INTERNAL_URL", "")
+            if mcp_url:
+                # Should be a valid HTTP/HTTPS URL
+                if not any(protocol in mcp_url for protocol in ["http://", "https://"]):
+                    logger.warning("MCP_INTERNAL_URL does not contain http:// or https:// protocol")
+                    config_issues.append("MCP_INTERNAL_URL format invalid (must start with http:// or https://)")
+                # Check for common URL format issues
+                elif " " in mcp_url:
+                    logger.warning("MCP_INTERNAL_URL contains whitespace")
+                    config_issues.append("MCP_INTERNAL_URL contains whitespace (invalid URL format)")
+
+            # Validate MCP_FORWARD_TIMEOUT format if set (PR #274)
+            mcp_timeout = os.environ.get("MCP_FORWARD_TIMEOUT", "")
+            if mcp_timeout:
+                try:
+                    timeout_val = float(mcp_timeout)
+                    if timeout_val <= 0 or timeout_val > 300:  # 0-300 seconds reasonable range
+                        logger.warning(f"MCP_FORWARD_TIMEOUT value {timeout_val} outside reasonable range (0-300 seconds)")
+                        config_issues.append(f"MCP_FORWARD_TIMEOUT value {timeout_val} outside reasonable range (0-300 seconds)")
+                except ValueError:
+                    logger.warning(f"MCP_FORWARD_TIMEOUT '{mcp_timeout}' is not a valid number")
+                    config_issues.append(f"MCP_FORWARD_TIMEOUT must be a number, got: {mcp_timeout}")
+
             # Combine all CRITICAL issues
             all_issues = []
             if missing_vars:

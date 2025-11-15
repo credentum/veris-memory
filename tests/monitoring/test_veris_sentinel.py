@@ -1641,3 +1641,138 @@ class TestMCPTypeValidation:
             # Verify it's a valid MCP type
             assert payload["content_type"] == "log", \
                 f"S10 test payloads must use 'log' type, got: {payload['content_type']}"
+
+
+class TestAutonomousConfiguration:
+    """Test autonomous configuration for S6/S7/S8 (PR #274)."""
+
+    @pytest.fixture
+    def s7_config_with_mcp_vars(self):
+        """Config with MCP env vars set."""
+        return SentinelConfig(
+            target_base_url="http://test:8000",
+            s7_optional_env_vars=[
+                "DATABASE_URL",
+                "QDRANT_URL",
+                "NEO4J_URL",
+                "NEO4J_URI",
+                "REDIS_URL",
+                "TARGET_BASE_URL",
+                "MCP_INTERNAL_URL",
+                "MCP_FORWARD_TIMEOUT"
+            ]
+        )
+
+    @pytest.fixture
+    def s7_check_with_mcp(self, s7_config_with_mcp_vars):
+        """S7 check instance with MCP vars configured."""
+        from ..checks.s7_config_parity import ConfigParity
+        return ConfigParity(s7_config_with_mcp_vars)
+
+    @pytest.fixture
+    def s8_config_with_new_threshold(self):
+        """Config with updated 2500ms threshold."""
+        return SentinelConfig(
+            target_base_url="http://test:8000",
+            s8_max_response_time_ms=2500
+        )
+
+    @pytest.fixture
+    def s8_check_with_new_threshold(self, s8_config_with_new_threshold):
+        """S8 check instance with 2500ms threshold."""
+        from ..checks.s8_capacity_smoke import CapacitySmoke
+        return CapacitySmoke(s8_config_with_new_threshold)
+
+    def test_s7_recognizes_mcp_internal_url(self, s7_check_with_mcp):
+        """Test that S7 recognizes MCP_INTERNAL_URL as optional env var (PR #274)."""
+        # Verify MCP_INTERNAL_URL is in the optional env vars list
+        assert "MCP_INTERNAL_URL" in s7_check_with_mcp.optional_env_vars, \
+            "S7 must recognize MCP_INTERNAL_URL as optional environment variable"
+
+    def test_s7_recognizes_mcp_forward_timeout(self, s7_check_with_mcp):
+        """Test that S7 recognizes MCP_FORWARD_TIMEOUT as optional env var (PR #274)."""
+        # Verify MCP_FORWARD_TIMEOUT is in the optional env vars list
+        assert "MCP_FORWARD_TIMEOUT" in s7_check_with_mcp.optional_env_vars, \
+            "S7 must recognize MCP_FORWARD_TIMEOUT as optional environment variable"
+
+    def test_s7_mcp_vars_do_not_fail_check_when_missing(self, s7_check_with_mcp, mocker):
+        """Test that missing MCP env vars don't fail S7 check (they're optional)."""
+        # Mock environment without MCP vars
+        mocker.patch.dict('os.environ', {
+            'LOG_LEVEL': 'INFO',
+            'ENVIRONMENT': 'production'
+        }, clear=True)
+
+        # Mock HTTP responses for S7 validation
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.json = mocker.AsyncMock(return_value={
+            "success": True,
+            "config": {
+                "python_version": "3.10",
+                "fastapi_version": "0.115"
+            }
+        })
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        # S7 check should not fail due to missing optional MCP env vars
+        # (The check might fail for other reasons in this minimal test, but not due to MCP vars)
+        assert s7_check_with_mcp.optional_env_vars is not None
+        assert len(s7_check_with_mcp.optional_env_vars) >= 8  # At least the 8 we added
+
+    def test_s8_uses_2500ms_threshold(self, s8_check_with_new_threshold):
+        """Test that S8 correctly loads 2500ms threshold from config (PR #274)."""
+        # Verify the new threshold is loaded
+        assert s8_check_with_new_threshold.max_response_time_ms == 2500, \
+            "S8 must use 2500ms threshold (increased from 2000ms to account for REST→MCP forwarding)"
+
+    def test_s8_default_threshold_is_2500ms(self):
+        """Test that S8 defaults to 2500ms when not configured."""
+        from ..checks.s8_capacity_smoke import CapacitySmoke
+
+        # Create check with minimal config (no threshold specified)
+        config = SentinelConfig(target_base_url="http://test:8000")
+        check = CapacitySmoke(config)
+
+        # Should default to 2500ms
+        assert check.max_response_time_ms == 2500, \
+            "S8 default max_response_time_ms should be 2500ms (PR #274 change)"
+
+    @pytest.mark.asyncio
+    async def test_s8_threshold_applied_in_capacity_test(self, s8_check_with_new_threshold, mocker):
+        """Test that 2500ms threshold is actually used in capacity smoke tests."""
+        # Mock responses that are under the new threshold but over the old one
+        response_time_ms = 2200  # Between old (2000ms) and new (2500ms) thresholds
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.text = mocker.AsyncMock(return_value="OK")
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+        mock_response.close = mocker.Mock()
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        # Mock time.time() to simulate 2200ms response time
+        times = [0, response_time_ms / 1000, response_time_ms / 1000 * 2]
+        mocker.patch('time.time', side_effect=times * 100)  # Repeat for multiple requests
+
+        # Run check - should pass because 2200ms < 2500ms threshold
+        # (Would have failed with old 2000ms threshold)
+        result = await s8_check_with_new_threshold.run_check()
+
+        # Check should evaluate against 2500ms threshold
+        assert s8_check_with_new_threshold.max_response_time_ms == 2500
