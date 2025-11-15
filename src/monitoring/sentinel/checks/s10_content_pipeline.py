@@ -80,50 +80,54 @@ class ContentPipelineMonitoring(BaseCheck):
         return headers
 
     def _get_default_test_samples(self) -> List[Dict[str, Any]]:
-        """Default test content samples for pipeline validation."""
+        """Default test content samples for pipeline validation.
+
+        MCP Type Validation: All types must be valid MCP types (design|decision|trace|sprint|log)
+        Using "log" for all test samples, with original category preserved in tags/metadata.
+        """
         return [
             {
-                "type": "technical_documentation",
+                "type": "log",  # Changed from "technical_documentation" (invalid MCP type)
                 "content": {
                     "text": "Setting up PostgreSQL database connection for production environment with SSL encryption and connection pooling configuration.",
                     "title": "PostgreSQL Production Setup",
-                    "tags": ["database", "postgresql", "production", "ssl"]
+                    "tags": ["database", "postgresql", "production", "ssl", "technical_documentation"]
                 },
                 "expected_features": ["database", "connection", "ssl", "production"]
             },
             {
-                "type": "api_documentation",
+                "type": "log",  # Changed from "api_documentation" (invalid MCP type)
                 "content": {
                     "text": "REST API endpoint for user authentication using JWT tokens with role-based access control and session management.",
                     "title": "User Authentication API",
-                    "tags": ["api", "authentication", "jwt", "rbac"]
+                    "tags": ["api", "authentication", "jwt", "rbac", "api_documentation"]
                 },
                 "expected_features": ["api", "authentication", "jwt", "access"]
             },
             {
-                "type": "troubleshooting_guide",
+                "type": "log",  # Changed from "troubleshooting_guide" (invalid MCP type)
                 "content": {
                     "text": "Debugging network connectivity issues in microservices architecture with service mesh monitoring and distributed tracing.",
-                    "title": "Network Troubleshooting Guide", 
-                    "tags": ["troubleshooting", "network", "microservices", "tracing"]
+                    "title": "Network Troubleshooting Guide",
+                    "tags": ["troubleshooting", "network", "microservices", "tracing", "troubleshooting_guide"]
                 },
                 "expected_features": ["debugging", "network", "microservices", "monitoring"]
             },
             {
-                "type": "deployment_process",
+                "type": "log",  # Changed from "deployment_process" (invalid MCP type)
                 "content": {
                     "text": "Automated deployment pipeline with Docker containers, Kubernetes orchestration, and CI/CD integration for production releases.",
                     "title": "Deployment Automation",
-                    "tags": ["deployment", "docker", "kubernetes", "cicd"]
+                    "tags": ["deployment", "docker", "kubernetes", "cicd", "deployment_process"]
                 },
                 "expected_features": ["deployment", "docker", "kubernetes", "automation"]
             },
             {
-                "type": "performance_optimization",
+                "type": "log",  # Changed from "performance_optimization" (invalid MCP type)
                 "content": {
                     "text": "Application performance tuning strategies including database query optimization, caching layers, and load balancing configuration.",
                     "title": "Performance Optimization Strategies",
-                    "tags": ["performance", "optimization", "caching", "database"]
+                    "tags": ["performance", "optimization", "caching", "database", "performance_optimization"]
                 },
                 "expected_features": ["performance", "optimization", "caching", "database"]
             }
