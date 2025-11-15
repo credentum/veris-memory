@@ -41,6 +41,8 @@ jobs:
           # Mask secrets in logs
           echo "::add-mask::${{ secrets.HETZNER_SSH_KEY }}"
           echo "::add-mask::${{ secrets.NEO4J_PASSWORD }}"
+          echo "::add-mask::${{ secrets.NEO4J_RO_PASSWORD }}"
+          echo "::add-mask::${{ secrets.REDIS_PASSWORD }}"
           echo "::add-mask::${{ secrets.TELEGRAM_BOT_TOKEN }}"
           echo "::add-mask::${{ secrets.TELEGRAM_CHAT_ID }}"
           echo "::add-mask::${{ secrets.API_KEY_MCP }}"
@@ -68,6 +70,8 @@ jobs:
       - name: Deploy to Dev Environment
         env:
           NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+          NEO4J_RO_PASSWORD: ${{ secrets.NEO4J_RO_PASSWORD }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           API_KEY_MCP: ${{ secrets.API_KEY_MCP }}
