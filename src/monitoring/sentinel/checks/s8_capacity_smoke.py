@@ -58,6 +58,17 @@ class CapacitySmoke(BaseCheck):
         self.max_response_time_ms = config.get("s8_max_response_time_ms", 2500)
         self.max_error_rate_percent = config.get("s8_max_error_rate_percent", 5)
 
+        # Application-only latency threshold (PR #274 - addresses performance regression concern)
+        # This allows detection of pure application performance issues independent of forwarding overhead
+        # When metrics endpoint provides application vs forwarding latency breakdown, S8 will validate
+        # application latency separately against this threshold
+        #
+        # Note: Requires metrics endpoint enhancement to expose latency breakdown:
+        # - GET /metrics should return: {application_latency_ms, forwarding_latency_ms}
+        # - Until implemented, this threshold is configured but not actively used
+        # - See .env.sentinel.template line 123 for detailed documentation
+        self.app_latency_threshold_ms = config.get("s8_app_latency_ms", 1500)
+
         # Get API key from environment for authentication
         self.api_key = os.getenv('SENTINEL_API_KEY')
 

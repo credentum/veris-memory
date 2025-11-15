@@ -1776,3 +1776,196 @@ class TestAutonomousConfiguration:
 
         # Check should evaluate against 2500ms threshold
         assert s8_check_with_new_threshold.max_response_time_ms == 2500
+
+    @pytest.mark.asyncio
+    async def test_s7_validates_mcp_internal_url_format(self, mocker):
+        """Test that S7 validates MCP_INTERNAL_URL format correctly."""
+        from ..checks.s7_config_parity import ConfigParity
+
+        # Test invalid URL (no http/https protocol)
+        mocker.patch.dict('os.environ', {
+            'LOG_LEVEL': 'INFO',
+            'ENVIRONMENT': 'production',
+            'MCP_INTERNAL_URL': 'localhost:8000'  # Invalid - no protocol
+        }, clear=True)
+
+        config = SentinelConfig(target_base_url="http://test:8000")
+        check = ConfigParity(config)
+
+        # Mock HTTP client
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.json = mocker.AsyncMock(return_value={"success": True, "config": {}})
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        # Run environment variable validation
+        result = await check._check_environment_variables()
+
+        # Should have config issue for invalid URL format
+        assert "config_issues" in result
+        config_issues = result.get("config_issues", [])
+        assert any("MCP_INTERNAL_URL format invalid" in issue for issue in config_issues), \
+            f"Expected MCP_INTERNAL_URL format validation error, got: {config_issues}"
+
+    @pytest.mark.asyncio
+    async def test_s7_accepts_valid_mcp_internal_url(self, mocker):
+        """Test that S7 accepts valid MCP_INTERNAL_URL with http/https."""
+        from ..checks.s7_config_parity import ConfigParity
+
+        # Test valid URL
+        mocker.patch.dict('os.environ', {
+            'LOG_LEVEL': 'INFO',
+            'ENVIRONMENT': 'production',
+            'MCP_INTERNAL_URL': 'http://localhost:8000'  # Valid
+        }, clear=True)
+
+        config = SentinelConfig(target_base_url="http://test:8000")
+        check = ConfigParity(config)
+
+        # Mock HTTP client
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.json = mocker.AsyncMock(return_value={"success": True, "config": {}})
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        result = await check._check_environment_variables()
+
+        # Should NOT have config issue for valid URL
+        config_issues = result.get("config_issues", [])
+        assert not any("MCP_INTERNAL_URL" in issue for issue in config_issues), \
+            f"Valid MCP_INTERNAL_URL should not cause config issues, got: {config_issues}"
+
+    @pytest.mark.asyncio
+    async def test_s7_validates_mcp_forward_timeout_range(self, mocker):
+        """Test that S7 validates MCP_FORWARD_TIMEOUT is within reasonable range."""
+        from ..checks.s7_config_parity import ConfigParity
+
+        # Test timeout value outside range (> 300 seconds)
+        mocker.patch.dict('os.environ', {
+            'LOG_LEVEL': 'INFO',
+            'ENVIRONMENT': 'production',
+            'MCP_FORWARD_TIMEOUT': '500'  # Invalid - too high
+        }, clear=True)
+
+        config = SentinelConfig(target_base_url="http://test:8000")
+        check = ConfigParity(config)
+
+        # Mock HTTP client
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.json = mocker.AsyncMock(return_value={"success": True, "config": {}})
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        result = await check._check_environment_variables()
+
+        # Should have config issue for out-of-range timeout
+        config_issues = result.get("config_issues", [])
+        assert any("MCP_FORWARD_TIMEOUT" in issue and "range" in issue for issue in config_issues), \
+            f"Expected MCP_FORWARD_TIMEOUT range validation error, got: {config_issues}"
+
+    @pytest.mark.asyncio
+    async def test_s7_validates_mcp_forward_timeout_is_numeric(self, mocker):
+        """Test that S7 validates MCP_FORWARD_TIMEOUT is a valid number."""
+        from ..checks.s7_config_parity import ConfigParity
+
+        # Test non-numeric timeout value
+        mocker.patch.dict('os.environ', {
+            'LOG_LEVEL': 'INFO',
+            'ENVIRONMENT': 'production',
+            'MCP_FORWARD_TIMEOUT': 'not-a-number'  # Invalid
+        }, clear=True)
+
+        config = SentinelConfig(target_base_url="http://test:8000")
+        check = ConfigParity(config)
+
+        # Mock HTTP client
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.json = mocker.AsyncMock(return_value={"success": True, "config": {}})
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        result = await check._check_environment_variables()
+
+        # Should have config issue for non-numeric timeout
+        config_issues = result.get("config_issues", [])
+        assert any("MCP_FORWARD_TIMEOUT" in issue and "number" in issue for issue in config_issues), \
+            f"Expected MCP_FORWARD_TIMEOUT numeric validation error, got: {config_issues}"
+
+    def test_backup_script_exists_and_is_executable(self):
+        """Test that backup script required by deployment exists and is executable."""
+        import os
+        import stat
+
+        # Verify backup script existence (required for S6 validation)
+        backup_script_path = "scripts/backup-production-final.sh"
+
+        assert os.path.exists(backup_script_path), \
+            f"Backup script must exist at {backup_script_path} for S6 validation to pass"
+
+        # Verify it's executable
+        file_stat = os.stat(backup_script_path)
+        is_executable = bool(file_stat.st_mode & stat.S_IXUSR)
+
+        assert is_executable, \
+            f"Backup script at {backup_script_path} must be executable (chmod +x)"
+
+        # Verify it's a bash script
+        with open(backup_script_path, 'r') as f:
+            first_line = f.readline()
+            assert first_line.startswith('#!/bin/bash') or first_line.startswith('#!/usr/bin/env bash'), \
+                f"Backup script must be a bash script, got: {first_line}"
+
+    def test_s8_loads_app_latency_threshold(self):
+        """Test that S8 loads separate application latency threshold (PR #274 performance regression mitigation)."""
+        from ..checks.s8_capacity_smoke import CapacitySmoke
+
+        # Test with custom app latency threshold
+        config = SentinelConfig(
+            target_base_url="http://test:8000",
+            s8_app_latency_ms=1500
+        )
+        check = CapacitySmoke(config)
+
+        # Verify app latency threshold is loaded
+        assert check.app_latency_threshold_ms == 1500, \
+            "S8 must load app_latency_threshold_ms from config"
+
+        # Verify it's distinct from total response time threshold
+        assert check.max_response_time_ms == 2500, \
+            "S8 max_response_time_ms should be 2500ms (total including forwarding)"
+
+        # App threshold should be lower than total threshold (app doesn't include forwarding)
+        assert check.app_latency_threshold_ms < check.max_response_time_ms, \
+            "Application latency threshold should be lower than total response time threshold"
