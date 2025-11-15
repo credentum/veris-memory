@@ -11,12 +11,15 @@ sentinel-host-checks.sh script which sends results to the Sentinel API.
 """
 
 import asyncio
+import logging
 import subprocess
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 
 from ..base_check import BaseCheck
 from ..models import CheckResult, SentinelConfig
+
+logger = logging.getLogger(__name__)
 
 
 class S11FirewallStatus(BaseCheck):
@@ -40,6 +43,20 @@ class S11FirewallStatus(BaseCheck):
         super().__init__(config, self.CHECK_ID, "Firewall status and security monitoring (host-based)")
         self.api_instance = api_instance
         self.max_age_minutes = 10  # Alert if no update in 10 minutes
+
+    def set_api_instance(self, api_instance) -> None:
+        """
+        Set the API instance for retrieving host-based check results.
+
+        This allows lazy initialization since the API is created after the runner
+        in the initialization sequence. This solves the chicken-and-egg problem where
+        S11 needs the API but checks are initialized before the API exists.
+
+        Args:
+            api_instance: SentinelAPI instance with get_host_check_result() method
+        """
+        self.api_instance = api_instance
+        logger.info("S11 firewall check: API instance configured for host-based monitoring")
 
     async def run_check(self) -> CheckResult:
         """
@@ -105,6 +122,9 @@ class S11FirewallStatus(BaseCheck):
                 )
 
             # Return the host-based result with freshness validation
+            # Handle case where host_result.details might be None
+            base_details = host_result.details if host_result.details else {}
+
             return CheckResult(
                 check_id=self.CHECK_ID,
                 timestamp=datetime.now(),
@@ -112,7 +132,7 @@ class S11FirewallStatus(BaseCheck):
                 latency_ms=self._calculate_latency(start_time),
                 message=f"{host_result.message} (host-based check)",
                 details={
-                    **host_result.details,
+                    **base_details,
                     "host_check_timestamp": host_result.timestamp.isoformat(),
                     "age_seconds": int(age.total_seconds()),
                     "check_method": "host-based"
