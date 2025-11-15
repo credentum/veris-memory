@@ -59,7 +59,7 @@ services:
 
   # Vector Database (Qdrant) - PRODUCTION
   qdrant:
-    image: qdrant/qdrant:v1.15.1  # Upgraded to match client version for API compatibility
+    image: qdrant/qdrant:v1.15.1@sha256:d122138f76868edba68d36cb0833139c1d1761f00f09e48e61f8314196e6a4c6  # SECURITY: Pinned with SHA256
     platform: linux/amd64
     container_name: veris-memory-prod-qdrant
     ports:
