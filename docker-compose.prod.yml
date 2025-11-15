@@ -114,6 +114,9 @@ services:
       - "127.0.0.1:6380:6379"  # Production Redis on 6380
     volumes:
       - redis_prod_data:/data
+    environment:
+      # SECURITY: Use REDISCLI_AUTH to avoid exposing password in process list
+      - REDISCLI_AUTH=${REDIS_PASSWORD}
     # SECURITY: Redis with password authentication
     command: >
       redis-server
@@ -123,7 +126,7 @@ services:
       --maxmemory-policy allkeys-lru
       --protected-mode yes
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "sh", "-c", "redis-cli ping"]
       interval: 30s
       timeout: 10s
       retries: 3

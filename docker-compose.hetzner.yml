@@ -50,7 +50,7 @@ services:
 
   # Vector Database (Qdrant) - High-performance configuration
   qdrant:
-    image: qdrant/qdrant:v1.12.1@sha256:d774e7bb65744454984c6021637a0da89271f30df15e48601a9fafc926d26b1f
+    image: qdrant/qdrant:v1.15.1@sha256:d122138f76868edba68d36cb0833139c1d1761f00f09e48e61f8314196e6a4c6  # SECURITY: Updated to v1.15.1 to match other configs
     ports:
       - "127.0.0.1:6333:6333" # HTTP API (Tailscale only)
       - "127.0.0.1:6334:6334" # gRPC port (Tailscale only)
@@ -148,6 +148,9 @@ services:
     volumes:
       # RAID1 NVMe storage for persistence
       - /raid1/docker-data/redis:/data
+    environment:
+      # SECURITY: Use REDISCLI_AUTH to avoid exposing password in process list
+      - REDISCLI_AUTH=${REDIS_PASSWORD}
     # SECURITY: Redis with password authentication
     command: >
       redis-server
@@ -164,7 +167,7 @@ services:
       --databases 16
       --protected-mode yes
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "sh", "-c", "redis-cli ping"]
       interval: 30s
       timeout: 10s
       retries: 3

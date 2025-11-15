@@ -152,6 +152,9 @@ services:
       - "127.0.0.1:6379:6379"  # SECURITY: Bind to localhost only
     volumes:
       - redis_data:/data
+    environment:
+      # SECURITY: Use REDISCLI_AUTH to avoid exposing password in process list
+      - REDISCLI_AUTH=${REDIS_PASSWORD}
     # SECURITY: Redis with password authentication
     # Password is required via --requirepass flag. If REDIS_PASSWORD is not set,
     # the container will fail to start with an error about missing environment variable.
@@ -167,11 +170,14 @@ services:
     # - If REDIS_PASSWORD is wrong in healthcheck: Healthcheck fails, container marked unhealthy
     # - If REDIS_PASSWORD is correct: Healthcheck succeeds, container marked healthy
     #
+    # SECURITY NOTE: Using REDISCLI_AUTH environment variable instead of -a flag
+    # to prevent password exposure in process list (ps aux, docker inspect)
+    #
     # Debug failing healthchecks:
-    #   docker exec <container> redis-cli -a "$REDIS_PASSWORD" ping
+    #   docker exec <container> redis-cli ping
     #   docker inspect --format='{{.State.Health.Status}}' <container>
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "sh", "-c", "redis-cli ping"]
       interval: 30s
       timeout: 10s
       retries: 3
