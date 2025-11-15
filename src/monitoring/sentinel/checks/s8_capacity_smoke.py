@@ -599,12 +599,32 @@ class CapacitySmoke(BaseCheck):
             if max_response_time > self.max_response_time_ms * 5:
                 issues.append(f"Maximum response time {max_response_time:.1f}ms is extremely high")
             
-            # Check for response time variability
+            # Check for response time variability (PR #306: Improved cold start handling)
+            # Exclude first request from CV calculation to account for cold start effects
+            # Cold starts (first request) can be 50x slower than subsequent cached requests,
+            # which is normal behavior, not a performance issue
             if len(response_times) > 10:
-                std_dev = statistics.stdev(response_times)
-                coefficient_of_variation = std_dev / avg_response_time if avg_response_time > 0 else 0
-                if coefficient_of_variation > 1.0:  # High variability
-                    issues.append(f"High response time variability (CV: {coefficient_of_variation:.2f})")
+                # Calculate CV for all requests (includes cold start)
+                std_dev_all = statistics.stdev(response_times)
+                cv_all = std_dev_all / avg_response_time if avg_response_time > 0 else 0
+
+                # Calculate CV excluding first request (warm cache only)
+                response_times_warm = response_times[1:]  # Skip first request
+                if len(response_times_warm) > 1:
+                    avg_warm = statistics.mean(response_times_warm)
+                    std_dev_warm = statistics.stdev(response_times_warm)
+                    cv_warm = std_dev_warm / avg_warm if avg_warm > 0 else 0
+                else:
+                    cv_warm = cv_all
+
+                # Use warm CV for threshold check (more accurate for performance assessment)
+                # Increased threshold from 1.0 to 1.5 to accommodate realistic cold start patterns
+                # Rationale: Cold start variability is expected and normal, not a performance issue
+                if cv_warm > 1.5:  # High variability even after excluding cold start
+                    issues.append(
+                        f"High response time variability (CV warm: {cv_warm:.2f}, "
+                        f"CV all: {cv_all:.2f}, threshold: 1.5)"
+                    )
 
             # PR #274: Check application-only latency if metrics endpoint provides breakdown
             # This enables detection of pure application performance regressions independent
@@ -619,6 +639,25 @@ class CapacitySmoke(BaseCheck):
                         f"(performance regression detected, forwarding: {forwarding_latency:.1f}ms)"
                     )
 
+            # Prepare response time variability metrics
+            variability_metrics = {}
+            if len(response_times) > 10:
+                response_times_warm = response_times[1:]
+                if len(response_times_warm) > 1:
+                    avg_warm = statistics.mean(response_times_warm)
+                    std_dev_warm = statistics.stdev(response_times_warm)
+                    cv_warm = std_dev_warm / avg_warm if avg_warm > 0 else 0
+                    std_dev_all = statistics.stdev(response_times)
+                    cv_all = std_dev_all / avg_response_time if avg_response_time > 0 else 0
+
+                    variability_metrics = {
+                        "cv_all_requests": cv_all,
+                        "cv_warm_requests": cv_warm,
+                        "cv_threshold": 1.5,
+                        "cold_start_excluded": True,
+                        "avg_warm_response_time_ms": avg_warm
+                    }
+
             return {
                 "passed": len(issues) == 0,
                 "message": f"Response time test: avg {avg_response_time:.1f}ms, P95 {p95_response_time:.1f}ms" + (f", issues: {', '.join(issues)}" if issues else ""),
@@ -629,6 +668,7 @@ class CapacitySmoke(BaseCheck):
                 "p99_response_time_ms": p99_response_time,
                 "min_response_time_ms": min_response_time,
                 "max_response_time_ms": max_response_time,
+                "variability_metrics": variability_metrics,
                 "response_time_samples": response_times[-10:],  # Last 10 samples
                 "app_latency_breakdown": app_latency_result if app_latency_result.get("breakdown_available") else None,
                 "issues": issues

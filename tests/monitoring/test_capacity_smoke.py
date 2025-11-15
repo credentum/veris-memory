@@ -58,23 +58,25 @@ class TestCapacitySmoke:
             {"passed": True, "message": "System resources test passed"},
             {"passed": True, "message": "Database connections test passed"},
             {"passed": True, "message": "Memory usage test passed"},
-            {"passed": True, "message": "Response times test passed"}
+            {"passed": True, "message": "Response times test passed"},
+            {"passed": True, "message": "Resource exhaustion test passed"}
         ]
-        
+
         with patch.object(check, '_test_concurrent_requests', return_value=mock_results[0]):
             with patch.object(check, '_test_sustained_load', return_value=mock_results[1]):
                 with patch.object(check, '_monitor_system_resources', return_value=mock_results[2]):
                     with patch.object(check, '_test_database_connections', return_value=mock_results[3]):
                         with patch.object(check, '_test_memory_usage', return_value=mock_results[4]):
                             with patch.object(check, '_test_response_times', return_value=mock_results[5]):
-                                
-                                result = await check.run_check()
-        
+                                with patch.object(check, '_detect_resource_exhaustion_attacks', return_value=mock_results[6]):
+
+                                    result = await check.run_check()
+
         assert result.check_id == "S8-capacity-smoke"
         assert result.status == "pass"
-        assert "All capacity tests passed: 6 tests successful" in result.message
-        assert result.details["total_tests"] == 6
-        assert result.details["passed_tests"] == 6
+        assert "All capacity tests passed: 7 tests successful" in result.message
+        assert result.details["total_tests"] == 7
+        assert result.details["passed_tests"] == 7
         assert result.details["failed_tests"] == 0
     
     @pytest.mark.asyncio
@@ -86,21 +88,23 @@ class TestCapacitySmoke:
             {"passed": True, "message": "System resources test passed"},
             {"passed": True, "message": "Database connections test passed"},
             {"passed": True, "message": "Memory usage test passed"},
-            {"passed": True, "message": "Response times test passed"}
+            {"passed": True, "message": "Response times test passed"},
+            {"passed": True, "message": "Resource exhaustion test passed"}
         ]
-        
+
         with patch.object(check, '_test_concurrent_requests', return_value=mock_results[0]):
             with patch.object(check, '_test_sustained_load', return_value=mock_results[1]):
                 with patch.object(check, '_monitor_system_resources', return_value=mock_results[2]):
                     with patch.object(check, '_test_database_connections', return_value=mock_results[3]):
                         with patch.object(check, '_test_memory_usage', return_value=mock_results[4]):
                             with patch.object(check, '_test_response_times', return_value=mock_results[5]):
-                                
-                                result = await check.run_check()
-        
+                                with patch.object(check, '_detect_resource_exhaustion_attacks', return_value=mock_results[6]):
+
+                                    result = await check.run_check()
+
         assert result.status == "fail"
         assert "Capacity issues detected: 2 problems found" in result.message
-        assert result.details["passed_tests"] == 4
+        assert result.details["passed_tests"] == 5
         assert result.details["failed_tests"] == 2
     
     @pytest.mark.asyncio
@@ -472,6 +476,48 @@ class TestCapacitySmoke:
             assert len(result["issues"]) > 0
     
     @pytest.mark.asyncio
+    async def test_response_times_cold_start_handling(self, check):
+        """Test that cold start requests are excluded from CV calculation (PR #306)."""
+        # Simulate cold start pattern: first request slow, rest fast
+        # Cold start: 99.6ms, Warm: ~1.8ms (based on actual S8 production data)
+        response_times = [99.6] + [1.8] * 49  # Realistic cold start pattern
+        response_iter = iter(response_times)
+
+        async def mock_request(session, test_id):
+            return {
+                "test_id": test_id,
+                "status_code": 200,
+                "response_time": next(response_iter, 2.0),
+                "error": None
+            }
+
+        # Mock application latency check
+        async def mock_app_latency_check():
+            return {"breakdown_available": False}
+
+        with patch.object(check, '_make_test_request', side_effect=mock_request):
+            with patch.object(check, '_check_application_latency_breakdown', return_value=mock_app_latency_check()):
+                with patch('aiohttp.ClientSession'):
+                    result = await check._test_response_times()
+
+        # Test should PASS despite high CV (due to cold start exclusion)
+        assert result["passed"] is True, f"Expected pass, got issues: {result.get('issues')}"
+
+        # Verify variability metrics are present
+        assert "variability_metrics" in result
+        variability = result["variability_metrics"]
+
+        # CV with cold start should be high (> 1.0)
+        assert variability["cv_all_requests"] > 1.0, "Expected high CV with cold start"
+
+        # CV without cold start should be low (< 0.5)
+        assert variability["cv_warm_requests"] < 0.5, "Expected low CV after excluding cold start"
+
+        # Verify cold start was excluded
+        assert variability["cold_start_excluded"] is True
+        assert variability["cv_threshold"] == 1.5
+
+    @pytest.mark.asyncio
     async def test_response_times_no_successful_requests(self, check):
         """Test response time monitoring when all requests fail."""
         async def mock_request(session, test_id):
@@ -481,11 +527,11 @@ class TestCapacitySmoke:
                 "response_time": 1000.0,
                 "error": "HTTP 500"
             }
-        
+
         with patch.object(check, '_make_test_request', side_effect=mock_request):
             with patch('aiohttp.ClientSession'):
                 result = await check._test_response_times()
-        
+
         assert result["passed"] is False
         assert "No successful requests" in result["message"]
         assert "error" in result
