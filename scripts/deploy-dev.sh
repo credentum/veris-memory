@@ -60,7 +60,7 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
   export OPENAI_API_KEY='$OPENAI_API_KEY'
   export SENTINEL_API_KEY='$SENTINEL_API_KEY'
   export HOST_CHECK_SECRET='$HOST_CHECK_SECRET'
-  export ENVIRONMENT=dev
+  export ENVIRONMENT=development
 
   # Verify critical environment variables
   if [ -z "\$NEO4J_PASSWORD" ]; then
@@ -189,9 +189,9 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.s
 
   # Check if deployment script exists
   if [ -f "scripts/deploy-environment.sh" ]; then
-    echo "🚀 Running environment deployment script for DEV..."
+    echo "🚀 Running environment deployment script for DEVELOPMENT..."
     chmod +x scripts/deploy-environment.sh
-    ./scripts/deploy-environment.sh dev
+    ./scripts/deploy-environment.sh development
   else
     echo "⚠️ Environment deployment script not found, using fallback..."
 
