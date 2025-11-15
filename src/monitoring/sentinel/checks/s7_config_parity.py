@@ -56,10 +56,10 @@ class ConfigParity(BaseCheck):
             "MCP_INTERNAL_URL",      # REST compatibility layer internal URL (PR #269)
             "MCP_FORWARD_TIMEOUT"    # REST to MCP forwarding timeout (PR #269)
         ])
-        # Expected versions - Phase 4 Update (2025-11-08)
+        # Expected versions - Phase 4 Update (2025-11-08), Corrected 2025-11-15
         #
         # These versions were determined by inspecting the actual running deployment:
-        # - Python 3.10: System Python version on Ubuntu 22.04 LTS (verified with `python3 --version`)
+        # - Python 3.11: Context-store deployment Python version (dockerfiles/Dockerfile:8)
         # - FastAPI 0.115: From requirements.txt and verified via `pip show fastapi`
         # - Uvicorn 0.32: From requirements.txt and verified via `pip show uvicorn`
         #

@@ -11,7 +11,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timedelta
 
-from src.monitoring.sentinel.checks.s6_backup_restore import BackupRestoreCheck
+from src.monitoring.sentinel.checks.s6_backup_restore import BackupRestore
 from src.monitoring.sentinel.models import SentinelConfig
 
 
@@ -29,7 +29,7 @@ class TestS6ThresholdChanges:
     @pytest.mark.asyncio
     async def test_10kb_files_pass_integrity_check(self, config):
         """Test that 10KB files pass the new minimum size threshold."""
-        check = BackupRestoreCheck(config)
+        check = BackupRestore(config)
 
         # Verify default threshold is 10KB (0.01 MB)
         assert check.min_backup_size_mb == 0.01
@@ -47,7 +47,7 @@ class TestS6ThresholdChanges:
     @pytest.mark.asyncio
     async def test_files_below_10kb_fail_integrity_check(self, config):
         """Test that files below 10KB fail the integrity check."""
-        check = BackupRestoreCheck(config)
+        check = BackupRestore(config)
 
         # Mock a 5KB file (below threshold)
         mock_stat = MagicMock()
@@ -61,7 +61,7 @@ class TestS6ThresholdChanges:
     async def test_14_day_retention_policy_validation(self, config):
         """Test that 14-day retention policy is properly validated."""
         # Test with default config (should be 14 days)
-        check = BackupRestoreCheck(config)
+        check = BackupRestore(config)
 
         # Access retention policy through config
         retention_days = config.get("s6_retention_days", 14)
@@ -76,7 +76,7 @@ class TestS6ThresholdChanges:
     @pytest.mark.asyncio
     async def test_14_day_retention_accepts_recent_backups(self, config):
         """Test that backups within 14 days are accepted."""
-        check = BackupRestoreCheck(config)
+        check = BackupRestore(config)
         retention_days = config.get("s6_retention_days", 14)
 
         # Test backup from 7 days ago (within retention)
@@ -119,7 +119,7 @@ class TestS6ThresholdChanges:
     @pytest.mark.asyncio
     async def test_threshold_prevents_false_positives_on_small_configs(self, config):
         """Test that 10KB threshold prevents false positives on legitimate small backups."""
-        check = BackupRestoreCheck(config)
+        check = BackupRestore(config)
 
         # Simulate a small but legitimate config backup (15KB)
         mock_stat = MagicMock()
@@ -133,7 +133,7 @@ class TestS6ThresholdChanges:
     @pytest.mark.asyncio
     async def test_retention_alignment_with_backup_policies(self, config):
         """Test that 14-day retention aligns with typical backup retention policies."""
-        check = BackupRestoreCheck(config)
+        check = BackupRestore(config)
         retention_days = config.get("s6_retention_days", 14)
 
         # Verify 14 days matches common backup retention practices
@@ -157,7 +157,7 @@ class TestS6ThresholdEdgeCases:
     @pytest.mark.asyncio
     async def test_exactly_10kb_file(self, config):
         """Test file exactly at 10KB threshold."""
-        check = BackupRestoreCheck(config)
+        check = BackupRestore(config)
 
         # Exactly 10KB = 10240 bytes
         mock_stat = MagicMock()
@@ -170,7 +170,7 @@ class TestS6ThresholdEdgeCases:
     @pytest.mark.asyncio
     async def test_zero_size_file_fails(self, config):
         """Test that zero-size files fail the check."""
-        check = BackupRestoreCheck(config)
+        check = BackupRestore(config)
 
         mock_stat = MagicMock()
         mock_stat.st_size = 0
@@ -181,7 +181,7 @@ class TestS6ThresholdEdgeCases:
     @pytest.mark.asyncio
     async def test_retention_boundary_conditions(self, config):
         """Test retention policy at exact boundary (14 days)."""
-        check = BackupRestoreCheck(config)
+        check = BackupRestore(config)
         retention_days = config.get("s6_retention_days", 14)
 
         # Test exactly at boundary
