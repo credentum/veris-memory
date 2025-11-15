@@ -178,7 +178,7 @@ fi
 
 # Submit to Sentinel API with validated JSON
 RESPONSE=$(curl -s -X POST \
-    "${SENTINEL_API_URL}/api/v1/host-checks/S11-firewall-status" \
+    "${SENTINEL_API_URL}/host-checks/S11-firewall-status" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD" \
     2>&1 || echo "error")
