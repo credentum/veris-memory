@@ -128,24 +128,33 @@ class TestMetricsEndpointSecurity:
             # Ensure it's not a forbidden error
             assert "restricted to localhost" not in response.text.lower()
 
-    def test_metrics_endpoint_blocks_external_ip(self, api_client, monkeypatch):
-        """Test that metrics endpoint blocks requests from external IPs."""
-        # We need to mock the request.client.host to simulate external IP
+    def test_metrics_endpoints_have_localhost_protection(self, api_client):
+        """Test that all metrics endpoints have localhost protection implemented."""
+        # Verify security implementation exists by checking the code
+        # Note: TestClient always uses localhost, so we validate the security
+        # check exists in the implementation
         from src.api.routes import metrics
-
-        # Create a mock request with external IP
-        class MockClient:
-            host = "192.168.1.100"  # External IP
-
-        class MockRequest:
-            client = MockClient()
-
-        # This test requires deeper mocking of FastAPI's request object
-        # For now, we verify the security check exists in the code
         import inspect
-        source = inspect.getsource(metrics.get_metrics)
-        assert "127.0.0.1" in source, "Localhost check not found in metrics endpoint"
-        assert "403" in source or "FORBIDDEN" in source, "Forbidden response not found"
+
+        # Check /metrics endpoint
+        metrics_source = inspect.getsource(metrics.get_metrics)
+        assert "127.0.0.1" in metrics_source, "/metrics endpoint missing localhost check"
+        assert "403" in metrics_source or "FORBIDDEN" in metrics_source, "/metrics missing 403 response"
+
+        # Check /metrics/summary endpoint
+        summary_source = inspect.getsource(metrics.get_metrics_summary)
+        assert "127.0.0.1" in summary_source, "/metrics/summary endpoint missing localhost check"
+        assert "403" in summary_source or "FORBIDDEN" in summary_source, "/metrics/summary missing 403 response"
+
+        # Check /metrics/performance endpoint
+        performance_source = inspect.getsource(metrics.get_performance_metrics)
+        assert "127.0.0.1" in performance_source, "/metrics/performance endpoint missing localhost check"
+        assert "403" in performance_source or "FORBIDDEN" in performance_source, "/metrics/performance missing 403 response"
+
+        # Check /metrics/usage endpoint
+        usage_source = inspect.getsource(metrics.get_usage_statistics)
+        assert "127.0.0.1" in usage_source, "/metrics/usage endpoint missing localhost check"
+        assert "403" in usage_source or "FORBIDDEN" in usage_source, "/metrics/usage missing 403 response"
 
     def test_metrics_summary_endpoint_protection(self, api_client):
         """Test that metrics/summary endpoint is also protected."""

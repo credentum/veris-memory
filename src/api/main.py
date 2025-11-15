@@ -55,9 +55,8 @@ Authorization: Bearer <your-token>
 
 ## Rate Limiting
 
-API requests are rate-limited per client. Default limits:
-- 1000 requests per hour for authenticated users
-- 100 requests per hour for unauthenticated requests
+API requests are rate-limited per client to prevent abuse. Current limits:
+- 20 requests per minute per IP address (applies to all endpoints)
 
 ## Error Handling
 

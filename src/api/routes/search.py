@@ -23,7 +23,7 @@ from ...utils.logging_middleware import api_logger
 
 
 router = APIRouter()
-limiter = Limiter(key_func=get_remote_address)
+limiter: Limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post(
