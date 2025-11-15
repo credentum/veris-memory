@@ -240,13 +240,16 @@ class ContentPipelineMonitoring(BaseCheck):
                     content_data = sample["content"]
 
                     # Prepare ingestion payload - API expects content as string
+                    # Fixed: Field name is "content_type" not "context_type"
+                    # Using valid MCP type "log" for test data
                     ingestion_payload = {
-                        "context_type": "pipeline_test",
+                        "content_type": "log",  # Changed from "context_type": "pipeline_test"
                         "content": content_data["text"],  # Extract text string from content dict
                         "title": f"Pipeline Test - {content_type} #{i+1}",
                         "metadata": {
                             "test_id": test_id,
                             "content_type": content_type,
+                            "test_type": "pipeline_test",  # Original type preserved for filtering
                             "test_timestamp": datetime.utcnow().isoformat(),
                             "expected_features": sample.get("expected_features", []),
                             "original_title": content_data.get("title", ""),
@@ -531,8 +534,9 @@ class ContentPipelineMonitoring(BaseCheck):
             ) as session:
                 
                 # Test storage consistency by storing and immediately retrieving content
+                # Fixed: Field name is "content_type" not "context_type"
                 test_content = {
-                    "context_type": "consistency_test",
+                    "content_type": "log",  # Changed from "context_type": "consistency_test"
                     "content": f"Storage consistency test content - {datetime.utcnow().isoformat()}",  # String, not dict
                     "title": "Storage Consistency Test",
                     "metadata": {
@@ -636,8 +640,9 @@ class ContentPipelineMonitoring(BaseCheck):
                 throughput_operations = 0
                 
                 for i in range(10):  # Test with 10 rapid operations
+                    # Fixed: Field name is "content_type" not "context_type"
                     test_content = {
-                        "context_type": "throughput_test",
+                        "content_type": "log",  # Changed from "context_type": "throughput_test"
                         "content": f"Throughput test content #{i+1}",  # String, not dict
                         "title": f"Throughput Test #{i+1}",
                         "metadata": {
@@ -673,12 +678,14 @@ class ContentPipelineMonitoring(BaseCheck):
                     latency_start = time.time()
 
                     # Store content
+                    # Fixed: Field name is "content_type" not "context_type"
                     test_content = {
-                        "context_type": "latency_test",
+                        "content_type": "log",  # Changed from "context_type": "latency_test"
                         "content": f"Latency test content for measurement #{i+1}",  # String, not dict
                         "title": f"Latency Test #{i+1}",
                         "metadata": {
-                            "performance_test": True
+                            "performance_test": True,
+                            "test_type": "latency"
                         }
                     }
 
@@ -723,12 +730,14 @@ class ContentPipelineMonitoring(BaseCheck):
                 concurrent_start = time.time()
 
                 async def concurrent_operation(session, index):
+                    # Fixed: Field name is "content_type" not "context_type"
                     test_content = {
-                        "context_type": "concurrent_test",
+                        "content_type": "log",  # Changed from "context_type": "concurrent_test"
                         "content": f"Concurrent test content #{index}",  # String, not dict
                         "title": f"Concurrent Test #{index}",
                         "metadata": {
-                            "performance_test": True
+                            "performance_test": True,
+                            "test_type": "concurrent"
                         }
                     }
 
@@ -813,12 +822,14 @@ class ContentPipelineMonitoring(BaseCheck):
                 
                 # Test 2: Oversized content
                 try:
+                    # Fixed: Field name is "content_type" not "context_type"
                     oversized_content = {
-                        "context_type": "error_test",
+                        "content_type": "log",  # Changed from "context_type": "error_test"
                         "content": "x" * 1000000,  # 1MB of text - string, not dict
                         "title": "Oversized Content Test",
                         "metadata": {
-                            "oversized": True
+                            "oversized": True,
+                            "test_type": "error_handling"
                         }
                     }
                     
@@ -918,13 +929,15 @@ class ContentPipelineMonitoring(BaseCheck):
             ) as session:
 
                 # Stage 1: Content Creation
+                # Fixed: Field name is "content_type" not "context_type"
                 lifecycle_content = {
-                    "context_type": "lifecycle_test",
+                    "content_type": "log",  # Changed from "context_type": "lifecycle_test"
                     "content": f"Content lifecycle test - {datetime.utcnow().isoformat()}",  # String, not dict
                     "title": "Content Lifecycle Test",
                     "metadata": {
                         "lifecycle_test": True,
                         "lifecycle_stage": "creation",
+                        "test_type": "lifecycle",
                         "created_at": datetime.utcnow().isoformat()
                     }
                 }
