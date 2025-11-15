@@ -71,7 +71,7 @@ def test_script_has_scoring_system():
         "A" in content or "B" in content or "C" in content or "D" in content,  # Letter grades
     ]
 
-    found_scoring = sum(1 for indicator in scoring_indicators if (indicator if isinstance(indicator, str) and indicator in content.lower()) or (isinstance(indicator, bool) and indicator))
+    found_scoring = sum(1 for indicator in scoring_indicators if (indicator in content.lower() if isinstance(indicator, str) else False) or (isinstance(indicator, bool) and indicator))
     assert found_scoring >= 2, "Script should include security scoring/grading"
 
 

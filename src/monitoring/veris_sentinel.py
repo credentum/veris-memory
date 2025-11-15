@@ -130,6 +130,32 @@ class SentinelConfig:
         if self.neo4j_user is None:
             self.neo4j_user = os.getenv('NEO4J_USER', 'veris_ro')
 
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get configuration value like a dictionary.
+
+        This method allows the config to be used like a dictionary
+        for backward compatibility with checks that read from environment.
+        """
+        # Map common keys to actual attributes
+        if key == 'veris_memory_url':
+            return self.target_base_url
+        elif key == 'api_url':
+            return self.target_base_url
+        elif key == 'qdrant_url':
+            return self.qdrant_url
+        elif key == 'neo4j_url' or key == 'neo4j_bolt':
+            return self.neo4j_bolt
+        elif key == 'redis_url':
+            return self.redis_url
+
+        # For S7/S8 configuration, read from environment
+        elif key.startswith('s7_') or key.startswith('s8_'):
+            env_key = key.upper()
+            return os.getenv(env_key, default)
+
+        # Try to get from object attributes
+        return getattr(self, key, default)
+
 
 class VerisHealthProbe:
     """S1: Health probes for live/ready endpoints."""
@@ -1611,7 +1637,24 @@ class SentinelAPI:
         """
         try:
             # Authenticate the request with shared secret
-            expected_secret = os.getenv('HOST_CHECK_SECRET', 'veris_host_check_default_secret_change_me')
+            # SECURITY: No default secret - must be explicitly configured
+            expected_secret = os.getenv('HOST_CHECK_SECRET')
+
+            # Reject insecure default from older deployments
+            if expected_secret == 'veris_host_check_default_secret_change_me':
+                logger.error("SECURITY: HOST_CHECK_SECRET is set to insecure default value - rejecting authentication")
+                return web.json_response({
+                    "success": False,
+                    "error": "Server misconfiguration: insecure secret detected"
+                }, status=500)
+
+            if not expected_secret:
+                logger.error("SECURITY: HOST_CHECK_SECRET environment variable not set - authentication unavailable")
+                return web.json_response({
+                    "success": False,
+                    "error": "Server misconfiguration: authentication not configured"
+                }, status=500)
+
             provided_secret = request.headers.get('X-Host-Secret')
 
             if not provided_secret:

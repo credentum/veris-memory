@@ -9,15 +9,15 @@ fact recall capabilities.
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from storage.graph_enhancer import GraphSignalEnhancer, EntityExtractor, EntityType
-from storage.graph_fact_store import GraphFactStore
-from storage.hybrid_scorer import HybridScorer, ScoringMode
-from core.graph_query_expander import GraphQueryExpander, ExpansionStrategy
-from storage.fact_store import FactStore
-from storage.fact_ranker import FactAwareRanker
-from core.intent_classifier import IntentClassifier, IntentType
+from src.storage.graph_enhancer import GraphSignalEnhancer, EntityExtractor, EntityType
+from src.storage.graph_fact_store import GraphFactStore
+from src.storage.hybrid_scorer import HybridScorer, ScoringMode
+from src.core.graph_query_expander import GraphQueryExpander, ExpansionStrategy
+from src.storage.fact_store import FactStore
+from src.storage.fact_ranker import FactAwareRanker
+from src.core.intent_classifier import IntentClassifier, IntentType
 
 
 def test_entity_extraction():
