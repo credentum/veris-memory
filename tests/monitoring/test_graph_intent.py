@@ -687,3 +687,132 @@ class TestGraphIntentTargetBaseURL:
         assert mock_session.get.called
         call_url = str(mock_session.get.call_args[0][0])
         assert call_url.startswith("http://context-store:8000")
+
+class TestExtractContentText:
+    """Test suite for S9 _extract_content_text() bug fix."""
+
+    @pytest.fixture
+    def check(self):
+        """Create a GraphIntentValidation check instance."""
+        config = SentinelConfig(enabled_checks=["S9-graph-intent"])
+        return GraphIntentValidation(config)
+
+    def test_extract_content_text_dict_format(self, check):
+        """Test extraction from dict format {"content": {"text": "..."}}."""
+        context_data = {
+            "content": {
+                "text": "This is the test content"
+            }
+        }
+
+        result = check._extract_content_text(context_data)
+
+        assert result == "This is the test content"
+
+    def test_extract_content_text_string_format(self, check):
+        """Test extraction from string format {"content": "..."}."""
+        context_data = {
+            "content": "This is direct string content"
+        }
+
+        result = check._extract_content_text(context_data)
+
+        assert result == "This is direct string content"
+
+    def test_extract_content_text_missing_content(self, check):
+        """Test extraction when content key is missing."""
+        context_data = {
+            "type": "log",
+            "metadata": {}
+        }
+
+        result = check._extract_content_text(context_data)
+
+        assert result == ""
+
+    def test_extract_content_text_empty_dict(self, check):
+        """Test extraction from empty dict."""
+        context_data = {}
+
+        result = check._extract_content_text(context_data)
+
+        assert result == ""
+
+    def test_extract_content_text_none_content(self, check):
+        """Test extraction when content is None."""
+        context_data = {
+            "content": None
+        }
+
+        result = check._extract_content_text(context_data)
+
+        assert result == ""
+
+    def test_extract_content_text_unknown_format(self, check):
+        """Test extraction with unknown format (e.g., integer, list)."""
+        # Test with integer
+        context_data_int = {
+            "content": 12345
+        }
+        result_int = check._extract_content_text(context_data_int)
+        assert result_int == ""
+
+        # Test with list
+        context_data_list = {
+            "content": ["item1", "item2"]
+        }
+        result_list = check._extract_content_text(context_data_list)
+        assert result_list == ""
+
+    def test_extract_content_text_dict_missing_text_key(self, check):
+        """Test extraction from dict format missing 'text' key."""
+        context_data = {
+            "content": {
+                "value": "Some value",
+                "other_field": "data"
+            }
+        }
+
+        result = check._extract_content_text(context_data)
+
+        # Should return empty string when dict doesn't have 'text' key
+        assert result == ""
+
+    def test_extract_content_text_nested_string(self, check):
+        """Test that nested strings are properly extracted."""
+        context_data = {
+            "content": {
+                "text": "Nested content with special chars: @#$%^&*()"
+            }
+        }
+
+        result = check._extract_content_text(context_data)
+
+        assert result == "Nested content with special chars: @#$%^&*()"
+        assert "@#$%^&*()" in result
+
+    def test_extract_content_text_empty_string(self, check):
+        """Test extraction with empty string content."""
+        context_data = {
+            "content": ""
+        }
+
+        result = check._extract_content_text(context_data)
+
+        assert result == ""
+
+    def test_extract_content_text_empty_text_in_dict(self, check):
+        """Test extraction with empty text in dict format."""
+        context_data = {
+            "content": {
+                "text": ""
+            }
+        }
+
+        result = check._extract_content_text(context_data)
+
+        assert result == ""
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

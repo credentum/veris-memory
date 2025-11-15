@@ -79,6 +79,40 @@ class ContentPipelineMonitoring(BaseCheck):
             headers['X-API-Key'] = api_key
         return headers
 
+    async def _cleanup_test_contexts(
+        self,
+        session: aiohttp.ClientSession,
+        context_ids: List[str]
+    ) -> None:
+        """
+        Clean up test contexts after check completes.
+
+        Deletes test contexts created during S10 check to avoid polluting real data.
+        Supports multiple contexts from consistency, throughput, latency, and concurrent tests.
+        """
+        if not context_ids:
+            return
+
+        headers = self._get_headers()
+
+        for context_id in context_ids:
+            if not context_id:  # Skip None/empty IDs
+                continue
+
+            try:
+                delete_url = f"{self.veris_memory_url}/api/v1/contexts/{context_id}"
+                async with session.delete(delete_url, headers=headers) as response:
+                    if response.status in [200, 204, 404]:
+                        # 200/204: Successfully deleted, 404: Already gone
+                        logger.debug(f"Cleaned up test context: {context_id}")
+                    else:
+                        logger.warning(
+                            f"Failed to delete test context {context_id}: "
+                            f"status {response.status}"
+                        )
+            except Exception as e:
+                logger.warning(f"Error cleaning up test context {context_id}: {e}")
+
     def _get_default_test_samples(self) -> List[Dict[str, Any]]:
         """Default test content samples for pipeline validation.
 
@@ -365,7 +399,41 @@ class ContentPipelineMonitoring(BaseCheck):
                                     "health_data": health_data,
                                     "stage_operational": True
                                 })
+                            elif response.status == 404:
+                                # Stage-specific endpoint not implemented - use fallback to general health
+                                # This is expected for deployments without dedicated stage endpoints
+                                general_health_url = f"{self.veris_memory_url}/health/ready"
+                                try:
+                                    async with session.get(general_health_url, headers=headers) as health_response:
+                                        if health_response.status == 200:
+                                            # General health is good - assume pipeline is operational
+                                            stage_validations.append({
+                                                "stage": stage,
+                                                "status": "not_implemented_but_healthy",
+                                                "status_code": 404,
+                                                "stage_operational": True,
+                                                "note": f"Stage endpoint not implemented, but general health is good"
+                                            })
+                                        else:
+                                            # General health also failing
+                                            stage_validations.append({
+                                                "stage": stage,
+                                                "status": "not_implemented_and_unhealthy",
+                                                "status_code": 404,
+                                                "stage_operational": False,
+                                                "note": f"Stage endpoint not implemented and general health failing"
+                                            })
+                                except Exception as health_error:
+                                    # Can't check general health
+                                    stage_validations.append({
+                                        "stage": stage,
+                                        "status": "not_implemented_unknown_health",
+                                        "status_code": 404,
+                                        "stage_operational": False,
+                                        "note": f"Stage endpoint not implemented, general health check failed: {str(health_error)}"
+                                    })
                             else:
+                                # Other non-200 status (5xx, etc.) - actually unhealthy
                                 stage_validations.append({
                                     "stage": stage,
                                     "status": "unhealthy",
@@ -373,7 +441,7 @@ class ContentPipelineMonitoring(BaseCheck):
                                     "stage_operational": False
                                 })
                     except Exception as stage_error:
-                        # Fallback: Test stage through general health endpoint
+                        # Connection error or other exception - fallback to general health
                         try:
                             general_health_url = f"{self.veris_memory_url}/health/ready"
                             async with session.get(general_health_url, headers=headers) as health_response:
@@ -384,7 +452,7 @@ class ContentPipelineMonitoring(BaseCheck):
                                         "status": "assumed_healthy",
                                         "status_code": health_response.status,
                                         "stage_operational": True,
-                                        "note": "Validated through general health endpoint"
+                                        "note": "Validated through general health endpoint (connection error to stage endpoint)"
                                     })
                                 else:
                                     stage_validations.append({
@@ -601,7 +669,10 @@ class ContentPipelineMonitoring(BaseCheck):
             
             consistency_ratio = successful_retrievals / len(stored_contexts) if stored_contexts else 0.0
             consistency_threshold = self.performance_thresholds["storage_consistency_ratio"]
-            
+
+            # Cleanup test contexts after validation completes
+            await self._cleanup_test_contexts(session, stored_contexts)
+
             return {
                 "passed": consistency_ratio >= consistency_threshold,
                 "message": f"Storage consistency: {consistency_ratio:.2f} ratio ({successful_retrievals}/{len(stored_contexts)})",
@@ -628,17 +699,20 @@ class ContentPipelineMonitoring(BaseCheck):
                 "concurrent_load_test": {}
             }
 
+            # Track created contexts for cleanup
+            all_context_ids = []
+
             # Get authentication headers
             headers = self._get_headers()
 
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
-                
+
                 # Throughput test - measure operations per minute
                 throughput_start = time.time()
                 throughput_operations = 0
-                
+
                 for i in range(10):  # Test with 10 rapid operations
                     # Fixed: Field name is "content_type" not "context_type"
                     test_content = {
@@ -657,6 +731,11 @@ class ContentPipelineMonitoring(BaseCheck):
                         async with session.post(store_url, json=test_content, headers=headers) as response:
                             if response.status == 201:
                                 throughput_operations += 1
+                                # Track context ID for cleanup
+                                result_data = await response.json()
+                                context_id = result_data.get("context_id") or result_data.get("id")
+                                if context_id:
+                                    all_context_ids.append(context_id)
                     except Exception:
                         continue
                 
@@ -694,7 +773,13 @@ class ContentPipelineMonitoring(BaseCheck):
                         async with session.post(store_url, json=test_content, headers=headers) as response:
                             if response.status == 201:
                                 store_latency = (time.time() - latency_start) * 1000
-                                
+
+                                # Track context ID for cleanup
+                                result_data = await response.json()
+                                context_id = result_data.get("context_id") or result_data.get("id")
+                                if context_id:
+                                    all_context_ids.append(context_id)
+
                                 # Test immediate retrieval
                                 search_start = time.time()
                                 search_data = {
@@ -707,7 +792,7 @@ class ContentPipelineMonitoring(BaseCheck):
                                     if search_response.status == 200:
                                         search_latency = (time.time() - search_start) * 1000
                                         total_latency = store_latency + search_latency
-                                        
+
                                         latency_measurements.append({
                                             "store_latency_ms": store_latency,
                                             "search_latency_ms": search_latency,
@@ -744,7 +829,14 @@ class ContentPipelineMonitoring(BaseCheck):
                     try:
                         store_url = f"{self.veris_memory_url}/api/v1/contexts"
                         async with session.post(store_url, json=test_content, headers=headers) as response:
-                            return response.status == 201
+                            if response.status == 201:
+                                # Track context ID for cleanup
+                                result_data = await response.json()
+                                context_id = result_data.get("context_id") or result_data.get("id")
+                                if context_id:
+                                    all_context_ids.append(context_id)
+                                return True
+                            return False
                     except Exception:
                         return False
 
@@ -762,7 +854,10 @@ class ContentPipelineMonitoring(BaseCheck):
                     "success_rate": successful_concurrent / len(concurrent_tasks) if concurrent_tasks else 0,
                     "meets_threshold": successful_concurrent >= MIN_CONCURRENT_SUCCESS  # At least 80% success
                 }
-            
+
+                # Cleanup all test contexts created during performance tests
+                await self._cleanup_test_contexts(session, all_context_ids)
+
             # Overall performance assessment
             all_thresholds_met = all([
                 performance_metrics["throughput_test"].get("meets_threshold", False),

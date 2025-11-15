@@ -705,3 +705,167 @@ class TestContentPipelineTargetBaseURL:
         assert mock_session.post.called
         call_url = str(mock_session.post.call_args[0][0])
         assert call_url.startswith("http://context-store:8000")
+
+
+class TestS10_404FallbackHandling:
+    """Test suite for S10 graceful 404 handling when stage endpoints are missing."""
+
+    @pytest.fixture
+    def config(self):
+        """Create test configuration."""
+        return SentinelConfig(
+            enabled_checks=["S10-content-pipeline"],
+            veris_memory_url="http://localhost:8000"
+        )
+
+    @pytest.mark.asyncio
+    async def test_validate_pipeline_stages_404_fallback(self, config):
+        """Test that 404 from stage endpoint falls back to /health/ready."""
+        check = ContentPipelineMonitoring(config)
+
+        # Create mock session
+        mock_session = AsyncMock()
+
+        # Mock responses for stage endpoints (404) and general health (200)
+        async def mock_get(url, *args, **kwargs):
+            mock_response = AsyncMock()
+
+            # Stage endpoints return 404
+            if any(stage in url for stage in ["ingestion", "validation", "enrichment", "storage", "indexing", "retrieval"]):
+                mock_response.status = 404
+                mock_response.json = AsyncMock(return_value={"detail": "Not found"})
+
+            # General health endpoint returns 200
+            elif "/health/ready" in url:
+                mock_response.status = 200
+                mock_response.json = AsyncMock(return_value={
+                    "status": "ready",
+                    "components": [
+                        {"name": "qdrant", "status": "ok"},
+                        {"name": "neo4j", "status": "ok"}
+                    ]
+                })
+
+            else:
+                mock_response.status = 404
+                mock_response.json = AsyncMock(return_value={"detail": "Not found"})
+
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            ctx.__aexit__ = AsyncMock(return_value=None)
+            return ctx
+
+        mock_session.get.side_effect = mock_get
+
+        # Call the validation method
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check._validate_pipeline_stages(mock_session)
+
+        # All stages should be marked as operational despite 404s
+        assert result["passed"] is True
+        assert len(result["stage_validations"]) == 6
+
+        # Check that stages were marked as not_implemented_but_healthy
+        for validation in result["stage_validations"]:
+            assert validation["stage_operational"] is True
+            assert validation["status"] == "not_implemented_but_healthy"
+            assert validation["status_code"] == 404
+            assert "not implemented" in validation["note"].lower()
+
+    @pytest.mark.asyncio
+    async def test_404_fallback_when_general_health_fails(self, config):
+        """Test 404 handling when general health check also fails."""
+        check = ContentPipelineMonitoring(config)
+
+        mock_session = AsyncMock()
+
+        # Mock all endpoints returning errors
+        async def mock_get(url, *args, **kwargs):
+            mock_response = AsyncMock()
+
+            if any(stage in url for stage in ["ingestion", "validation", "enrichment", "storage", "indexing", "retrieval"]):
+                # Stage endpoints return 404
+                mock_response.status = 404
+                mock_response.json = AsyncMock(return_value={"detail": "Not found"})
+            elif "/health/ready" in url:
+                # General health also fails
+                mock_response.status = 503
+                mock_response.json = AsyncMock(return_value={"status": "unhealthy"})
+            else:
+                mock_response.status = 500
+                mock_response.json = AsyncMock(return_value={"detail": "Server error"})
+
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            ctx.__aexit__ = AsyncMock(return_value=None)
+            return ctx
+
+        mock_session.get.side_effect = mock_get
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check._validate_pipeline_stages(mock_session)
+
+        # Should fail when general health is not good
+        assert result["passed"] is False
+
+        # Stages should be marked as not operational
+        for validation in result["stage_validations"]:
+            if validation["status_code"] == 404:
+                assert validation["stage_operational"] is False
+
+    @pytest.mark.asyncio
+    async def test_mixed_404_and_200_responses(self, config):
+        """Test handling of mixed responses (some 404, some 200)."""
+        check = ContentPipelineMonitoring(config)
+
+        mock_session = AsyncMock()
+
+        # Mock mixed responses
+        async def mock_get(url, *args, **kwargs):
+            mock_response = AsyncMock()
+
+            # ingestion and validation return 200
+            if "ingestion" in url or "validation" in url:
+                mock_response.status = 200
+                mock_response.json = AsyncMock(return_value={"status": "operational"})
+
+            # Other stages return 404
+            elif any(stage in url for stage in ["enrichment", "storage", "indexing", "retrieval"]):
+                mock_response.status = 404
+                mock_response.json = AsyncMock(return_value={"detail": "Not found"})
+
+            # General health returns 200
+            elif "/health/ready" in url:
+                mock_response.status = 200
+                mock_response.json = AsyncMock(return_value={
+                    "status": "ready",
+                    "components": [{"name": "qdrant", "status": "ok"}]
+                })
+
+            else:
+                mock_response.status = 404
+                mock_response.json = AsyncMock(return_value={"detail": "Not found"})
+
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            ctx.__aexit__ = AsyncMock(return_value=None)
+            return ctx
+
+        mock_session.get.side_effect = mock_get
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            result = await check._validate_pipeline_stages(mock_session)
+
+        # All stages should be operational
+        assert result["passed"] is True
+
+        # Check individual stage statuses
+        implemented_count = sum(1 for v in result["stage_validations"] if v["status_code"] == 200)
+        not_implemented_count = sum(1 for v in result["stage_validations"] if v["status"] == "not_implemented_but_healthy")
+
+        assert implemented_count == 2  # ingestion and validation
+        assert not_implemented_count == 4  # enrichment, storage, indexing, retrieval
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

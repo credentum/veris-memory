@@ -56,10 +56,10 @@ class ConfigParity(BaseCheck):
             "MCP_INTERNAL_URL",      # REST compatibility layer internal URL (PR #269)
             "MCP_FORWARD_TIMEOUT"    # REST to MCP forwarding timeout (PR #269)
         ])
-        # Expected versions - Phase 4 Update (2025-11-08)
+        # Expected versions - Phase 4 Update (2025-11-08), Corrected 2025-11-15
         #
         # These versions were determined by inspecting the actual running deployment:
-        # - Python 3.10: System Python version on Ubuntu 22.04 LTS (verified with `python3 --version`)
+        # - Python 3.11: Context-store deployment Python version (dockerfiles/Dockerfile:8)
         # - FastAPI 0.115: From requirements.txt and verified via `pip show fastapi`
         # - Uvicorn 0.32: From requirements.txt and verified via `pip show uvicorn`
         #
@@ -70,13 +70,18 @@ class ConfigParity(BaseCheck):
         #    to reduce manual updates (future enhancement)
         #
         # Version History:
-        # - 2025-11-15: Updated Python to 3.13 to match actual deployment (fix/sentinel-monitoring-false-positives)
+        # - 2025-11-15: Reverted to 3.11/0.115/0.32 for currently deployed context-store
+        #   (Dockerfile for context-store still uses Python 3.11)
+        #   (Sentinel Dockerfile.sentinel updated to 3.13, but PR not merged yet)
         # - 2025-11-08: Updated from 3.11/0.100/0.20 to 3.10/0.115/0.32 (PR #208)
         # - Original: Python 3.11, FastAPI 0.100, Uvicorn 0.20
+        #
+        # NOTE: S7 validates the context-store service, not Sentinel itself
+        # These versions should match dockerfiles/Dockerfile (context-store), not Dockerfile.sentinel
         self.expected_versions = config.get("s7_expected_versions", {
-            "python": "3.13",    # Actual deployment Python version
-            "fastapi": "0.115",  # From requirements.txt
-            "uvicorn": "0.32"    # From requirements.txt
+            "python": "3.11",    # Context-store uses Python 3.11 (dockerfiles/Dockerfile:8)
+            "fastapi": "0.115",  # Deployed context-store version
+            "uvicorn": "0.32"    # Deployed context-store version
         })
         
     async def run_check(self) -> CheckResult:

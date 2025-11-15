@@ -311,10 +311,13 @@ class GraphIntentValidation(BaseCheck):
                         })
                         
                         total_accuracy_score += relationship_accuracy
-            
+
+                    # Cleanup test data after scenario completes
+                    await self._cleanup_test_contexts(session, context_ids)
+
             avg_accuracy = total_accuracy_score / len(self.intent_scenarios) if self.intent_scenarios else 0.0
             accuracy_threshold = ACCURACY_THRESHOLD
-            
+
             return {
                 "passed": avg_accuracy >= accuracy_threshold,
                 "message": f"Relationship accuracy: {avg_accuracy:.2f} (threshold: {accuracy_threshold})",
@@ -331,6 +334,58 @@ class GraphIntentValidation(BaseCheck):
                 "error": str(e)
             }
     
+    def _extract_content_text(self, context_data: Dict[str, Any]) -> str:
+        """
+        Safely extract content text from context data.
+
+        Handles both storage formats:
+        - String format: {"content": "text here"}
+        - Dict format: {"content": {"text": "text here"}}
+
+        This fixes the S9 relationship accuracy bug where content was stored
+        as a string but retrieved expecting a dict structure.
+        """
+        content = context_data.get("content", "")
+        if isinstance(content, dict):
+            # Dict format: extract "text" field
+            return content.get("text", "")
+        elif isinstance(content, str):
+            # String format: use directly
+            return content
+        else:
+            # Unknown format
+            return ""
+
+    async def _cleanup_test_contexts(
+        self,
+        session: aiohttp.ClientSession,
+        context_ids: List[str]
+    ) -> None:
+        """
+        Clean up test contexts after check completes.
+
+        Deletes test contexts created during S9 check to avoid polluting real data.
+        """
+        if not context_ids:
+            return
+
+        headers = self._get_headers()
+
+        for context_id in context_ids:
+            try:
+                delete_url = f"{self.veris_memory_url}/api/v1/contexts/{context_id}"
+                async with session.delete(delete_url, headers=headers) as response:
+                    if response.status in [200, 204, 404]:
+                        # 200/204: Successfully deleted, 404: Already gone
+                        logger.debug(f"Cleaned up test context: {context_id}")
+                    else:
+                        logger.warning(
+                            f"Failed to delete test context {context_id}: "
+                            f"status {response.status}"
+                        )
+            except Exception as e:
+                logger.warning(f"Error cleaning up test context {context_id}: {e}")
+
     async def _analyze_context_relationships(
         self,
         session: aiohttp.ClientSession,
@@ -353,7 +408,8 @@ class GraphIntentValidation(BaseCheck):
                     async with session.get(get_url, headers=headers) as response:
                         if response.status == 200:
                             context_data = await response.json()
-                            context_text = context_data.get("content", {}).get("text", "")
+                            # FIXED: Use helper method to handle both string and dict formats
+                            context_text = self._extract_content_text(context_data)
                             
                             # Search for related contexts
                             search_data = {
@@ -370,7 +426,8 @@ class GraphIntentValidation(BaseCheck):
                                     # Analyze if related contexts share expected relationship concepts
                                     for related_context in related_contexts:
                                         if related_context.get("context_id") != context_id:
-                                            related_text = related_context.get("content", {}).get("text", "")
+                                            # FIXED: Use helper method to handle both string and dict formats
+                                            related_text = self._extract_content_text(related_context)
                                             
                                             # Check for expected relationship keywords
                                             for expected_rel in expected_relationships:
@@ -465,7 +522,7 @@ class GraphIntentValidation(BaseCheck):
         coherence_scores = []
         
         for context in contexts:
-            content_text = context.get("content", {}).get("text", "")
+            content_text = self._extract_content_text(context)
             content_terms = set(content_text.lower().split())
             
             # Calculate term overlap as a simple coherence metric
@@ -552,7 +609,7 @@ class GraphIntentValidation(BaseCheck):
                     
                     # Use first context as starting point for traversal simulation
                     start_context = initial_contexts[0]
-                    start_text = start_context.get("content", {}).get("text", "")
+                    start_text = self._extract_content_text(start_context)
                     
                     # Simulate traversal by searching with related terms
                     path_quality_scores = []
@@ -575,7 +632,7 @@ class GraphIntentValidation(BaseCheck):
                                 # Calculate path quality based on result relevance
                                 relevance_scores = []
                                 for context in related_contexts:
-                                    context_text = context.get("content", {}).get("text", "")
+                                    context_text = self._extract_content_text(context)
                                     relevance = self._calculate_path_relevance(start_text, context_text)
                                     relevance_scores.append(relevance)
                                 
@@ -689,8 +746,8 @@ class GraphIntentValidation(BaseCheck):
         # Calculate pairwise coherence between contexts
         for i in range(len(contexts)):
             for j in range(i + 1, len(contexts)):
-                context_i_text = contexts[i].get("content", {}).get("text", "")
-                context_j_text = contexts[j].get("content", {}).get("text", "")
+                context_i_text = self._extract_content_text(contexts[i])
+                context_j_text = self._extract_content_text(contexts[j])
                 
                 terms_i = set(context_i_text.lower().split())
                 terms_j = set(context_j_text.lower().split())
@@ -805,7 +862,7 @@ class GraphIntentValidation(BaseCheck):
         
         # Check if related concepts and expected inference appear in context texts
         all_text = " ".join([
-            context.get("content", {}).get("text", "")
+            self._extract_content_text(context)
             for context in contexts
         ]).lower()
         
@@ -896,7 +953,7 @@ class GraphIntentValidation(BaseCheck):
         domain_coverage = []
         
         for context in contexts:
-            context_text = context.get("content", {}).get("text", "").lower()
+            context_text = self._extract_content_text(context).lower()
             
             # Check how many query domains are covered in this context
             covered_domains = sum(1 for domain in query_domains if domain in context_text)
@@ -998,7 +1055,7 @@ class GraphIntentValidation(BaseCheck):
             return 0.0
         
         all_text = " ".join([
-            context.get("content", {}).get("text", "")
+            self._extract_content_text(context)
             for context in contexts
         ]).lower()
         
