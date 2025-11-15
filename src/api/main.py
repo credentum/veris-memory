@@ -389,7 +389,8 @@ def create_app() -> FastAPI:
     )
 
     # Rate limiting (S5 security fix - prevent brute force attacks)
-    limiter = Limiter(key_func=get_remote_address)
+    # Apply globally to all endpoints to prevent authentication brute force
+    limiter = Limiter(key_func=get_remote_address, default_limits=["20/minute"])
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -426,7 +427,67 @@ def create_app() -> FastAPI:
             "docs": "/docs",
             "openapi": "/openapi.json"
         }
-    
+
+    # S5 security fix: Add /metrics and /api/metrics endpoints with localhost-only access
+    @app.get("/metrics", tags=["metrics"])
+    async def root_metrics(request: Request):
+        """
+        Prometheus-compatible metrics endpoint (localhost-only).
+
+        This endpoint is restricted to localhost access for security.
+        For detailed API metrics, use /api/v1/metrics endpoints (also localhost-only).
+        """
+        # S5 security fix: Restrict metrics access to localhost only
+        client_ip = request.client.host if request.client else None
+        if client_ip not in ["127.0.0.1", "::1", "localhost"]:
+            api_logger.warning(
+                "Root metrics access denied - not from localhost",
+                client_ip=client_ip
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Metrics endpoint is restricted to localhost access only"
+            )
+
+        # Return basic Prometheus-compatible metrics
+        return {
+            "status": "operational",
+            "message": "Metrics endpoint is available. Use /api/v1/metrics for detailed metrics.",
+            "endpoints": {
+                "detailed_metrics": "/api/v1/metrics",
+                "metrics_summary": "/api/v1/metrics/summary",
+                "performance": "/api/v1/metrics/performance",
+                "usage": "/api/v1/metrics/usage"
+            }
+        }
+
+    @app.get("/api/metrics", tags=["metrics"])
+    async def api_metrics(request: Request):
+        """
+        Legacy metrics endpoint (localhost-only).
+
+        This endpoint is restricted to localhost access for security.
+        Use /api/v1/metrics for the current version.
+        """
+        # S5 security fix: Restrict metrics access to localhost only
+        client_ip = request.client.host if request.client else None
+        if client_ip not in ["127.0.0.1", "::1", "localhost"]:
+            api_logger.warning(
+                "API metrics access denied - not from localhost",
+                client_ip=client_ip
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Metrics endpoint is restricted to localhost access only"
+            )
+
+        # Redirect to current version
+        return {
+            "status": "deprecated",
+            "message": "This endpoint is deprecated. Use /api/v1/metrics instead.",
+            "current_endpoint": "/api/v1/metrics"
+        }
+
     # Custom OpenAPI schema
     app.openapi = lambda: create_openapi_schema(app)
     
