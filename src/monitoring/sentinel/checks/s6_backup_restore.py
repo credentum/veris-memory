@@ -50,8 +50,10 @@ class BackupRestore(BaseCheck):
             "/backup/backup-weekly",    # Weekly backups
             "/backup/backup-monthly",   # Monthly backups
             "/backup/backup-ultimate",  # Ultimate backups (most recent)
-            "/backup/restic-repo",      # Restic backup repository
-            "/backup",                  # Root backup directory (RAID1)
+            # NOTE: /backup/restic-repo EXCLUDED - Restic uses encrypted/deduplicated chunks
+            # that don't contain SQL keywords. Use 'restic check' for Restic validation.
+            # NOTE: /backup root EXCLUDED to prevent recursive scan into restic-repo
+            # All SQL backup subdirectories are listed explicitly above
         ])
 
         # PR #247: Validate backup paths for security
