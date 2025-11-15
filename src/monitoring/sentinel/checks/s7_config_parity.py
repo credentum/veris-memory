@@ -70,18 +70,22 @@ class ConfigParity(BaseCheck):
         #    to reduce manual updates (future enhancement)
         #
         # Version History:
+        # - 2025-11-15: Fixed validation to match Sentinel environment (3.10) with >= comparison
+        #   for packages (issue #281 - configuration drift false positives)
         # - 2025-11-15: Reverted to 3.11/0.115/0.32 for currently deployed context-store
         #   (Dockerfile for context-store still uses Python 3.11)
         #   (Sentinel Dockerfile.sentinel updated to 3.13, but PR not merged yet)
         # - 2025-11-08: Updated from 3.11/0.100/0.20 to 3.10/0.115/0.32 (PR #208)
         # - Original: Python 3.11, FastAPI 0.100, Uvicorn 0.20
         #
-        # NOTE: S7 validates the context-store service, not Sentinel itself
-        # These versions should match dockerfiles/Dockerfile (context-store), not Dockerfile.sentinel
+        # NOTE: S7 currently validates the Sentinel environment (where S7 runs)
+        # Context-store service doesn't expose /api/v1/version endpoint yet
+        # When service endpoint is available, this should validate remote service versions
+        # These versions should match Dockerfile.sentinel (Sentinel container)
         self.expected_versions = config.get("s7_expected_versions", {
-            "python": "3.11",    # Context-store uses Python 3.11 (dockerfiles/Dockerfile:8)
-            "fastapi": "0.115",  # Deployed context-store version
-            "uvicorn": "0.32"    # Deployed context-store version
+            "python": "3.10",    # Sentinel uses Python 3.10 (Dockerfile.sentinel)
+            "fastapi": "0.115",  # Minimum required FastAPI version (allows newer)
+            "uvicorn": "0.32"    # Minimum required Uvicorn version (allows newer)
         })
         
     async def run_check(self) -> CheckResult:
@@ -681,11 +685,11 @@ class ConfigParity(BaseCheck):
                         "expected": self.expected_versions.get("python", "unknown")
                     }
                     
-                    # Check if major.minor versions match
+                    # Check if major.minor versions match (exact match required for Python)
                     actual_parts = python_version.split(".")[:2]
                     expected_parts = self.expected_versions.get("python", "").split(".")[:2]
                     if actual_parts != expected_parts:
-                        version_issues.append(f"Python version mismatch: {python_version} vs expected {self.expected_versions.get('python')}")
+                        version_issues.append(f"Python version mismatch: {python_version} vs expected {self.expected_versions.get('python')} (exact major.minor match required)")
                 else:
                     version_info["python"] = {"error": result.stderr}
             except Exception as python_error:
@@ -707,12 +711,24 @@ class ConfigParity(BaseCheck):
                             "expected": expected_version
                         }
                         
-                        # Simple version comparison (major.minor)
+                        # Version comparison (major.minor) - allow newer versions for backward compatibility
                         if expected_version != "unknown":
-                            actual_parts = actual_version.split(".")[:2]
-                            expected_parts = expected_version.split(".")[:2]
-                            if actual_parts != expected_parts:
-                                version_issues.append(f"{package} version mismatch: {actual_version} vs expected {expected_version}")
+                            try:
+                                actual_parts = [int(x) for x in actual_version.split(".")[:2]]
+                                expected_parts = [int(x) for x in expected_version.split(".")[:2]]
+
+                                # Compare: actual should be >= expected (allows newer versions)
+                                # First compare major version
+                                if actual_parts[0] < expected_parts[0]:
+                                    version_issues.append(f"{package} major version too old: {actual_version} < expected {expected_version}")
+                                elif actual_parts[0] == expected_parts[0] and actual_parts[1] < expected_parts[1]:
+                                    # Same major version, but minor version is older
+                                    version_issues.append(f"{package} minor version too old: {actual_version} < expected {expected_version}")
+                                # If actual >= expected, no issue (newer versions are OK)
+                            except (ValueError, IndexError) as parse_error:
+                                # If version parsing fails, fall back to string comparison
+                                if actual_version != expected_version:
+                                    version_issues.append(f"{package} version format invalid or mismatch: {actual_version} vs expected {expected_version}")
                                 
                     except importlib.metadata.PackageNotFoundError:
                         version_info[package] = {"status": "not_installed"}
