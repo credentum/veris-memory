@@ -353,14 +353,19 @@ trigger_post_deployment_backup() {
     if [[ -z "$REMOTE_DIR" ]]; then
         error "REMOTE_DIR not set, cannot trigger backup"
     fi
-    if [[ "$REMOTE_DIR" =~ [';|&$`'] ]]; then
-        error "REMOTE_DIR contains suspicious characters, possible command injection attempt"
+
+    # SECURITY: Strict path validation - must be absolute path
+    if [[ ! "$REMOTE_DIR" =~ ^/[a-zA-Z0-9/_-]+$ ]]; then
+        error "REMOTE_DIR must be an absolute path with only alphanumeric, -, _, / characters: $REMOTE_DIR"
     fi
 
+    # Expand REMOTE_DIR locally for safe remote execution
+    local SAFE_REMOTE_DIR="$REMOTE_DIR"
+
     ssh "$SSH_TARGET" "
-        # SECURITY: Change to directory safely
-        cd \"\$REMOTE_DIR\" || {
-            echo 'ERROR: Could not change to REMOTE_DIR'
+        # SECURITY: Change to directory safely using pre-validated path
+        cd '$SAFE_REMOTE_DIR' || {
+            echo 'ERROR: Could not change to remote directory: $SAFE_REMOTE_DIR'
             exit 1
         }
 
@@ -373,7 +378,8 @@ trigger_post_deployment_backup() {
         if [ -f ./scripts/backup-production-final.sh ]; then
             echo 'Running backup script...'
             # Execute with timeout to prevent hanging
-            timeout 300 bash ./scripts/backup-production-final.sh || {
+            # Use explicit /bin/bash for better portability and error handling
+            timeout 300 /bin/bash ./scripts/backup-production-final.sh || {
                 echo 'Warning: Backup script failed or timed out, but continuing deployment'
                 exit 0  # Don't fail deployment if backup fails
             }

@@ -1637,7 +1637,24 @@ class SentinelAPI:
         """
         try:
             # Authenticate the request with shared secret
-            expected_secret = os.getenv('HOST_CHECK_SECRET', 'veris_host_check_default_secret_change_me')
+            # SECURITY: No default secret - must be explicitly configured
+            expected_secret = os.getenv('HOST_CHECK_SECRET')
+
+            # Reject insecure default from older deployments
+            if expected_secret == 'veris_host_check_default_secret_change_me':
+                logger.error("SECURITY: HOST_CHECK_SECRET is set to insecure default value - rejecting authentication")
+                return web.json_response({
+                    "success": False,
+                    "error": "Server misconfiguration: insecure secret detected"
+                }, status=500)
+
+            if not expected_secret:
+                logger.error("SECURITY: HOST_CHECK_SECRET environment variable not set - authentication unavailable")
+                return web.json_response({
+                    "success": False,
+                    "error": "Server misconfiguration: authentication not configured"
+                }, status=500)
+
             provided_secret = request.headers.get('X-Host-Secret')
 
             if not provided_secret:
