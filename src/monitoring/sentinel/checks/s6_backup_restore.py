@@ -203,8 +203,8 @@ class BackupRestore(BaseCheck):
             for backup_path in self.backup_paths:
                 path = Path(backup_path)
                 if path.exists() and path.is_dir():
-                    # Look for backup files
-                    backup_files = list(path.glob("*.sql")) + list(path.glob("*.dump")) + list(path.glob("*.tar.gz"))
+                    # Look for backup files (recursive search in subdirectories)
+                    backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump")) + list(path.glob("**/*.tar.gz"))
                     if backup_files:
                         existing_backups.extend([
                             {
@@ -243,7 +243,7 @@ class BackupRestore(BaseCheck):
             for backup_path in self.backup_paths:
                 path = Path(backup_path)
                 if path.exists():
-                    backup_files = list(path.glob("*.sql")) + list(path.glob("*.dump")) + list(path.glob("*.tar.gz"))
+                    backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump")) + list(path.glob("**/*.tar.gz"))
                     for backup_file in backup_files:
                         modified_time = datetime.fromtimestamp(backup_file.stat().st_mtime)
                         if modified_time > cutoff_time:
@@ -280,7 +280,7 @@ class BackupRestore(BaseCheck):
             for backup_path in self.backup_paths:
                 path = Path(backup_path)
                 if path.exists():
-                    backup_files = list(path.glob("*.sql")) + list(path.glob("*.dump")) + list(path.glob("*.tar.gz"))
+                    backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump")) + list(path.glob("**/*.tar.gz"))
                     for backup_file in backup_files[:5]:  # Limit to 5 files for performance
                         try:
                             # Check file size
@@ -359,8 +359,8 @@ class BackupRestore(BaseCheck):
             for backup_path in self.backup_paths:
                 path = Path(backup_path)
                 if path.exists():
-                    backup_files = list(path.glob("*.sql")) + list(path.glob("*.dump")) + list(path.glob("*.tar.gz"))
-                    
+                    backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump")) + list(path.glob("**/*.tar.gz"))
+
                     for backup_file in backup_files[:3]:  # Sample a few files
                         try:
                             format_info = {
@@ -467,7 +467,7 @@ class BackupRestore(BaseCheck):
             for backup_path in self.backup_paths:
                 path = Path(backup_path)
                 if path.exists():
-                    backup_files = list(path.glob("*.sql")) + list(path.glob("*.dump"))
+                    backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump"))
                     if backup_files:
                         # Get most recent backup
                         latest = max(backup_files, key=lambda f: f.stat().st_mtime)
@@ -556,8 +556,8 @@ class BackupRestore(BaseCheck):
             for backup_path in self.backup_paths:
                 path = Path(backup_path)
                 if path.exists():
-                    backup_files = list(path.glob("*.sql")) + list(path.glob("*.dump")) + list(path.glob("*.tar.gz"))
-                    
+                    backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump")) + list(path.glob("**/*.tar.gz"))
+
                     old_backups = []
                     recent_backups = []
                     
