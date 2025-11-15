@@ -1954,6 +1954,157 @@ class TestAutonomousConfiguration:
             "Application latency threshold should be lower than total response time threshold"
 
 
+class TestS8AppLatencyBreakdown:
+    """Tests for S8 application latency breakdown monitoring (PR #274)."""
+
+    @pytest.fixture
+    def s8_check(self):
+        """Create S8 check instance for testing."""
+        from src.monitoring.sentinel.checks.s8_capacity_smoke import CapacitySmoke
+        config = SentinelConfig(target_base_url="http://test:8000")
+        return CapacitySmoke(config)
+
+    def _mock_metrics_response(self, mock_session, status, json_data=None):
+        """Helper to mock metrics endpoint response."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_response = AsyncMock(status=status)
+        if json_data is not None:
+            mock_response.json = AsyncMock(return_value=json_data)
+
+        # Create async context manager for session.get()
+        mock_get_cm = MagicMock()
+        mock_get_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_get_cm.__aexit__ = AsyncMock(return_value=None)
+
+        # Set up: session.get() returns an async context manager (not async)
+        mock_session_instance = mock_session.return_value.__aenter__.return_value
+        mock_session_instance.get = MagicMock(return_value=mock_get_cm)
+
+    @pytest.mark.asyncio
+    async def test_app_latency_breakdown_available(self, s8_check):
+        """Test successful latency breakdown when metrics endpoint provides data."""
+        from unittest.mock import patch
+
+        with patch('aiohttp.ClientSession') as mock_session:
+            self._mock_metrics_response(mock_session, 200, {
+                "application_latency_ms": 450.5,
+                "forwarding_latency_ms": 150.2,
+                "other_metrics": "data"
+            })
+
+            result = await s8_check._check_application_latency_breakdown()
+
+            assert result["breakdown_available"] is True
+            assert result["application_latency_ms"] == 450.5
+            assert result["forwarding_latency_ms"] == 150.2
+            assert result["total_latency_ms"] == 600.7  # 450.5 + 150.2
+            assert "error" not in result
+
+    @pytest.mark.asyncio
+    async def test_app_latency_breakdown_metrics_endpoint_error(self, s8_check):
+        """Test handling when metrics endpoint returns HTTP error."""
+        from unittest.mock import patch
+
+        with patch('aiohttp.ClientSession') as mock_session:
+            self._mock_metrics_response(mock_session, 500)
+
+            result = await s8_check._check_application_latency_breakdown()
+
+            assert result["breakdown_available"] is False
+            assert "error" in result
+            assert "HTTP 500" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_app_latency_breakdown_not_available(self, s8_check):
+        """Test handling when metrics endpoint doesn't provide breakdown fields."""
+        from unittest.mock import patch
+
+        with patch('aiohttp.ClientSession') as mock_session:
+            self._mock_metrics_response(mock_session, 200, {
+                "total_requests": 1000,
+                "avg_response_time": 500
+                # Missing: application_latency_ms, forwarding_latency_ms
+            })
+
+            result = await s8_check._check_application_latency_breakdown()
+
+            assert result["breakdown_available"] is False
+            assert "error" in result
+            assert "does not provide latency breakdown" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_app_latency_breakdown_connection_error(self, s8_check):
+        """Test handling when metrics endpoint connection fails."""
+        from unittest.mock import patch, MagicMock
+
+        with patch('aiohttp.ClientSession') as mock_session:
+            # Make get() raise an exception
+            mock_session_instance = mock_session.return_value.__aenter__.return_value
+            mock_session_instance.get = MagicMock(side_effect=Exception("Connection refused"))
+
+            result = await s8_check._check_application_latency_breakdown()
+
+            assert result["breakdown_available"] is False
+            assert "error" in result
+            assert "Failed to check metrics endpoint" in result["error"]
+            assert "Connection refused" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_app_latency_breakdown_partial_fields(self, s8_check):
+        """Test handling when only one breakdown field is present."""
+        from unittest.mock import patch
+
+        with patch('aiohttp.ClientSession') as mock_session:
+            self._mock_metrics_response(mock_session, 200, {
+                "application_latency_ms": 450.5
+                # Missing: forwarding_latency_ms
+            })
+
+            result = await s8_check._check_application_latency_breakdown()
+
+            assert result["breakdown_available"] is False
+            assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_app_latency_breakdown_zero_values(self, s8_check):
+        """Test handling of zero latency values (valid edge case)."""
+        from unittest.mock import patch
+
+        with patch('aiohttp.ClientSession') as mock_session:
+            self._mock_metrics_response(mock_session, 200, {
+                "application_latency_ms": 0.0,
+                "forwarding_latency_ms": 0.0
+            })
+
+            result = await s8_check._check_application_latency_breakdown()
+
+            assert result["breakdown_available"] is True
+            assert result["application_latency_ms"] == 0.0
+            assert result["forwarding_latency_ms"] == 0.0
+            assert result["total_latency_ms"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_app_latency_breakdown_float_conversion(self, s8_check):
+        """Test that integer values are properly converted to floats."""
+        from unittest.mock import patch
+
+        with patch('aiohttp.ClientSession') as mock_session:
+            self._mock_metrics_response(mock_session, 200, {
+                "application_latency_ms": 450,  # Integer
+                "forwarding_latency_ms": 150   # Integer
+            })
+
+            result = await s8_check._check_application_latency_breakdown()
+
+            assert result["breakdown_available"] is True
+            assert isinstance(result["application_latency_ms"], float)
+            assert isinstance(result["forwarding_latency_ms"], float)
+            assert result["application_latency_ms"] == 450.0
+            assert result["forwarding_latency_ms"] == 150.0
+            assert result["total_latency_ms"] == 600.0
+
+
 class TestS7ConfigParityValidation:
     """Comprehensive tests for S7 config parity environment variable validation."""
 
