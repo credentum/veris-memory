@@ -365,7 +365,41 @@ class ContentPipelineMonitoring(BaseCheck):
                                     "health_data": health_data,
                                     "stage_operational": True
                                 })
+                            elif response.status == 404:
+                                # Stage-specific endpoint not implemented - use fallback to general health
+                                # This is expected for deployments without dedicated stage endpoints
+                                general_health_url = f"{self.veris_memory_url}/health/ready"
+                                try:
+                                    async with session.get(general_health_url, headers=headers) as health_response:
+                                        if health_response.status == 200:
+                                            # General health is good - assume pipeline is operational
+                                            stage_validations.append({
+                                                "stage": stage,
+                                                "status": "not_implemented_but_healthy",
+                                                "status_code": 404,
+                                                "stage_operational": True,
+                                                "note": f"Stage endpoint not implemented, but general health is good"
+                                            })
+                                        else:
+                                            # General health also failing
+                                            stage_validations.append({
+                                                "stage": stage,
+                                                "status": "not_implemented_and_unhealthy",
+                                                "status_code": 404,
+                                                "stage_operational": False,
+                                                "note": f"Stage endpoint not implemented and general health failing"
+                                            })
+                                except Exception as health_error:
+                                    # Can't check general health
+                                    stage_validations.append({
+                                        "stage": stage,
+                                        "status": "not_implemented_unknown_health",
+                                        "status_code": 404,
+                                        "stage_operational": False,
+                                        "note": f"Stage endpoint not implemented, general health check failed: {str(health_error)}"
+                                    })
                             else:
+                                # Other non-200 status (5xx, etc.) - actually unhealthy
                                 stage_validations.append({
                                     "stage": stage,
                                     "status": "unhealthy",
@@ -373,7 +407,7 @@ class ContentPipelineMonitoring(BaseCheck):
                                     "stage_operational": False
                                 })
                     except Exception as stage_error:
-                        # Fallback: Test stage through general health endpoint
+                        # Connection error or other exception - fallback to general health
                         try:
                             general_health_url = f"{self.veris_memory_url}/health/ready"
                             async with session.get(general_health_url, headers=headers) as health_response:
@@ -384,7 +418,7 @@ class ContentPipelineMonitoring(BaseCheck):
                                         "status": "assumed_healthy",
                                         "status_code": health_response.status,
                                         "stage_operational": True,
-                                        "note": "Validated through general health endpoint"
+                                        "note": "Validated through general health endpoint (connection error to stage endpoint)"
                                     })
                                 else:
                                     stage_validations.append({
