@@ -10,8 +10,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Environment from argument or default to dev
-ENVIRONMENT="${1:-dev}"
+# Environment from argument or default to development
+ENVIRONMENT="${1:-development}"
 REPORT_FILE="/tmp/deployment-report-${ENVIRONMENT}.json"
 
 # Initialize report structure
@@ -65,7 +65,16 @@ add_warning() {
 # Check Docker services
 echo -e "${BLUE}📊 Checking Docker services...${NC}"
 
-PROJECT_NAME="veris-memory-${ENVIRONMENT}"
+# Map environment to project name suffix (matching deploy-environment.sh logic)
+# development → dev, production → prod (for backwards compatibility)
+if [ "$ENVIRONMENT" = "development" ]; then
+    PROJECT_NAME="veris-memory-dev"
+elif [ "$ENVIRONMENT" = "production" ]; then
+    PROJECT_NAME="veris-memory-prod"
+else
+    # Fallback for legacy "dev"/"prod" values
+    PROJECT_NAME="veris-memory-${ENVIRONMENT}"
+fi
 
 # Get container states
 for service in context-store qdrant neo4j redis; do
