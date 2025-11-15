@@ -8,12 +8,12 @@ components to validate improved fact recall capabilities.
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from core.qa_generator import QAPairGenerator
-from storage.fact_ranker import FactAwareRanker
-from core.query_rewriter import FactQueryRewriter
-from core.intent_classifier import IntentClassifier, IntentType
+from src.core.qa_generator import QAPairGenerator
+from src.storage.fact_ranker import FactAwareRanker
+from src.core.query_rewriter import FactQueryRewriter
+from src.core.intent_classifier import IntentClassifier, IntentType
 
 
 def test_qa_generation():

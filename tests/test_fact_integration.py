@@ -8,13 +8,13 @@ workflow to validate the implementation meets the requirements.
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from unittest.mock import Mock
-from storage.fact_store import FactStore
-from core.intent_classifier import IntentClassifier, IntentType
-from core.fact_extractor import FactExtractor
-from middleware.scope_validator import ScopeValidator, ScopeContext
+from src.storage.fact_store import FactStore
+from src.core.intent_classifier import IntentClassifier, IntentType
+from src.core.fact_extractor import FactExtractor
+from src.middleware.scope_validator import ScopeValidator, ScopeContext
 
 
 def test_fact_recall_workflow():

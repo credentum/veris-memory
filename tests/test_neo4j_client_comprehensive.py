@@ -5,6 +5,7 @@ Tests Neo4jInitializer with comprehensive coverage of connection management,
 schema setup, constraints, indexes, and error handling.
 """
 
+import os
 import tempfile
 from unittest.mock import AsyncMock, patch
 

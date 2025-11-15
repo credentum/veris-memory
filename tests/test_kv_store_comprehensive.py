@@ -107,7 +107,7 @@ class TestRedisConnectorInitialization:
 
     def test_redis_connector_init_without_config(self):
         """Test RedisConnector initialization without config (uses parent class)."""
-        with patch("storage.kv_store.DatabaseComponent.__init__") as mock_parent_init:
+        with patch("src.storage.kv_store.DatabaseComponent.__init__") as mock_parent_init:
             mock_parent_init.return_value = None
 
             connector = RedisConnector(config_path="test.yaml", verbose=False)
@@ -268,9 +268,9 @@ class TestRedisConnectorCacheOperations:
 
     def test_set_cache_success(self):
         """Test successful cache setting."""
-        with patch("storage.kv_store.validate_redis_key", return_value=True):
+        with patch("src.storage.kv_store.validate_redis_key", return_value=True):
             with patch.object(self.connector, "ensure_connected", return_value=True):
-                with patch("storage.kv_store.datetime") as mock_datetime:
+                with patch("src.storage.kv_store.datetime") as mock_datetime:
                     mock_now = datetime(2023, 1, 1, 12, 0, 0)
                     mock_datetime.utcnow.return_value = mock_now
 
@@ -293,7 +293,7 @@ class TestRedisConnectorCacheOperations:
 
     def test_set_cache_invalid_key(self):
         """Test cache setting with invalid key."""
-        with patch("storage.kv_store.validate_redis_key", return_value=False):
+        with patch("src.storage.kv_store.validate_redis_key", return_value=False):
             with patch.object(self.connector, "ensure_connected", return_value=True):
                 with patch.object(self.connector, "log_error") as mock_log:
                     result = self.connector.set_cache("invalid key", "value")
@@ -312,9 +312,9 @@ class TestRedisConnectorCacheOperations:
         """Test cache setting with default TTL from performance config."""
         self.connector.perf_config = {"cache": {"ttl_seconds": 7200}}
 
-        with patch("storage.kv_store.validate_redis_key", return_value=True):
+        with patch("src.storage.kv_store.validate_redis_key", return_value=True):
             with patch.object(self.connector, "ensure_connected", return_value=True):
-                with patch("storage.kv_store.datetime") as mock_datetime:
+                with patch("src.storage.kv_store.datetime") as mock_datetime:
                     mock_datetime.utcnow.return_value = datetime.utcnow()
 
                     result = self.connector.set_cache("test_key", "value")
@@ -339,7 +339,7 @@ class TestRedisConnectorCacheOperations:
         self.connector.redis_client.ttl.return_value = 1800  # 30 minutes left
 
         with patch.object(self.connector, "ensure_connected", return_value=True):
-            with patch("storage.kv_store.datetime") as mock_datetime:
+            with patch("src.storage.kv_store.datetime") as mock_datetime:
                 mock_datetime.utcnow.return_value.isoformat.return_value = "2023-01-01T12:30:00"
 
                 result = self.connector.get_cache("test_key")
@@ -426,7 +426,7 @@ class TestRedisConnectorSessionOperations:
         session_data = {"user_id": "123", "preferences": {"theme": "dark"}}
 
         with patch.object(self.connector, "ensure_connected", return_value=True):
-            with patch("storage.kv_store.datetime") as mock_datetime:
+            with patch("src.storage.kv_store.datetime") as mock_datetime:
                 mock_now = datetime(2023, 1, 1, 12, 0, 0)
                 mock_datetime.utcnow.return_value = mock_now
 
