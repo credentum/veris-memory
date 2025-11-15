@@ -84,12 +84,16 @@ class VerisHealthProbe(BaseCheck, HealthCheckMixin):
             headers = self._get_headers()
 
             # Increased per-request timeout to 10s (was default 5s)
-            success, message, latency = await self.check_endpoint_health(session, endpoint, timeout=10.0)
+            # Pass headers to ensure auth is included in health check
+            success, message, latency = await self.check_endpoint_health(
+                session, endpoint, timeout=10.0, headers=headers
+            )
             if not success:
                 return {"success": False, "message": message, "details": {"endpoint": endpoint}}
 
             # Get the actual response data with authentication
-            async with session.get(endpoint, headers=headers) as resp:
+            # IMPORTANT: Add explicit timeout to prevent session timeout exhaustion
+            async with session.get(endpoint, headers=headers, timeout=aiohttp.ClientTimeout(total=10.0)) as resp:
                 live_data = await resp.json()
                 
                 if live_data.get("status") != "alive":
@@ -121,12 +125,16 @@ class VerisHealthProbe(BaseCheck, HealthCheckMixin):
             headers = self._get_headers()
 
             # Increased per-request timeout to 10s (was default 5s)
-            success, message, latency = await self.check_endpoint_health(session, endpoint, timeout=10.0)
+            # Pass headers to ensure auth is included in health check
+            success, message, latency = await self.check_endpoint_health(
+                session, endpoint, timeout=10.0, headers=headers
+            )
             if not success:
                 return {"success": False, "message": message, "details": {"endpoint": endpoint}}
 
             # Get the actual response data with authentication
-            async with session.get(endpoint, headers=headers) as resp:
+            # IMPORTANT: Add explicit timeout to prevent session timeout exhaustion
+            async with session.get(endpoint, headers=headers, timeout=aiohttp.ClientTimeout(total=10.0)) as resp:
                 ready_data = await resp.json()
                 
                 # Verify component statuses
