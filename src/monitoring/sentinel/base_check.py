@@ -155,30 +155,32 @@ class HealthCheckMixin:
     """Mixin providing common health check utilities."""
     
     async def check_endpoint_health(
-        self, 
+        self,
         session,
-        endpoint: str, 
+        endpoint: str,
         expected_status: int = 200,
-        timeout: float = 5.0
+        timeout: float = 5.0,
+        headers: Optional[Dict[str, str]] = None
     ) -> tuple[bool, str, float]:
         """
         Check if an endpoint is healthy.
-        
+
         Args:
             session: aiohttp ClientSession
             endpoint: URL to check
             expected_status: Expected HTTP status code
             timeout: Request timeout in seconds
-            
+            headers: Optional headers to include in request
+
         Returns:
             Tuple of (success, message, latency_ms)
         """
         start_time = time.time()
-        
+
         try:
-            async with session.get(endpoint, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+            async with session.get(endpoint, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
                 latency_ms = (time.time() - start_time) * 1000
-                
+
                 if resp.status == expected_status:
                     return True, f"Endpoint healthy (HTTP {resp.status})", latency_ms
                 else:
