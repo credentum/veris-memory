@@ -3225,6 +3225,60 @@ async def _broadcast_to_websockets(message: Dict[str, Any]) -> None:
 # Sprint 13 Phase 2.3 & 3.2: Delete and Forget Endpoints
 
 
+@app.delete("/api/v1/contexts/{context_id}")
+async def delete_context_rest_endpoint(
+    context_id: str,
+    reason: str = "Sentinel test cleanup",
+    hard_delete: bool = False,
+    api_key_info: Optional[APIKeyInfo] = (
+        Depends(verify_api_key) if API_KEY_AUTH_AVAILABLE else None
+    ),
+) -> Dict[str, Any]:
+    """
+    REST DELETE endpoint for deleting a context.
+
+    Provides RESTful access to context deletion for monitoring and cleanup scripts.
+
+    Args:
+        context_id: ID of the context to delete (path parameter)
+        reason: Reason for deletion (query parameter, default: "Sentinel test cleanup")
+        hard_delete: If True, permanently delete (query parameter, default: False)
+        api_key_info: API key info for authorization
+
+    Returns:
+        Deletion result with audit information
+
+    Example:
+        DELETE /api/v1/contexts/abc-123?reason=cleanup&hard_delete=false
+    """
+    if not API_KEY_AUTH_AVAILABLE or not api_key_info:
+        return {"success": False, "error": "Authentication required for delete operations"}
+
+    try:
+        from ..tools.delete_operations import delete_context
+
+        result = await delete_context(
+            context_id=context_id,
+            reason=reason,
+            hard_delete=hard_delete,
+            api_key_info=api_key_info,
+            neo4j_client=neo4j_client,
+            qdrant_client=qdrant_client,
+            redis_client=simple_redis.redis_client if simple_redis else None,
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"REST DELETE operation failed for context {context_id}: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "operation": "delete",
+            "context_id": context_id,
+        }
+
+
 @app.post("/tools/delete_context")
 async def delete_context_endpoint(
     request: DeleteContextRequest,
