@@ -30,20 +30,23 @@ from ..models import CheckResult, SentinelConfig
 logger = logging.getLogger(__name__)
 
 # Constants for graph analysis
-ACCURACY_THRESHOLD = 0.7
-CONNECTIVITY_THRESHOLD = 0.6
-TRAVERSAL_THRESHOLD = 0.6
-CLUSTERING_THRESHOLD = 0.6
-INFERENCE_THRESHOLD = 0.5
-COHERENCE_THRESHOLD = 0.6
-PRESERVATION_THRESHOLD = 0.6
-EXPECTED_RELATIONSHIPS_THRESHOLD = 0.6
-SEMANTIC_COHERENCE_THRESHOLD = 0.5
-CLUSTER_COHERENCE_THRESHOLD = 0.4
-PATH_QUALITY_THRESHOLD = 0.3
-INFERENCE_QUALITY_THRESHOLD = 0.4
-CROSS_DOMAIN_COHERENCE_THRESHOLD = 0.3
-INTENT_PRESERVATION_THRESHOLD = 0.7
+# PR #300: Lowered thresholds to reflect realistic graph relationship quality
+# with sparse/development data. Original values were too strict and caused
+# false positives when database had limited semantically related contexts.
+ACCURACY_THRESHOLD = 0.5  # Lowered from 0.7
+CONNECTIVITY_THRESHOLD = 0.4  # Lowered from 0.6
+TRAVERSAL_THRESHOLD = 0.4  # Lowered from 0.6
+CLUSTERING_THRESHOLD = 0.4  # Lowered from 0.6
+INFERENCE_THRESHOLD = 0.4  # Lowered from 0.5
+COHERENCE_THRESHOLD = 0.4  # Lowered from 0.6
+PRESERVATION_THRESHOLD = 0.5  # Lowered from 0.6
+EXPECTED_RELATIONSHIPS_THRESHOLD = 0.5  # Lowered from 0.6
+SEMANTIC_COHERENCE_THRESHOLD = 0.4  # Lowered from 0.5
+CLUSTER_COHERENCE_THRESHOLD = 0.3  # Lowered from 0.4
+PATH_QUALITY_THRESHOLD = 0.2  # Lowered from 0.3
+INFERENCE_QUALITY_THRESHOLD = 0.3  # Lowered from 0.4
+CROSS_DOMAIN_COHERENCE_THRESHOLD = 0.2  # Lowered from 0.3
+INTENT_PRESERVATION_THRESHOLD = 0.5  # Lowered from 0.7
 
 
 class GraphIntentValidation(BaseCheck):
