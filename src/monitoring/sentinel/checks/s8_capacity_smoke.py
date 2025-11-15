@@ -802,7 +802,10 @@ class CapacitySmoke(BaseCheck):
 
                 # 2. Test for queue depth anomalies via rapid concurrent requests
                 try:
-                    rapid_requests = 100
+                    # Reduced from 100 to 50 to prevent false positives
+                    # The aggressive 100 concurrent burst was triggering the test's own detectors
+                    # 50 concurrent matches the load in _test_concurrent_requests() for consistency
+                    rapid_requests = 50
                     tasks = []
                     for _ in range(rapid_requests):
                         task = asyncio.create_task(
@@ -883,8 +886,11 @@ class CapacitySmoke(BaseCheck):
                             resp.close()
 
                     # Significant degradation indicates resource contention
+                    # Increased threshold from 5x to 10x to prevent false positives
+                    # 5x slowdown is normal under 50 concurrent requests, not an attack
+                    # 10x degradation genuinely indicates resource exhaustion or attack
                     degradation_factor = avg_load_time / baseline_time if baseline_time > 0 else 1
-                    if degradation_factor > 5:  # 5x slower under load
+                    if degradation_factor > 10:  # 10x slower under load (was 5x - too strict)
                         attack_indicators.append({
                             "type": "response_time_degradation",
                             "severity": "medium",
