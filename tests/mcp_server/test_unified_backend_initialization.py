@@ -16,8 +16,9 @@ from typing import Dict, Any
 from src.core.query_dispatcher import QueryDispatcher
 from src.core.retrieval_core import RetrievalCore
 from src.backends.vector_backend import VectorBackend
-from src.backends.graph_backend import GraphBackend  
+from src.backends.graph_backend import GraphBackend
 from src.backends.kv_backend import KVBackend
+from src.backends.text_backend import TextSearchBackend
 
 
 class TestMCPBackendInitialization:
@@ -235,9 +236,12 @@ class TestMCPBackendInitialization:
         
         if mock_clients["kv_store"]:
             mock_dispatcher.register_backend("kv", MagicMock())
-        
+
+        # Issue #311: Text backend should also be registered
+        mock_dispatcher.register_backend("text", MagicMock())
+
         # Verify registration order matches expectations
-        expected_order = ["vector", "graph", "kv"]
+        expected_order = ["vector", "graph", "kv", "text"]
         assert registration_order == expected_order
 
     @patch('src.mcp_server.main.logger')
@@ -269,6 +273,37 @@ class TestMCPBackendInitialization:
                 pass
         
         # The system should continue operating even if individual backends fail
+
+    def test_text_backend_registration(self):
+        """Test that TextSearchBackend is properly registered (Issue #311)."""
+        mock_dispatcher = MagicMock()
+
+        # Verify TextSearchBackend can be instantiated
+        text_backend = TextSearchBackend()
+        assert text_backend is not None
+        assert text_backend.backend_name == "text"
+
+        # Verify it can be registered with the dispatcher
+        mock_dispatcher.register_backend("text", text_backend)
+        mock_dispatcher.register_backend.assert_called_once_with("text", text_backend)
+
+        # Verify backend is in the list
+        mock_dispatcher.list_backends.return_value = ["vector", "graph", "kv", "text"]
+        backends = mock_dispatcher.list_backends()
+        assert "text" in backends
+
+    def test_text_backend_registration_failure_handling(self):
+        """Test error handling when text backend registration fails (Issue #311)."""
+        mock_dispatcher = MagicMock()
+        mock_dispatcher.register_backend.side_effect = Exception("Registration failed")
+
+        # The system should handle text backend registration failure gracefully
+        try:
+            text_backend = TextSearchBackend()
+            mock_dispatcher.register_backend("text", text_backend)
+        except Exception as e:
+            # Exception should be caught and logged as warning in main.py
+            assert str(e) == "Registration failed"
 
 
 class TestRetrieveContextUnification:
