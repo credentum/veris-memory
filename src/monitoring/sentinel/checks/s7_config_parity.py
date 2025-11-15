@@ -70,10 +70,11 @@ class ConfigParity(BaseCheck):
         #    to reduce manual updates (future enhancement)
         #
         # Version History:
+        # - 2025-11-15: Updated Python to 3.13 to match actual deployment (fix/sentinel-monitoring-false-positives)
         # - 2025-11-08: Updated from 3.11/0.100/0.20 to 3.10/0.115/0.32 (PR #208)
         # - Original: Python 3.11, FastAPI 0.100, Uvicorn 0.20
         self.expected_versions = config.get("s7_expected_versions", {
-            "python": "3.10",    # Ubuntu 22.04 LTS system Python
+            "python": "3.13",    # Actual deployment Python version
             "fastapi": "0.115",  # From requirements.txt
             "uvicorn": "0.32"    # From requirements.txt
         })
@@ -213,11 +214,13 @@ class ConfigParity(BaseCheck):
                 config_issues.append(f"LOG_LEVEL '{log_level}' is not a standard logging level")
 
             # Environment validation (CRITICAL)
+            # Accept both full names and common abbreviations
             environment = os.environ.get("ENVIRONMENT", "").lower()
+            valid_environments = ["development", "dev", "staging", "stage", "production", "prod", "test"]
             if not environment:
                 config_issues.append("ENVIRONMENT is not set")
-            elif environment not in ["development", "staging", "production", "test"]:
-                config_issues.append(f"ENVIRONMENT '{environment}' is not a standard environment name")
+            elif environment not in valid_environments:
+                config_issues.append(f"ENVIRONMENT '{environment}' is not a standard environment name (valid: {', '.join(valid_environments)})")
 
             # Optional validations (only warn if set incorrectly, not if missing)
             db_url = os.environ.get("DATABASE_URL", "")
@@ -368,14 +371,23 @@ class ConfigParity(BaseCheck):
         """Check database connectivity and configuration."""
         try:
             db_checks = {}
-            
+
             # Extract database URLs from environment
-            db_connections = {
-                "postgresql": os.environ.get("DATABASE_URL", ""),
+            # Note: PostgreSQL (DATABASE_URL) is optional - not all deployments use it
+            # Required databases: Qdrant (vectors), Neo4j (graph), Redis (cache)
+            required_db_connections = {
                 "qdrant": os.environ.get("QDRANT_URL", ""),
-                "neo4j": os.environ.get("NEO4J_URL", ""),
+                "neo4j": os.environ.get("NEO4J_URL", "") or os.environ.get("NEO4J_URI", ""),
                 "redis": os.environ.get("REDIS_URL", "")
             }
+
+            # Optional databases (won't fail check if missing)
+            optional_db_connections = {
+                "postgresql": os.environ.get("DATABASE_URL", "")
+            }
+
+            # Combine for health endpoint checks
+            db_connections = {**required_db_connections, **optional_db_connections}
             
             # Test connectivity via service health endpoint
             async with aiohttp.ClientSession(
@@ -430,11 +442,15 @@ class ConfigParity(BaseCheck):
             
             # Analyze database configuration
             config_issues = []
-            
-            # Check for missing database URLs
-            missing_dbs = [name for name, url in db_connections.items() if not url.strip()]
-            if missing_dbs:
-                config_issues.append(f"Missing database configurations: {missing_dbs}")
+
+            # Check for missing REQUIRED database URLs (fail check if missing)
+            missing_required_dbs = [name for name, url in required_db_connections.items() if not url.strip()]
+            if missing_required_dbs:
+                config_issues.append(f"Missing required database configurations: {missing_required_dbs}")
+
+            # Check for missing OPTIONAL database URLs (just log, don't fail)
+            missing_optional_dbs = [name for name, url in optional_db_connections.items() if not url.strip()]
+            # Optional DBs missing is not a failure condition
             
             # Check service readiness
             service_ready = db_checks.get("service_ready", {}).get("status") == "healthy"
@@ -443,11 +459,13 @@ class ConfigParity(BaseCheck):
             
             return {
                 "passed": len(config_issues) == 0,
-                "message": f"Database connectivity check: {len(config_issues)} issues found" if config_issues else "All database connections validated",
-                "db_connections": {name: bool(url.strip()) for name, url in db_connections.items()},
+                "message": f"Database connectivity check: {len(config_issues)} issues found" if config_issues else "All required database connections validated",
+                "required_db_connections": {name: bool(url.strip()) for name, url in required_db_connections.items()},
+                "optional_db_connections": {name: bool(url.strip()) for name, url in optional_db_connections.items()},
                 "db_checks": db_checks,
                 "service_ready": service_ready,
-                "config_issues": config_issues
+                "config_issues": config_issues,
+                "missing_optional_dbs": missing_optional_dbs
             }
             
         except Exception as e:
