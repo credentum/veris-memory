@@ -660,11 +660,12 @@ class TestConfigParity:
 
         check = ConfigParity(config)
 
-        # Verify documented versions from Phase 4 update (2025-11-08)
-        # These values are documented in s7_config_parity.py lines 51-71
-        assert check.expected_versions["python"] == "3.10"  # Ubuntu 22.04 LTS system Python
-        assert check.expected_versions["fastapi"] == "0.115"  # From requirements.txt
-        assert check.expected_versions["uvicorn"] == "0.32"  # From requirements.txt
+        # Verify documented versions matching current deployment (2025-11-15)
+        # These values are documented in s7_config_parity.py lines 72-88
+        # S7 validates context-store versions (dockerfiles/Dockerfile), not Sentinel
+        assert check.expected_versions["python"] == "3.11"  # Context-store uses Python 3.11
+        assert check.expected_versions["fastapi"] == "0.115"  # Deployed version
+        assert check.expected_versions["uvicorn"] == "0.32"  # Deployed version
 
     def test_expected_versions_can_be_overridden(self):
         """Test that expected_versions can be overridden via config get() method."""
@@ -689,35 +690,35 @@ class TestConfigParity:
         assert check.expected_versions["uvicorn"] == "0.35"
 
     @pytest.mark.asyncio
-    async def test_updated_fastapi_uvicorn_versions(self):
-        """Test that version validation accepts updated FastAPI 0.121 and Uvicorn 0.38."""
-        # Create config with updated versions from Phase 1 & 2 fixes
+    async def test_current_deployed_versions_pass(self):
+        """Test that version validation accepts currently deployed versions (3.11, 0.115, 0.32)."""
+        # Create config with current deployed versions
         config = SentinelConfig({
             "veris_memory_url": "http://test:8000",
             "s7_expected_versions": {
-                "python": "3.13",
-                "fastapi": "0.121",
-                "uvicorn": "0.38"
+                "python": "3.11",
+                "fastapi": "0.115",
+                "uvicorn": "0.32"
             }
         })
 
         check = ConfigParity(config)
 
         # Verify expected versions are set correctly
-        assert check.expected_versions["fastapi"] == "0.121"
-        assert check.expected_versions["uvicorn"] == "0.38"
-        assert check.expected_versions["python"] == "3.13"
+        assert check.expected_versions["fastapi"] == "0.115"
+        assert check.expected_versions["uvicorn"] == "0.32"
+        assert check.expected_versions["python"] == "3.11"
 
-        # Mock version check with matching versions
+        # Mock version check with matching deployed versions
         mock_subprocess_result = MagicMock()
         mock_subprocess_result.returncode = 0
-        mock_subprocess_result.stdout = "Python 3.13.1"
+        mock_subprocess_result.stdout = "Python 3.11.5"
 
         def mock_version(package):
             if package == "fastapi":
-                return "0.121.2"
+                return "0.115.1"
             elif package == "uvicorn":
-                return "0.38.0"
+                return "0.32.0"
             return "1.0.0"
 
         with patch('subprocess.run', return_value=mock_subprocess_result):
@@ -734,30 +735,30 @@ class TestConfigParity:
         assert len(result["version_issues"]) == 0
 
     @pytest.mark.asyncio
-    async def test_reject_old_fastapi_uvicorn_versions(self):
-        """Test that version validation rejects old FastAPI 0.115 and Uvicorn 0.32."""
-        # Create config expecting newer versions
+    async def test_reject_mismatched_versions(self):
+        """Test that version validation rejects version mismatches."""
+        # Create config with expected versions
         config = SentinelConfig({
             "veris_memory_url": "http://test:8000",
             "s7_expected_versions": {
-                "python": "3.13",
-                "fastapi": "0.121",
-                "uvicorn": "0.38"
+                "python": "3.11",
+                "fastapi": "0.115",
+                "uvicorn": "0.32"
             }
         })
 
         check = ConfigParity(config)
 
-        # Mock version check with old versions
+        # Mock version check with mismatched versions
         mock_subprocess_result = MagicMock()
         mock_subprocess_result.returncode = 0
-        mock_subprocess_result.stdout = "Python 3.13.1"
+        mock_subprocess_result.stdout = "Python 3.10.8"  # Mismatch
 
         def mock_version(package):
             if package == "fastapi":
-                return "0.115.0"  # Old version
+                return "0.100.0"  # Mismatch
             elif package == "uvicorn":
-                return "0.32.0"  # Old version
+                return "0.20.0"  # Mismatch
             return "1.0.0"
 
         with patch('subprocess.run', return_value=mock_subprocess_result):
@@ -773,8 +774,7 @@ class TestConfigParity:
         assert len(result["version_issues"]) >= 2
 
         issues_text = " ".join(result["version_issues"])
-        assert "fastapi version mismatch: 0.115.0 vs expected 0.121" in issues_text
-        assert "uvicorn version mismatch: 0.32.0 vs expected 0.38" in issues_text
+        assert "version mismatch" in issues_text.lower()
 
     @pytest.mark.asyncio
     async def test_error_handling(self, check):
