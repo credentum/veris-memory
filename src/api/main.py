@@ -12,7 +12,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional, Any
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -430,7 +430,7 @@ def create_app() -> FastAPI:
 
     # S5 security fix: Add /metrics and /api/metrics endpoints with localhost-only access
     @app.get("/metrics", tags=["metrics"])
-    async def root_metrics(request: Request):
+    async def root_metrics(request: Request) -> Dict[str, Any]:
         """
         Prometheus-compatible metrics endpoint (localhost-only).
 
@@ -439,10 +439,10 @@ def create_app() -> FastAPI:
         """
         # S5 security fix: Restrict metrics access to localhost only
         client_ip = request.client.host if request.client else None
-        if client_ip not in ["127.0.0.1", "::1", "localhost"]:
+        if not client_ip or client_ip not in ["127.0.0.1", "::1", "localhost"]:
             api_logger.warning(
                 "Root metrics access denied - not from localhost",
-                client_ip=client_ip
+                client_ip=client_ip or "unknown"
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -462,7 +462,7 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/metrics", tags=["metrics"])
-    async def api_metrics(request: Request):
+    async def api_metrics(request: Request) -> Dict[str, str]:
         """
         Legacy metrics endpoint (localhost-only).
 
@@ -471,10 +471,10 @@ def create_app() -> FastAPI:
         """
         # S5 security fix: Restrict metrics access to localhost only
         client_ip = request.client.host if request.client else None
-        if client_ip not in ["127.0.0.1", "::1", "localhost"]:
+        if not client_ip or client_ip not in ["127.0.0.1", "::1", "localhost"]:
             api_logger.warning(
                 "API metrics access denied - not from localhost",
-                client_ip=client_ip
+                client_ip=client_ip or "unknown"
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
