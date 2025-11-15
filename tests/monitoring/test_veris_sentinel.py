@@ -1591,3 +1591,53 @@ class TestMCPTypeValidation:
             tags = sample.get('content', {}).get('tags', [])
             # Should be able to search/filter by any tag
             assert len(tags) > 0, "Each sample must have searchable tags"
+
+    @pytest.mark.asyncio
+    async def test_s10_uses_content_type_field_not_context_type(self, s10_check, mocker):
+        """Test that S10 uses correct field name 'content_type' not 'context_type'.
+
+        This test verifies the fix for the critical bug where S10 was using the wrong
+        field name 'context_type' instead of 'content_type', causing all S10 tests to fail.
+        """
+        captured_payloads = []
+
+        async def capture_payload(*args, **kwargs):
+            # Capture JSON payload from POST requests
+            if 'json' in kwargs:
+                captured_payloads.append(kwargs['json'])
+            # Mock successful response
+            mock_response = mocker.AsyncMock()
+            mock_response.status = 201
+            mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+            return mock_response
+
+        # Mock aiohttp.ClientSession.post to capture payloads
+        mock_session = mocker.AsyncMock()
+        mock_session.post = mocker.AsyncMock(side_effect=capture_payload)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        # Run the check
+        try:
+            await s10_check.run_check()
+        except:
+            pass  # Ignore errors, we just want to capture payloads
+
+        # Verify all payloads use "content_type" not "context_type"
+        assert len(captured_payloads) > 0, "Should have captured at least one payload"
+
+        for payload in captured_payloads:
+            # Critical assertion: Must use "content_type" field
+            assert "content_type" in payload, \
+                f"Payload must use 'content_type' field, not 'context_type': {payload.keys()}"
+
+            # Must NOT use the wrong field name
+            assert "context_type" not in payload, \
+                f"Payload must NOT use 'context_type' field (wrong field name): {payload}"
+
+            # Verify it's a valid MCP type
+            assert payload["content_type"] == "log", \
+                f"S10 test payloads must use 'log' type, got: {payload['content_type']}"
