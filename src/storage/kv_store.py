@@ -129,15 +129,18 @@ class RedisConnector(DatabaseComponent):
 
         # Check REDIS_URL environment variable first for Docker deployments
         redis_url = os.getenv("REDIS_URL")
+        password_from_url = None
         if redis_url:
-            # Parse redis://host:port format
-            url_match = re.match(r"^redis://([^:/]+):?(\d+)?/?(\d+)?", redis_url)
+            # Parse redis://:password@host:port/db format
+            url_match = re.match(r"^redis://(?::([^@]+)@)?([^:/]+):?(\d+)?/?(\d+)?", redis_url)
             if url_match:
-                host = url_match.group(1)
-                port = int(url_match.group(2)) if url_match.group(2) else 6379
-                db = int(url_match.group(3)) if url_match.group(3) else 0
+                password_from_url = url_match.group(1)  # Password (if present)
+                host = url_match.group(2)
+                port = int(url_match.group(3)) if url_match.group(3) else 6379
+                db = int(url_match.group(4)) if url_match.group(4) else 0
             else:
                 # Fallback to config
+                self.log_warning(f"Failed to parse REDIS_URL: {redis_url}, falling back to config")
                 host = redis_config.get("host", "localhost")
                 port = redis_config.get("port", 6379)
                 db = redis_config.get("database", 0)
@@ -152,13 +155,16 @@ class RedisConnector(DatabaseComponent):
         pool_config = self.perf_config.get("connection_pool", {})
         max_connections = pool_config.get("max_size", 50)
 
+        # Password priority: kwargs > URL > env var > config
+        final_password = password or password_from_url or os.getenv("REDIS_PASSWORD") or redis_config.get("password")
+
         try:
             # Create connection pool
             pool_kwargs = {
                 "host": host,
                 "port": port,
                 "db": db,
-                "password": password,  # Password from environment/config, not hardcoded
+                "password": final_password,  # Password with proper priority chain
                 "max_connections": max_connections,
                 "decode_responses": True,
             }
@@ -180,6 +186,7 @@ class RedisConnector(DatabaseComponent):
                 self.redis_client.ping()
                 self.is_connected = True
                 self.log_success(f"Connected to Redis at {host}:{port}")
+                self.logger.debug(f"Redis connection details: host={host}, port={port}, db={db}, password={'***' if final_password else 'None'}")
                 return True
             return False
 

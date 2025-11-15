@@ -179,12 +179,12 @@ def get_secure_connection_config(config: dict[str, Any], service: str) -> dict[s
         # Check REDIS_URL environment variable
         env_url = os.getenv("REDIS_URL")
         if env_url:
-            # Parse redis://host:port format
+            # Parse redis://:password@host:port/db format (skip password for config)
             import re
-            url_match = re.match(r"^redis://([^:/]+):?(\d+)?", env_url)
+            url_match = re.match(r"^redis://(?::([^@]+)@)?([^:/]+):?(\d+)?", env_url)
             if url_match:
-                host = url_match.group(1)
-                port = int(url_match.group(2)) if url_match.group(2) else 6379
+                host = url_match.group(2)  # Host (after password)
+                port = int(url_match.group(3)) if url_match.group(3) else 6379
             else:
                 host = service_config.get("host", "localhost")
                 port = service_config.get("port")
