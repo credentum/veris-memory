@@ -387,15 +387,29 @@ async def get_usage_statistics(
     summary="Reset metrics counters",
     description="""
     Reset all metrics counters and statistics.
-    
+
     **Warning**: This will clear all accumulated metrics data.
     Use with caution in production environments.
+
+    **Note**: Access restricted to localhost only for security.
     """
 )
-async def reset_metrics() -> Dict[str, str]:
+async def reset_metrics(request: Request) -> Dict[str, str]:
     """Reset all metrics counters."""
-    
-    api_logger.warning("Resetting all metrics counters")
+
+    # S5 security fix: Restrict metrics reset to localhost only
+    client_ip = request.client.host if request.client else None
+    if not client_ip or client_ip not in ["127.0.0.1", "::1", "localhost"]:
+        api_logger.warning(
+            "Metrics reset access denied - not from localhost",
+            client_ip=client_ip or "unknown"
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Metrics reset endpoint is restricted to localhost access only"
+        )
+
+    api_logger.warning("Resetting all metrics counters", client_ip=client_ip)
     
     try:
         # Reset middleware metrics
