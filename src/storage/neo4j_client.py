@@ -9,6 +9,7 @@ This module:
 4. Manages graph database operations
 """
 
+import logging
 import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -18,6 +19,8 @@ import yaml
 from neo4j import Driver, GraphDatabase
 from neo4j.exceptions import AuthError, ServiceUnavailable
 from neo4j.time import DateTime, Date, Time, Duration
+
+logger = logging.getLogger(__name__)
 
 # Import types for protocol compliance
 try:
