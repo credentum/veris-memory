@@ -1,4 +1,3 @@
-version: "3.8"
 
 # TeamAI Voice Platform Extension
 # Use with main docker-compose.yml:
@@ -104,9 +103,9 @@ services:
       - TTS_PROVIDER=${TTS_PROVIDER:-elevenlabs}
       - STT_API_KEY=${STT_API_KEY:-}
       - TTS_API_KEY=${TTS_API_KEY:-}
-    ports:
-      # Port 8002 now accessed via nginx proxy (nginx-voice-proxy:8443)
-      # Removed external binding for security - traffic goes through rate-limited proxy
+    # Port 8002 now accessed via nginx proxy (nginx-voice-proxy:8443)
+    # Removed external binding for security - traffic goes through rate-limited proxy
+    ports: []
     depends_on:
       context-store:
         condition: service_healthy

@@ -1,4 +1,3 @@
-version: "3.8"
 
 # SECURE DOCKER COMPOSE CONFIGURATION
 # Purpose: Production-ready configuration with security hardening

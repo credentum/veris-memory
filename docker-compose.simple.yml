@@ -9,8 +9,6 @@
 #
 # Or source the .env file that's created by setup-secure-credentials.sh
 
-version: "3.8"
-
 services:
   redis:
     image: redis:7.2.5-alpine@sha256:6aaf3f5e6bc8a592fbfe2cccf19eb36d27c39d12dab4f4b01556b7449e7b1f44
