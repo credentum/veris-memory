@@ -1,4 +1,3 @@
-version: "3.8"
 
 services:
   # Context Store MCP Server - PRODUCTION Environment (alternate ports)
