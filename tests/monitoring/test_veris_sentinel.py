@@ -1647,41 +1647,18 @@ class TestAutonomousConfiguration:
     """Test autonomous configuration for S6/S7/S8 (PR #274)."""
 
     @pytest.fixture
-    def s7_config_with_mcp_vars(self):
-        """Config with MCP env vars set."""
-        return SentinelConfig(
-            target_base_url="http://test:8000",
-            s7_optional_env_vars=[
-                "DATABASE_URL",
-                "QDRANT_URL",
-                "NEO4J_URL",
-                "NEO4J_URI",
-                "REDIS_URL",
-                "TARGET_BASE_URL",
-                "MCP_INTERNAL_URL",
-                "MCP_FORWARD_TIMEOUT"
-            ]
-        )
+    def s7_check_with_mcp(self):
+        """S7 check instance - checks load config from environment."""
+        from src.monitoring.sentinel.checks.s7_config_parity import ConfigParity
+        config = SentinelConfig(target_base_url="http://test:8000")
+        return ConfigParity(config)
 
     @pytest.fixture
-    def s7_check_with_mcp(self, s7_config_with_mcp_vars):
-        """S7 check instance with MCP vars configured."""
-        from ..checks.s7_config_parity import ConfigParity
-        return ConfigParity(s7_config_with_mcp_vars)
-
-    @pytest.fixture
-    def s8_config_with_new_threshold(self):
-        """Config with updated 2500ms threshold."""
-        return SentinelConfig(
-            target_base_url="http://test:8000",
-            s8_max_response_time_ms=2500
-        )
-
-    @pytest.fixture
-    def s8_check_with_new_threshold(self, s8_config_with_new_threshold):
-        """S8 check instance with 2500ms threshold."""
-        from ..checks.s8_capacity_smoke import CapacitySmoke
-        return CapacitySmoke(s8_config_with_new_threshold)
+    def s8_check_with_new_threshold(self):
+        """S8 check instance - loads threshold from environment via config.get()."""
+        from src.monitoring.sentinel.checks.s8_capacity_smoke import CapacitySmoke
+        config = SentinelConfig(target_base_url="http://test:8000")
+        return CapacitySmoke(config)
 
     def test_s7_recognizes_mcp_internal_url(self, s7_check_with_mcp):
         """Test that S7 recognizes MCP_INTERNAL_URL as optional env var (PR #274)."""
@@ -1736,7 +1713,7 @@ class TestAutonomousConfiguration:
 
     def test_s8_default_threshold_is_2500ms(self):
         """Test that S8 defaults to 2500ms when not configured."""
-        from ..checks.s8_capacity_smoke import CapacitySmoke
+        from src.monitoring.sentinel.checks.s8_capacity_smoke import CapacitySmoke
 
         # Create check with minimal config (no threshold specified)
         config = SentinelConfig(target_base_url="http://test:8000")
@@ -1780,7 +1757,7 @@ class TestAutonomousConfiguration:
     @pytest.mark.asyncio
     async def test_s7_validates_mcp_internal_url_format(self, mocker):
         """Test that S7 validates MCP_INTERNAL_URL format correctly."""
-        from ..checks.s7_config_parity import ConfigParity
+        from src.monitoring.sentinel.checks.s7_config_parity import ConfigParity
 
         # Test invalid URL (no http/https protocol)
         mocker.patch.dict('os.environ', {
@@ -1818,7 +1795,7 @@ class TestAutonomousConfiguration:
     @pytest.mark.asyncio
     async def test_s7_accepts_valid_mcp_internal_url(self, mocker):
         """Test that S7 accepts valid MCP_INTERNAL_URL with http/https."""
-        from ..checks.s7_config_parity import ConfigParity
+        from src.monitoring.sentinel.checks.s7_config_parity import ConfigParity
 
         # Test valid URL
         mocker.patch.dict('os.environ', {
@@ -1854,7 +1831,7 @@ class TestAutonomousConfiguration:
     @pytest.mark.asyncio
     async def test_s7_validates_mcp_forward_timeout_range(self, mocker):
         """Test that S7 validates MCP_FORWARD_TIMEOUT is within reasonable range."""
-        from ..checks.s7_config_parity import ConfigParity
+        from src.monitoring.sentinel.checks.s7_config_parity import ConfigParity
 
         # Test timeout value outside range (> 300 seconds)
         mocker.patch.dict('os.environ', {
@@ -1890,7 +1867,7 @@ class TestAutonomousConfiguration:
     @pytest.mark.asyncio
     async def test_s7_validates_mcp_forward_timeout_is_numeric(self, mocker):
         """Test that S7 validates MCP_FORWARD_TIMEOUT is a valid number."""
-        from ..checks.s7_config_parity import ConfigParity
+        from src.monitoring.sentinel.checks.s7_config_parity import ConfigParity
 
         # Test non-numeric timeout value
         mocker.patch.dict('os.environ', {
@@ -1949,23 +1926,29 @@ class TestAutonomousConfiguration:
 
     def test_s8_loads_app_latency_threshold(self):
         """Test that S8 loads separate application latency threshold (PR #274 performance regression mitigation)."""
-        from ..checks.s8_capacity_smoke import CapacitySmoke
+        from src.monitoring.sentinel.checks.s8_capacity_smoke import CapacitySmoke
+        import os
 
-        # Test with custom app latency threshold
-        config = SentinelConfig(
-            target_base_url="http://test:8000",
-            s8_app_latency_ms=1500
-        )
-        check = CapacitySmoke(config)
+        # S8 reads app_latency_ms from config.get() which reads from environment
+        # Set environment variable for test
+        os.environ['S8_APP_LATENCY_MS'] = '1500'
 
-        # Verify app latency threshold is loaded
-        assert check.app_latency_threshold_ms == 1500, \
-            "S8 must load app_latency_threshold_ms from config"
+        try:
+            config = SentinelConfig(target_base_url="http://test:8000")
+            check = CapacitySmoke(config)
 
-        # Verify it's distinct from total response time threshold
-        assert check.max_response_time_ms == 2500, \
-            "S8 max_response_time_ms should be 2500ms (total including forwarding)"
+            # Verify app latency threshold is loaded
+            assert check.app_latency_threshold_ms == 1500, \
+                "S8 must load app_latency_threshold_ms from config"
 
-        # App threshold should be lower than total threshold (app doesn't include forwarding)
+            # Verify it's distinct from total response time threshold
+            assert check.max_response_time_ms == 2500, \
+                "S8 max_response_time_ms should be 2500ms (total including forwarding)"
+
+            # App threshold should be lower than total threshold (app doesn't include forwarding)
+        finally:
+            # Clean up environment
+            if 'S8_APP_LATENCY_MS' in os.environ:
+                del os.environ['S8_APP_LATENCY_MS']
         assert check.app_latency_threshold_ms < check.max_response_time_ms, \
             "Application latency threshold should be lower than total response time threshold"

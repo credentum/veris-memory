@@ -130,6 +130,32 @@ class SentinelConfig:
         if self.neo4j_user is None:
             self.neo4j_user = os.getenv('NEO4J_USER', 'veris_ro')
 
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get configuration value like a dictionary.
+
+        This method allows the config to be used like a dictionary
+        for backward compatibility with checks that read from environment.
+        """
+        # Map common keys to actual attributes
+        if key == 'veris_memory_url':
+            return self.target_base_url
+        elif key == 'api_url':
+            return self.target_base_url
+        elif key == 'qdrant_url':
+            return self.qdrant_url
+        elif key == 'neo4j_url' or key == 'neo4j_bolt':
+            return self.neo4j_bolt
+        elif key == 'redis_url':
+            return self.redis_url
+
+        # For S7/S8 configuration, read from environment
+        elif key.startswith('s7_') or key.startswith('s8_'):
+            env_key = key.upper()
+            return os.getenv(env_key, default)
+
+        # Try to get from object attributes
+        return getattr(self, key, default)
+
 
 class VerisHealthProbe:
     """S1: Health probes for live/ready endpoints."""

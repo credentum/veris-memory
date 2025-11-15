@@ -38,9 +38,9 @@ class CapacitySmoke(BaseCheck):
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S8-capacity-smoke", "Performance capacity testing")
         self.base_url = config.get("veris_memory_url", "http://localhost:8000")
-        self.concurrent_requests = config.get("s8_capacity_concurrent_requests", 50)
-        self.test_duration_seconds = config.get("s8_capacity_duration_sec", 30)
-        self.timeout_seconds = config.get("s8_capacity_timeout_sec", 60)
+        self.concurrent_requests = int(config.get("s8_capacity_concurrent_requests", 50))
+        self.test_duration_seconds = int(config.get("s8_capacity_duration_sec", 30))
+        self.timeout_seconds = int(config.get("s8_capacity_timeout_sec", 60))
 
         # Maximum acceptable response time threshold
         # Increased from 2000ms → 2500ms to account for REST→MCP forwarding overhead (PR #269, PR #274)
@@ -55,8 +55,8 @@ class CapacitySmoke(BaseCheck):
         # 2. Application latency can be monitored independently
         # 3. S8 still detects response time degradation patterns (5x slowdown)
         # 4. Resource exhaustion attacks still detected via separate checks
-        self.max_response_time_ms = config.get("s8_max_response_time_ms", 2500)
-        self.max_error_rate_percent = config.get("s8_max_error_rate_percent", 5)
+        self.max_response_time_ms = int(config.get("s8_max_response_time_ms", 2500))
+        self.max_error_rate_percent = float(config.get("s8_max_error_rate_percent", 5))
 
         # Application-only latency threshold (PR #274 - addresses performance regression concern)
         # This allows detection of pure application performance issues independent of forwarding overhead
@@ -67,7 +67,7 @@ class CapacitySmoke(BaseCheck):
         # - GET /metrics should return: {application_latency_ms, forwarding_latency_ms}
         # - Until implemented, this threshold is configured but not actively used
         # - See .env.sentinel.template line 123 for detailed documentation
-        self.app_latency_threshold_ms = config.get("s8_app_latency_ms", 1500)
+        self.app_latency_threshold_ms = int(config.get("s8_app_latency_ms", 1500))
 
         # Get API key from environment for authentication
         self.api_key = os.getenv('SENTINEL_API_KEY')
