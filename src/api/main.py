@@ -20,6 +20,7 @@ from fastapi.openapi.utils import get_openapi
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 # API routes
 from .routes import search, health, metrics
@@ -390,8 +391,16 @@ def create_app() -> FastAPI:
 
     # Rate limiting (S5 security fix - prevent brute force attacks)
     # Apply globally to all endpoints to prevent authentication brute force
-    limiter = Limiter(key_func=get_remote_address, default_limits=["20/minute"])
+    limiter = Limiter(key_func=get_remote_address)
     app.state.limiter = limiter
+
+    # Add middleware to apply rate limiting globally (20 requests/minute)
+    app.add_middleware(
+        SlowAPIMiddleware,
+        limiter=limiter,
+        default_limits=["20/minute"]
+    )
+
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # Security middleware
@@ -428,7 +437,8 @@ def create_app() -> FastAPI:
             "openapi": "/openapi.json"
         }
 
-    # S5 security fix: Add /metrics and /api/metrics endpoints with localhost-only access
+    # S5 security fix: Add /metrics endpoint with localhost-only access
+    # Note: /api/metrics endpoint removed (redundant - use /api/v1/metrics instead)
     @app.get("/metrics", tags=["metrics"])
     async def root_metrics(request: Request) -> Dict[str, Any]:
         """
@@ -459,33 +469,6 @@ def create_app() -> FastAPI:
                 "performance": "/api/v1/metrics/performance",
                 "usage": "/api/v1/metrics/usage"
             }
-        }
-
-    @app.get("/api/metrics", tags=["metrics"])
-    async def api_metrics(request: Request) -> Dict[str, str]:
-        """
-        Legacy metrics endpoint (localhost-only).
-
-        This endpoint is restricted to localhost access for security.
-        Use /api/v1/metrics for the current version.
-        """
-        # S5 security fix: Restrict metrics access to localhost only
-        client_ip = request.client.host if request.client else None
-        if not client_ip or client_ip not in ["127.0.0.1", "::1", "localhost"]:
-            api_logger.warning(
-                "API metrics access denied - not from localhost",
-                client_ip=client_ip or "unknown"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Metrics endpoint is restricted to localhost access only"
-            )
-
-        # Redirect to current version
-        return {
-            "status": "deprecated",
-            "message": "This endpoint is deprecated. Use /api/v1/metrics instead.",
-            "current_endpoint": "/api/v1/metrics"
         }
 
     # Custom OpenAPI schema
