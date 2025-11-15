@@ -109,7 +109,9 @@ class BackupRestore(BaseCheck):
 
         self.max_backup_age_hours = config.get("s6_backup_max_age_hours", 24)
         self.database_url = config.get("database_url", "postgresql://localhost/veris_memory")
-        self.min_backup_size_mb = config.get("min_backup_size_mb", 1)
+        # Lowered from 1 MB to 10 KB to avoid false positives on legitimately small backups
+        # (SSH keys: ~1KB, tmux data: ~100 bytes, sentinel data, etc.)
+        self.min_backup_size_mb = config.get("min_backup_size_mb", 0.01)  # 10 KB
         
     async def run_check(self) -> CheckResult:
         """Execute comprehensive backup/restore validation check."""
@@ -548,9 +550,11 @@ class BackupRestore(BaseCheck):
         try:
             retention_info = []
             policy_violations = []
-            
+
             # Check for backup files older than retention period
-            retention_days = 30  # Default retention policy
+            # Updated from 30 to 14 days to match actual health backup retention policy
+            # (per deployment analysis: health-backup-retention.sh uses 14-day retention)
+            retention_days = self.config.get("s6_retention_days", 14)
             cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
             
             for backup_path in self.backup_paths:

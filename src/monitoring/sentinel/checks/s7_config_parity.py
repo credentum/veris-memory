@@ -70,13 +70,14 @@ class ConfigParity(BaseCheck):
         #    to reduce manual updates (future enhancement)
         #
         # Version History:
+        # - 2025-11-15: Updated FastAPI 0.121, Uvicorn 0.38 to match deployment (fix/sentinel-threshold-adjustments)
         # - 2025-11-15: Updated Python to 3.13 to match actual deployment (fix/sentinel-monitoring-false-positives)
         # - 2025-11-08: Updated from 3.11/0.100/0.20 to 3.10/0.115/0.32 (PR #208)
         # - Original: Python 3.11, FastAPI 0.100, Uvicorn 0.20
         self.expected_versions = config.get("s7_expected_versions", {
             "python": "3.13",    # Actual deployment Python version
-            "fastapi": "0.115",  # From requirements.txt
-            "uvicorn": "0.32"    # From requirements.txt
+            "fastapi": "0.121",  # Updated to match deployed version (was 0.115)
+            "uvicorn": "0.38"    # Updated to match deployed version (was 0.32)
         })
         
     async def run_check(self) -> CheckResult:

@@ -22,8 +22,14 @@ class VerisHealthProbe(BaseCheck, HealthCheckMixin):
 
     def __init__(self, config: SentinelConfig) -> None:
         super().__init__(config, "S1-probes", "Health probes for live/ready endpoints")
-        # Get API key from environment for Sprint 13 authentication
-        self.api_key = os.getenv('API_KEY_MCP')
+        # Get SENTINEL API key (dedicated monitoring key) for authentication
+        # CRITICAL: Use SENTINEL_API_KEY, not API_KEY_MCP (per base_check.py requirements)
+        self.api_key = os.getenv('SENTINEL_API_KEY')
+        if not self.api_key:
+            # Fallback warning if API key not set
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning("SENTINEL_API_KEY not set - health checks may fail if auth is required")
         
     async def run_check(self) -> CheckResult:
         """Execute health probe check."""
