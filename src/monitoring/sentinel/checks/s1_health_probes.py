@@ -34,9 +34,11 @@ class VerisHealthProbe(BaseCheck, HealthCheckMixin):
     async def run_check(self) -> CheckResult:
         """Execute health probe check."""
         start_time = time.time()
-        
+
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+            # Increased timeout from 5s to 15s to accommodate multiple sequential requests
+            # (4 requests total: 2 for liveness + 2 for readiness = ~12s + overhead)
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
                 # Test liveness endpoint
                 liveness_result = await self._check_liveness(session)
                 if not liveness_result["success"]:
@@ -81,7 +83,8 @@ class VerisHealthProbe(BaseCheck, HealthCheckMixin):
             # Include API key header if available
             headers = self._get_headers()
 
-            success, message, latency = await self.check_endpoint_health(session, endpoint)
+            # Increased per-request timeout to 10s (was default 5s)
+            success, message, latency = await self.check_endpoint_health(session, endpoint, timeout=10.0)
             if not success:
                 return {"success": False, "message": message, "details": {"endpoint": endpoint}}
 
@@ -117,7 +120,8 @@ class VerisHealthProbe(BaseCheck, HealthCheckMixin):
             # Include API key header if available
             headers = self._get_headers()
 
-            success, message, latency = await self.check_endpoint_health(session, endpoint)
+            # Increased per-request timeout to 10s (was default 5s)
+            success, message, latency = await self.check_endpoint_health(session, endpoint, timeout=10.0)
             if not success:
                 return {"success": False, "message": message, "details": {"endpoint": endpoint}}
 
