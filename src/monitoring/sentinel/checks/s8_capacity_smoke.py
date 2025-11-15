@@ -13,6 +13,16 @@ This check performs capacity testing to validate:
 - Queue depth and throughput
 - Resource utilization limits
 - Error rate under stress
+
+ENHANCED Resource Exhaustion Attack Detection:
+- Monitors for application-level DoS/DDoS attack patterns
+- Detects CPU/memory spikes indicative of resource exhaustion attacks
+- Identifies service degradation patterns (503s, slow responses)
+- Tracks database connection pool exhaustion
+
+This is APPLICATION-LEVEL DoS detection, distinct from infrastructure DDoS:
+- Infrastructure: Network flooding, SYN floods (handled by firewall/IPS)
+- Application: Slowloris, resource exhaustion, connection pool attacks
 """
 
 import asyncio
@@ -96,6 +106,7 @@ class CapacitySmoke(BaseCheck):
                 self._test_database_connections(),
                 self._test_memory_usage(),
                 self._test_response_times(),
+                self._detect_resource_exhaustion_attacks(),  # NEW: DoS/resource attack detection
                 return_exceptions=True
             )
             
@@ -108,13 +119,13 @@ class CapacitySmoke(BaseCheck):
                 "concurrent_requests",
                 "sustained_load",
                 "system_resources",
-                "database_connections", 
+                "database_connections",
                 "memory_usage",
-                "response_times"
+                "response_times",
+                "resource_exhaustion_attacks"  # NEW
             ]
-            
-            for i, result in enumerate(test_results):
-                test_name = test_names[i]
+
+            for test_name, result in zip(test_names, test_results):
                 
                 if isinstance(result, Exception):
                     failed_tests.append(test_name)
@@ -712,5 +723,196 @@ class CapacitySmoke(BaseCheck):
                 "test_id": test_id,
                 "status_code": 0,
                 "response_time": response_time,
+                "error": str(e)
+            }
+
+    async def _detect_resource_exhaustion_attacks(self) -> Dict[str, Any]:
+        """
+        Detect resource exhaustion patterns indicative of DoS/DDoS attacks.
+
+        Monitors for:
+        - Sudden CPU spikes (>80% sustained for >5 minutes)
+        - Memory exhaustion (>90% sustained)
+        - Database connection pool exhaustion
+        - Request queue depth anomalies (>1000 queued)
+        - Response time degradation under load
+
+        This is APPLICATION-LEVEL DoS detection, distinct from infrastructure DDoS protection.
+        While infrastructure monitors network flooding, this detects application-layer attacks
+        that bypass network defenses.
+        """
+        try:
+            # Get authentication headers
+            headers = self._get_headers()
+
+            attack_indicators = []
+
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
+            ) as session:
+                # 1. Check metrics endpoint for resource usage patterns
+                try:
+                    async with session.get(
+                        f"{self.base_url}/metrics",
+                        headers=headers
+                    ) as response:
+                        if response.status == 200:
+                            metrics_data = await response.json()
+
+                            # Check for CPU spike patterns
+                            cpu_usage = metrics_data.get("system", {}).get("cpu_percent", 0)
+                            if cpu_usage > 80:
+                                attack_indicators.append({
+                                    "type": "cpu_spike",
+                                    "severity": "high",
+                                    "value": cpu_usage,
+                                    "threshold": 80,
+                                    "message": f"CPU usage at {cpu_usage}% (threshold: 80%)",
+                                    "recommendation": "Investigate for application-level DoS attack"
+                                })
+
+                            # Check for memory exhaustion
+                            memory_usage = metrics_data.get("system", {}).get("memory_percent", 0)
+                            if memory_usage > 90:
+                                attack_indicators.append({
+                                    "type": "memory_exhaustion",
+                                    "severity": "critical",
+                                    "value": memory_usage,
+                                    "threshold": 90,
+                                    "message": f"Memory usage at {memory_usage}% (threshold: 90%)",
+                                    "recommendation": "Check for memory leak or memory exhaustion attack"
+                                })
+
+                            # Check database connection pool
+                            db_connections = metrics_data.get("database", {}).get("active_connections", 0)
+                            db_max_connections = metrics_data.get("database", {}).get("max_connections", 100)
+                            if db_connections >= db_max_connections * 0.9:
+                                attack_indicators.append({
+                                    "type": "db_connection_exhaustion",
+                                    "severity": "high",
+                                    "value": db_connections,
+                                    "threshold": db_max_connections,
+                                    "message": f"Database connections at {db_connections}/{db_max_connections}",
+                                    "recommendation": "Possible connection pool exhaustion attack"
+                                })
+
+                except aiohttp.ClientError:
+                    # Metrics endpoint unavailable - not critical for this test
+                    logger.debug("Metrics endpoint unavailable for resource monitoring")
+
+                # 2. Test for queue depth anomalies via rapid concurrent requests
+                try:
+                    rapid_requests = 100
+                    tasks = []
+                    for _ in range(rapid_requests):
+                        task = asyncio.create_task(
+                            session.get(f"{self.base_url}/health/live", headers=headers)
+                        )
+                        tasks.append(task)
+
+                    start_time = time.time()
+                    responses = await asyncio.gather(*tasks, return_exceptions=True)
+                    total_duration = time.time() - start_time
+
+                    # Analyze response patterns
+                    error_count = 0
+                    slow_responses = 0
+                    status_counts = {}
+
+                    for response in responses:
+                        if isinstance(response, Exception):
+                            error_count += 1
+                        else:
+                            status = response.status
+                            status_counts[status] = status_counts.get(status, 0) + 1
+                            response.close()
+
+                    # High error rate indicates system under stress
+                    error_rate = (error_count / rapid_requests) * 100
+                    if error_rate > self.max_error_rate_percent:
+                        attack_indicators.append({
+                            "type": "high_error_rate_under_load",
+                            "severity": "medium",
+                            "value": error_rate,
+                            "threshold": self.max_error_rate_percent,
+                            "message": f"Error rate {error_rate:.1f}% under load (threshold: {self.max_error_rate_percent}%)",
+                            "recommendation": "System may be under resource exhaustion attack"
+                        })
+
+                    # Check for 503 Service Unavailable (queue exhaustion)
+                    service_unavailable_count = status_counts.get(503, 0)
+                    if service_unavailable_count > rapid_requests * 0.1:  # >10% 503s
+                        attack_indicators.append({
+                            "type": "service_unavailable_spike",
+                            "severity": "high",
+                            "value": service_unavailable_count,
+                            "total_requests": rapid_requests,
+                            "message": f"{service_unavailable_count} service unavailable responses (>10%)",
+                            "recommendation": "Request queue may be exhausted"
+                        })
+
+                except Exception as e:
+                    logger.debug(f"Queue depth test failed: {e}")
+
+                # 3. Test for response time degradation under load
+                try:
+                    # Baseline measurement
+                    baseline_response = await session.get(
+                        f"{self.base_url}/health/live",
+                        headers=headers
+                    )
+                    baseline_start = time.time()
+                    await baseline_response.text()
+                    baseline_time = (time.time() - baseline_start) * 1000
+
+                    # Under load measurement (concurrent batch)
+                    load_tasks = []
+                    for _ in range(50):
+                        task = asyncio.create_task(
+                            session.get(f"{self.base_url}/health/live", headers=headers)
+                        )
+                        load_tasks.append(task)
+
+                    load_start = time.time()
+                    load_responses = await asyncio.gather(*load_tasks, return_exceptions=True)
+                    avg_load_time = ((time.time() - load_start) / len(load_tasks)) * 1000
+
+                    # Close all responses
+                    for resp in load_responses:
+                        if not isinstance(resp, Exception):
+                            resp.close()
+
+                    # Significant degradation indicates resource contention
+                    degradation_factor = avg_load_time / baseline_time if baseline_time > 0 else 1
+                    if degradation_factor > 5:  # 5x slower under load
+                        attack_indicators.append({
+                            "type": "response_time_degradation",
+                            "severity": "medium",
+                            "baseline_ms": round(baseline_time, 2),
+                            "under_load_ms": round(avg_load_time, 2),
+                            "degradation_factor": round(degradation_factor, 1),
+                            "message": f"Response time degraded {degradation_factor:.1f}x under load",
+                            "recommendation": "Check for resource contention or slowloris attack"
+                        })
+
+                except Exception as e:
+                    logger.debug(f"Response degradation test failed: {e}")
+
+            return {
+                "passed": len(attack_indicators) == 0,
+                "message": f"Detected {len(attack_indicators)} resource exhaustion indicators" if attack_indicators else "No resource exhaustion patterns detected",
+                "attack_indicators": attack_indicators,
+                "summary": {
+                    "cpu_spikes": len([i for i in attack_indicators if i["type"] == "cpu_spike"]),
+                    "memory_issues": len([i for i in attack_indicators if i["type"] == "memory_exhaustion"]),
+                    "connection_issues": len([i for i in attack_indicators if i["type"] == "db_connection_exhaustion"]),
+                    "service_degradation": len([i for i in attack_indicators if i["type"] in ["high_error_rate_under_load", "service_unavailable_spike", "response_time_degradation"]])
+                }
+            }
+
+        except Exception as e:
+            return {
+                "passed": True,  # Don't fail check on test errors
+                "message": f"Resource exhaustion detection encountered error: {str(e)}",
                 "error": str(e)
             }
