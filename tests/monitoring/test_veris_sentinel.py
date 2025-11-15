@@ -1952,3 +1952,202 @@ class TestAutonomousConfiguration:
                 del os.environ['S8_APP_LATENCY_MS']
         assert check.app_latency_threshold_ms < check.max_response_time_ms, \
             "Application latency threshold should be lower than total response time threshold"
+
+
+class TestS7ConfigParityValidation:
+    """Comprehensive tests for S7 config parity environment variable validation."""
+
+    @pytest.fixture
+    def s7_check(self):
+        """Create S7 check instance for testing."""
+        from src.monitoring.sentinel.checks.s7_config_parity import ConfigParity
+        config = SentinelConfig(target_base_url="http://test:8000")
+        return ConfigParity(config)
+
+    def test_s7_optional_env_vars_includes_mcp_vars(self, s7_check):
+        """Test that S7 optional env vars includes MCP_INTERNAL_URL and MCP_FORWARD_TIMEOUT."""
+        assert "MCP_INTERNAL_URL" in s7_check.optional_env_vars
+        assert "MCP_FORWARD_TIMEOUT" in s7_check.optional_env_vars
+
+    @pytest.mark.asyncio
+    async def test_s7_validates_mcp_url_with_protocol(self, s7_check, mocker):
+        """Test S7 accepts valid MCP_INTERNAL_URL with http/https protocol."""
+        mocker.patch.dict('os.environ', {
+            'MCP_INTERNAL_URL': 'http://localhost:8000',
+            'LOG_LEVEL': 'INFO'
+        }, clear=True)
+
+        # Mock HTTP client
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.json = mocker.AsyncMock(return_value={"success": True, "config": {}})
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        result = await s7_check._check_environment_variables()
+
+        config_issues = result.get("config_issues", [])
+        assert not any("MCP_INTERNAL_URL" in issue for issue in config_issues)
+
+    @pytest.mark.asyncio
+    async def test_s7_rejects_mcp_url_without_protocol(self, s7_check, mocker):
+        """Test S7 rejects MCP_INTERNAL_URL without http/https protocol."""
+        mocker.patch.dict('os.environ', {
+            'MCP_INTERNAL_URL': 'localhost:8000',  # Missing protocol
+            'LOG_LEVEL': 'INFO'
+        }, clear=True)
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.json = mocker.AsyncMock(return_value={"success": True, "config": {}})
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        result = await s7_check._check_environment_variables()
+
+        config_issues = result.get("config_issues", [])
+        assert any("MCP_INTERNAL_URL format invalid" in issue for issue in config_issues)
+
+    @pytest.mark.asyncio
+    async def test_s7_rejects_mcp_url_with_whitespace(self, s7_check, mocker):
+        """Test S7 rejects MCP_INTERNAL_URL containing whitespace."""
+        mocker.patch.dict('os.environ', {
+            'MCP_INTERNAL_URL': 'http://localhost :8000',  # Contains space
+            'LOG_LEVEL': 'INFO'
+        }, clear=True)
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.json = mocker.AsyncMock(return_value={"success": True, "config": {}})
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        result = await s7_check._check_environment_variables()
+
+        config_issues = result.get("config_issues", [])
+        assert any("MCP_INTERNAL_URL" in issue and "whitespace" in issue for issue in config_issues)
+
+    @pytest.mark.asyncio
+    async def test_s7_validates_mcp_timeout_in_range(self, s7_check, mocker):
+        """Test S7 accepts MCP_FORWARD_TIMEOUT in valid range (0-300)."""
+        mocker.patch.dict('os.environ', {
+            'MCP_FORWARD_TIMEOUT': '60',  # Valid
+            'LOG_LEVEL': 'INFO'
+        }, clear=True)
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.json = mocker.AsyncMock(return_value={"success": True, "config": {}})
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        result = await s7_check._check_environment_variables()
+
+        config_issues = result.get("config_issues", [])
+        assert not any("MCP_FORWARD_TIMEOUT" in issue for issue in config_issues)
+
+    @pytest.mark.asyncio
+    async def test_s7_rejects_mcp_timeout_too_high(self, s7_check, mocker):
+        """Test S7 rejects MCP_FORWARD_TIMEOUT above 300 seconds."""
+        mocker.patch.dict('os.environ', {
+            'MCP_FORWARD_TIMEOUT': '500',  # Too high
+            'LOG_LEVEL': 'INFO'
+        }, clear=True)
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.json = mocker.AsyncMock(return_value={"success": True, "config": {}})
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        result = await s7_check._check_environment_variables()
+
+        config_issues = result.get("config_issues", [])
+        assert any("MCP_FORWARD_TIMEOUT" in issue and "range" in issue for issue in config_issues)
+
+    @pytest.mark.asyncio
+    async def test_s7_rejects_mcp_timeout_zero(self, s7_check, mocker):
+        """Test S7 rejects MCP_FORWARD_TIMEOUT of zero."""
+        mocker.patch.dict('os.environ', {
+            'MCP_FORWARD_TIMEOUT': '0',  # Invalid - must be positive
+            'LOG_LEVEL': 'INFO'
+        }, clear=True)
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.json = mocker.AsyncMock(return_value={"success": True, "config": {}})
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        result = await s7_check._check_environment_variables()
+
+        config_issues = result.get("config_issues", [])
+        assert any("MCP_FORWARD_TIMEOUT" in issue and "range" in issue for issue in config_issues)
+
+    @pytest.mark.asyncio
+    async def test_s7_rejects_non_numeric_mcp_timeout(self, s7_check, mocker):
+        """Test S7 rejects non-numeric MCP_FORWARD_TIMEOUT."""
+        mocker.patch.dict('os.environ', {
+            'MCP_FORWARD_TIMEOUT': 'not-a-number',
+            'LOG_LEVEL': 'INFO'
+        }, clear=True)
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.json = mocker.AsyncMock(return_value={"success": True, "config": {}})
+        mock_response.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mock_session = mocker.AsyncMock()
+        mock_session.get = mocker.AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = mocker.AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        mocker.patch('aiohttp.ClientSession', return_value=mock_session)
+
+        result = await s7_check._check_environment_variables()
+
+        config_issues = result.get("config_issues", [])
+        assert any("MCP_FORWARD_TIMEOUT" in issue and "number" in issue for issue in config_issues)

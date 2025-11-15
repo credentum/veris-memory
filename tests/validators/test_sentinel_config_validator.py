@@ -196,5 +196,193 @@ class TestSentinelValidatorCLI:
         assert "All Sentinel configuration validations passed" in result.stdout
 
 
+class TestSentinelValidatorEdgeCases:
+    """Test edge cases and error handling for sentinel validator."""
+
+    def test_validator_handles_missing_checks_directory(self):
+        """Test validator handles missing sentinel checks directory gracefully."""
+        with pytest.raises(ValueError, match="Sentinel checks directory not found"):
+            SentinelConfigValidator(sentinel_checks_dir="/nonexistent/path")
+
+    def test_validator_handles_missing_s10_file(self):
+        """Test validator handles missing S10 file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = SentinelConfigValidator(sentinel_checks_dir=tmpdir)
+            is_valid, errors = validator.validate_s10_mcp_field_names()
+
+            assert not is_valid
+            assert len(errors) == 1
+            assert "S10 check file not found" in errors[0]
+
+    def test_validator_handles_empty_s10_file(self):
+        """Test validator handles empty S10 file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_s10 = Path(tmpdir) / "s10_content_pipeline.py"
+            mock_s10.write_text("")  # Empty file
+
+            validator = SentinelConfigValidator(sentinel_checks_dir=tmpdir)
+            is_valid, errors = validator.validate_s10_mcp_field_names()
+
+            assert not is_valid
+            assert any("must use MCP field 'content_type'" in err for err in errors)
+
+    def test_validator_handles_malformed_python_syntax(self):
+        """Test validator doesn't crash on malformed Python (treats as text)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_s10 = Path(tmpdir) / "s10_content_pipeline.py"
+            # Write malformed Python - missing closing quote
+            mock_s10.write_text('def foo():\n    x = "unclosed string\n')
+
+            validator = SentinelConfigValidator(sentinel_checks_dir=tmpdir)
+            # Should not crash, just analyze as text
+            is_valid, errors = validator.validate_s10_mcp_field_names()
+
+            # Will fail because no content_type found
+            assert not is_valid
+
+    def test_validator_detects_multiple_violations_per_file(self):
+        """Test validator reports all violations, not just first one."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_s10 = Path(tmpdir) / "s10_content_pipeline.py"
+
+            # Multiple violations
+            mock_s10.write_text('''
+payload1 = {"context_type": "log"}  # Line 2 - WRONG
+payload2 = {"context_type": "design"}  # Line 3 - WRONG
+payload3 = {"context_type": "trace"}  # Line 4 - WRONG
+''')
+
+            validator = SentinelConfigValidator(sentinel_checks_dir=tmpdir)
+            is_valid, errors = validator.validate_s10_mcp_field_names()
+
+            assert not is_valid
+            assert len(errors) >= 3, "Should detect all 3 violations"
+
+    def test_validator_handles_mixed_quotes(self):
+        """Test validator detects violations with both single and double quotes."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_s10 = Path(tmpdir) / "s10_content_pipeline.py"
+
+            mock_s10.write_text('''
+payload1 = {"context_type": "log"}  # Double quotes - WRONG
+payload2 = {'context_type': 'log'}  # Single quotes - WRONG
+payload3 = {"content_type": "log"}  # CORRECT
+''')
+
+            validator = SentinelConfigValidator(sentinel_checks_dir=tmpdir)
+            is_valid, errors = validator.validate_s10_mcp_field_names()
+
+            assert not is_valid
+            assert len(errors) >= 2, "Should detect both double and single quote violations"
+
+    def test_validator_handles_multiline_payloads(self):
+        """Test validator works with payloads spanning multiple lines."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_s10 = Path(tmpdir) / "s10_content_pipeline.py"
+
+            mock_s10.write_text('''
+payload = {
+    "content_type": "log",
+    "content": {
+        "data": "test"
+    }
+}
+''')
+
+            validator = SentinelConfigValidator(sentinel_checks_dir=tmpdir)
+            is_valid, errors = validator.validate_s10_mcp_field_names()
+
+            assert is_valid, f"Should accept multiline payloads, got errors: {errors}"
+
+    def test_validator_handles_unicode_content(self):
+        """Test validator handles files with unicode characters."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_s10 = Path(tmpdir) / "s10_content_pipeline.py"
+
+            mock_s10.write_text('''
+# Test with unicode: émojis 🎉, Chinese: 测试, Arabic: اختبار
+payload = {"content_type": "log", "content": "test"}
+''', encoding='utf-8')
+
+            validator = SentinelConfigValidator(sentinel_checks_dir=tmpdir)
+            is_valid, errors = validator.validate_s10_mcp_field_names()
+
+            assert is_valid, "Should handle unicode content"
+
+    def test_validator_s9_s10_missing_files(self):
+        """Test MCP type validation when S9/S10 files are missing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = SentinelConfigValidator(sentinel_checks_dir=tmpdir)
+            is_valid, errors = validator.validate_s9_s10_mcp_types()
+
+            assert not is_valid
+            assert len(errors) >= 2  # Both S9 and S10 files missing
+            assert any("s9_graph_intent.py" in err for err in errors)
+            assert any("s10_content_pipeline.py" in err for err in errors)
+
+    def test_validator_detects_invalid_mcp_type_in_metadata(self):
+        """Test validator detects invalid MCP types even when used in nested structures."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "s9_graph_intent.py").write_text('''
+payload = {
+    "content_type": "graph_intent_test",  # WRONG - invalid MCP type
+    "metadata": {"test": "data"}
+}
+''')
+
+            validator = SentinelConfigValidator(sentinel_checks_dir=tmpdir)
+            is_valid, errors = validator.validate_s9_s10_mcp_types()
+
+            assert not is_valid
+            assert any("graph_intent_test" in err for err in errors)
+
+    def test_validate_all_checks_returns_all_errors(self):
+        """Test that validate_all_checks aggregates errors from all validation methods."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create S10 with wrong field name
+            (Path(tmpdir) / "s10_content_pipeline.py").write_text('''
+payload = {"context_type": "pipeline_test"}  # Two violations
+''')
+
+            validator = SentinelConfigValidator(sentinel_checks_dir=tmpdir)
+            all_valid, results = validator.validate_all_checks()
+
+            assert not all_valid
+            # Should have errors from both field name and MCP type checks
+            assert "s10_mcp_field_names" in results
+            assert "s9_s10_mcp_types" in results  # S9 missing file
+
+
+    def test_validator_cli_exit_code_on_failure(self):
+        """Test that CLI returns non-zero exit code when validation fails."""
+        import subprocess
+        import sys
+
+        # Create temporary invalid file
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "s10_content_pipeline.py").write_text('''
+payload = {"context_type": "log"}  # WRONG
+''')
+
+            # Create temporary validator script
+            validator_script = Path(tmpdir) / "test_validator.py"
+            validator_script.write_text(f'''
+import sys
+sys.path.insert(0, "{Path(__file__).parent.parent.parent}")
+from src.validators.sentinel_config_validator import SentinelConfigValidator
+
+validator = SentinelConfigValidator("{tmpdir}")
+all_valid, results = validator.validate_all_checks()
+sys.exit(0 if all_valid else 1)
+''')
+
+            result = subprocess.run(
+                [sys.executable, str(validator_script)],
+                capture_output=True
+            )
+
+            assert result.returncode != 0, "CLI should return non-zero on validation failure"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
