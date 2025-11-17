@@ -908,11 +908,11 @@ class ParaphraseRobustness(BaseCheck):
                         improvement_ratio = expanded_count / simple_count if simple_count > 0 else float('inf')
                         status_symbol = "✅" if expansion_effective else "❌"
                         logger.info("S3-DIAGNOSTIC:   %s Expansion effective: %s", status_symbol, expansion_effective)
-                        logger.info("S3-DIAGNOSTIC:     Improvement ratio: %sx", improvement_ratio:.2f)
+                        logger.info("S3-DIAGNOSTIC:     Improvement ratio: %.2fx", improvement_ratio)
 
                         if not expansion_effective:
                             logger.warning("S3-DIAGNOSTIC:     ⚠️ Expansion did NOT improve results")
-                            logger.warning("S3-DIAGNOSTIC:       Expected: more results OR (>=%sx count AND better score)", PARAPHRASE_SIMILARITY_THRESHOLD:.2f)
+                            logger.warning("S3-DIAGNOSTIC:       Expected: more results OR (>=%.2fx count AND better score)", PARAPHRASE_SIMILARITY_THRESHOLD)
 
                         expansion_results.append({
                             "simple_query": simple_query,
