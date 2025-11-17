@@ -207,6 +207,8 @@ class SecurityNegatives(BaseCheck):
         """Test unauthorized access to protected endpoints."""
         try:
             # Test protection on critical endpoints (404 is acceptable if endpoint doesn't exist)
+            # S5 Security Policy: Protect ALL admin endpoints in ALL environments
+            # "We practice like we play" - dev environment is production test ground
             protected_endpoints = [
                 "/api/v1/contexts",
                 "/api/store_context",
@@ -217,21 +219,11 @@ class SecurityNegatives(BaseCheck):
                 "/debug/info"
             ]
 
-            # In development mode, admin endpoints are intentionally unprotected
-            # (see src/api/routes/admin.py:44-46 - designed for development convenience)
-            environment = os.getenv("ENVIRONMENT", "development").lower()
-            is_dev_mode = environment in ["development", "dev"]
-
             access_violations = []
 
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 for endpoint in protected_endpoints:
                     try:
-                        # Skip admin endpoints in dev mode (intentionally unprotected)
-                        if is_dev_mode and endpoint.startswith("/api/admin"):
-                            logger.debug(f"Skipping {endpoint} in dev mode (intentionally unprotected)")
-                            continue
-
                         # Test without any authentication
                         async with session.get(f"{self.base_url}{endpoint}") as response:
                             # 200 is a violation (should require auth)
@@ -368,6 +360,8 @@ class SecurityNegatives(BaseCheck):
     async def _test_admin_endpoint_protection(self) -> Dict[str, Any]:
         """Test that admin endpoints require proper authentication."""
         try:
+            # S5 Security Policy: Protect ALL admin endpoints in ALL environments
+            # "We practice like we play" - dev environment is production test ground
             admin_endpoints = [
                 "/api/admin",
                 "/api/admin/users",
@@ -378,20 +372,11 @@ class SecurityNegatives(BaseCheck):
                 "/metrics/internal"
             ]
 
-            # In development mode, admin endpoints are intentionally unprotected
-            environment = os.getenv("ENVIRONMENT", "development").lower()
-            is_dev_mode = environment in ["development", "dev"]
-
             admin_violations = []
 
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 for endpoint in admin_endpoints:
                     try:
-                        # Skip /api/admin/* endpoints in dev mode (intentionally unprotected)
-                        if is_dev_mode and endpoint.startswith("/api/admin"):
-                            logger.debug(f"Skipping {endpoint} in dev mode (intentionally unprotected)")
-                            continue
-
                         async with session.get(f"{self.base_url}{endpoint}") as response:
                             # Admin endpoints should return 401, 403, 404, or 405
                             # 200 or 500 might indicate vulnerability
