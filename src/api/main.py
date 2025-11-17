@@ -20,7 +20,6 @@ from fastapi.openapi.utils import get_openapi
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
 
 # API routes
 from .routes import search, health, metrics
@@ -391,16 +390,12 @@ def create_app() -> FastAPI:
 
     # Rate limiting (S5 security fix - prevent brute force attacks)
     # Apply globally to all endpoints to prevent authentication brute force
-    limiter = Limiter(key_func=get_remote_address)
-    app.state.limiter = limiter
-
-    # Add middleware to apply rate limiting globally (20 requests/minute)
-    app.add_middleware(
-        SlowAPIMiddleware,
-        limiter=limiter,
-        default_limits=["20/minute"]
+    # Using application_limits to apply 20/minute limit to ALL routes globally
+    limiter = Limiter(
+        key_func=get_remote_address,
+        application_limits=["20/minute"]  # Global limit for all endpoints
     )
-
+    app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # Security middleware
