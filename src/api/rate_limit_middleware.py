@@ -137,7 +137,35 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         - Method not allowed (405)
         - Not found (404)
         - All other responses
+
+        EXEMPTIONS (Fix for Sentinel rate limit issue):
+        - Sentinel monitoring: Exempt requests with valid SENTINEL_API_KEY
+        - Allows Sentinel to run comprehensive checks (~48 queries/cycle)
+        - Maintains security for public/unauthenticated requests
         """
+
+        # EXEMPTION: Check for Sentinel API key (monitoring exemption)
+        # Sentinel needs ~48 queries per cycle, which exceeds 20/min limit
+        # This exemption allows monitoring while maintaining security for public requests
+        api_key_header = request.headers.get("x-api-key", "")
+        sentinel_api_key = os.getenv("SENTINEL_API_KEY", "")
+
+        if api_key_header and sentinel_api_key:
+            # Extract key portion (before colon if present: vmk_xxx_yyy:user:role:agent)
+            api_key_base = api_key_header.split(":")[0]
+            sentinel_key_base = sentinel_api_key.split(":")[0]
+
+            if api_key_base == sentinel_key_base:
+                # Bypass rate limit for Sentinel monitoring
+                api_logger.debug(
+                    "Rate limit bypassed for Sentinel monitoring",
+                    path=request.url.path,
+                    reason="sentinel_api_key_match"
+                )
+                response = await call_next(request)
+                # Add headers to indicate exemption
+                response.headers["X-RateLimit-Exempt"] = "sentinel_monitoring"
+                return response
 
         # Get client IP address
         client_ip = get_remote_address(request)
