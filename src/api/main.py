@@ -24,6 +24,7 @@ from slowapi.errors import RateLimitExceeded
 # API routes
 from .routes import search, health, metrics
 from .middleware import ErrorHandlerMiddleware, ValidationMiddleware, LoggingMiddleware
+from .rate_limit_middleware import RateLimitMiddleware
 from .models import ErrorResponse
 from .dependencies import set_query_dispatcher, get_query_dispatcher
 
@@ -389,18 +390,24 @@ def create_app() -> FastAPI:
     )
 
     # Rate limiting (S5 security fix - prevent brute force attacks)
-    # Apply globally to all endpoints to prevent authentication brute force
-    # Using application_limits to apply 20/minute limit to ALL routes globally
-    limiter = Limiter(
-        key_func=get_remote_address,
-        application_limits=["20/minute"]  # Global limit for all endpoints
-    )
+    # Apply globally to ALL requests including 405/404 responses
+    # Uses custom middleware that runs before FastAPI routing
+    limiter = Limiter(key_func=get_remote_address)
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+    # Rate limit middleware (S5 security fix)
+    # MUST be added FIRST to run before all other middleware
+    # This ensures rate limiting applies to ALL requests, including 405/404
+    app.add_middleware(
+        RateLimitMiddleware,
+        limiter=limiter,
+        limit="20/minute"
+    )
+
     # Security middleware
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])  # Configure appropriately for production
-    
+
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -409,10 +416,10 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
-    
+
     # Custom middleware (applied in reverse order)
     app.add_middleware(ErrorHandlerMiddleware)
-    app.add_middleware(ValidationMiddleware) 
+    app.add_middleware(ValidationMiddleware)
     app.add_middleware(LoggingMiddleware)
     
     # Include routers

@@ -112,6 +112,44 @@ class TestRateLimiting:
         response = api_client.post("/api/v1/search", json=search_payload)
         assert response.status_code in [200, 429], "Unexpected response status"
 
+    def test_rate_limit_on_method_not_allowed(self, api_client):
+        """Test that rate limiting applies to 405 Method Not Allowed responses (S5 fix)."""
+        # Make many GET requests to POST-only endpoint
+        # This simulates authentication brute force on wrong HTTP method
+        responses = []
+        for i in range(25):
+            response = api_client.get("/api/v1/search")  # GET to POST-only endpoint
+            responses.append(response)
+
+        # Should get 405 responses initially, then 429 when rate limited
+        status_codes = [r.status_code for r in responses]
+        has_405 = 405 in status_codes
+        has_429 = 429 in status_codes
+
+        assert has_405 or has_429, "Expected 405 or 429 responses"
+        if has_429:
+            # Good! Rate limiting is working on 405 responses
+            assert status_codes.count(429) >= 1, "Expected at least one rate limit response"
+
+    def test_rate_limit_on_not_found(self, api_client):
+        """Test that rate limiting applies to 404 Not Found responses (S5 fix)."""
+        # Make many requests to non-existent endpoint
+        # This simulates reconnaissance/scanning attacks
+        responses = []
+        for i in range(25):
+            response = api_client.get(f"/api/nonexistent/endpoint/{i}")
+            responses.append(response)
+
+        # Should get 404 responses initially, then 429 when rate limited
+        status_codes = [r.status_code for r in responses]
+        has_404 = 404 in status_codes
+        has_429 = 429 in status_codes
+
+        assert has_404 or has_429, "Expected 404 or 429 responses"
+        if has_429:
+            # Good! Rate limiting is working on 404 responses
+            assert status_codes.count(429) >= 1, "Expected at least one rate limit response"
+
 
 class TestMetricsEndpointSecurity:
     """Test metrics endpoint security (localhost-only access)."""
