@@ -9,6 +9,7 @@ S5 Security Fix: Prevents authentication brute force attacks by limiting
 ALL requests, not just those that reach route handlers.
 """
 
+import os
 import time
 import asyncio
 from typing import Callable, Dict, Tuple
@@ -70,6 +71,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Parse limit string to extract rate
         self._parse_limit(limit)
 
+        # Warning for production deployments with in-memory storage
+        self._check_production_deployment()
+
     def _parse_limit(self, limit: str) -> None:
         """Parse limit string into rate and period."""
         try:
@@ -96,6 +100,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             self.rate = 20
             self.period = "minute"
             self.period_seconds = 60
+
+    def _check_production_deployment(self) -> None:
+        """
+        Check if running in production with in-memory storage and warn.
+
+        In-memory storage only works for single-instance deployments.
+        Multi-instance deployments need Redis or another distributed storage backend.
+        """
+        environment = os.getenv("ENVIRONMENT", "development").lower()
+        redis_url = os.getenv("REDIS_URL", "")
+
+        if environment in ["production", "prod"] and not redis_url:
+            api_logger.warning(
+                "⚠️ Rate limiting using in-memory storage in PRODUCTION environment. "
+                "This only works correctly for single-instance deployments. "
+                "For multi-instance deployments, configure Redis backend via REDIS_URL environment variable.",
+                environment=environment,
+                redis_configured=bool(redis_url)
+            )
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """
