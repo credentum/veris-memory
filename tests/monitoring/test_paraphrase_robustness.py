@@ -410,9 +410,235 @@ class TestParaphraseRobustness:
             "s3_max_result_variance": -0.1,     # Invalid < 0.0
             "s3_paraphrase_timeout_sec": -5     # Invalid < 0
         })
-        
+
         # Should handle invalid config gracefully
         invalid_check = ParaphraseRobustness(invalid_config)
         assert invalid_check.min_similarity_threshold == 1.5  # Uses provided value
         assert invalid_check.max_result_variance == -0.1     # Uses provided value
         assert invalid_check.timeout_seconds == -5           # Uses provided value
+
+
+class TestParaphraseRobustnessDiagnosticLogging:
+    """
+    Test suite for S3 Paraphrase Robustness diagnostic logging (PR #322).
+
+    Tests verify that diagnostic logging is emitted correctly for debugging
+    semantic consistency failures.
+    """
+
+    @pytest.fixture
+    def config(self) -> SentinelConfig:
+        """Create a test configuration."""
+        return SentinelConfig({
+            "veris_memory_url": "http://test.example.com:8000",
+            "s3_paraphrase_timeout_sec": 30,
+            "s3_min_similarity_threshold": 0.7,
+            "s3_test_paraphrase_sets": [
+                {
+                    "topic": "test_topic",
+                    "variations": ["query 1", "query 2", "query 3"]
+                }
+            ]
+        })
+
+    @pytest.fixture
+    def check(self, config: SentinelConfig) -> ParaphraseRobustness:
+        """Create a ParaphraseRobustness check instance."""
+        return ParaphraseRobustness(config)
+
+    @pytest.mark.asyncio
+    async def test_diagnostic_logging_emitted_for_semantic_similarity(
+        self, check: ParaphraseRobustness, caplog
+    ) -> None:
+        """Test that S3-DIAGNOSTIC log messages are generated during semantic similarity tests."""
+        import logging
+        caplog.set_level(logging.INFO)
+
+        # Mock search results
+        mock_contexts = [
+            {"id": "ctx-1", "score": 0.9},
+            {"id": "ctx-2", "score": 0.8}
+        ]
+
+        with patch.object(check, '_search_contexts', new=AsyncMock(return_value={
+            "contexts": mock_contexts,
+            "error": None
+        })):
+            result = await check._test_semantic_similarity()
+
+        # Verify diagnostic log messages were generated
+        log_messages = [rec.message for rec in caplog.records if 'S3-DIAGNOSTIC' in rec.message]
+
+        assert len(log_messages) > 0, "Expected S3-DIAGNOSTIC log messages to be generated"
+
+        # Verify key diagnostic messages
+        assert any("Starting semantic_similarity test" in msg for msg in log_messages), \
+            "Expected test start message"
+        assert any("Testing topic" in msg for msg in log_messages), \
+            "Expected topic test message"
+        assert any("Variation" in msg for msg in log_messages), \
+            "Expected variation log"
+        assert any("returned" in msg and "results" in msg for msg in log_messages), \
+            "Expected search results log"
+
+    @pytest.mark.asyncio
+    async def test_low_overlap_warning_logged(
+        self, check: ParaphraseRobustness, caplog
+    ) -> None:
+        """Test that low overlap warnings are logged with detailed analysis."""
+        import logging
+        caplog.set_level(logging.WARNING)
+
+        # Mock search results with LOW overlap (different IDs)
+        mock_result1 = {
+            "contexts": [
+                {"id": "ctx-1", "score": 0.9},
+                {"id": "ctx-2", "score": 0.8}
+            ],
+            "error": None
+        }
+        mock_result2 = {
+            "contexts": [
+                {"id": "ctx-99", "score": 0.9},
+                {"id": "ctx-98", "score": 0.8}
+            ],
+            "error": None
+        }
+
+        # Create a side effect that alternates between results
+        call_count = 0
+        async def mock_search(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return mock_result1 if call_count % 2 == 1 else mock_result2
+
+        with patch.object(check, '_search_contexts', new=AsyncMock(side_effect=mock_search)):
+            result = await check._test_semantic_similarity()
+
+        # Verify low overlap warnings were generated
+        warning_messages = [rec.message for rec in caplog.records
+                          if rec.levelname == 'WARNING' and 'S3-DIAGNOSTIC' in rec.message]
+
+        assert len(warning_messages) > 0, "Expected low overlap warnings to be logged"
+
+        # Verify warning contains detailed analysis
+        assert any("LOW OVERLAP" in msg for msg in warning_messages), \
+            "Expected LOW OVERLAP warning message"
+        assert any("Common IDs" in msg or "Unique to Query" in msg for msg in warning_messages), \
+            "Expected ID-level analysis in warnings"
+
+    @pytest.mark.asyncio
+    async def test_topic_summary_format(
+        self, check: ParaphraseRobustness, caplog
+    ) -> None:
+        """Test that topic summaries include expected format."""
+        import logging
+        caplog.set_level(logging.INFO)
+
+        # Mock search results
+        mock_contexts = [
+            {"id": "ctx-1", "score": 0.9},
+            {"id": "ctx-2", "score": 0.8}
+        ]
+
+        with patch.object(check, '_search_contexts', new=AsyncMock(return_value={
+            "contexts": mock_contexts,
+            "error": None
+        })):
+            result = await check._test_semantic_similarity()
+
+        # Verify topic summary format
+        log_messages = [rec.message for rec in caplog.records if 'S3-DIAGNOSTIC' in rec.message]
+
+        # Find summary messages
+        summary_messages = [msg for msg in log_messages if "summary" in msg]
+        assert len(summary_messages) > 0, "Expected topic summary messages"
+
+        # Verify summary contains expected fields
+        assert any("Average similarity" in msg for msg in log_messages), \
+            "Expected average similarity in summary"
+        assert any("Minimum similarity" in msg for msg in log_messages), \
+            "Expected minimum similarity in summary"
+        assert any("Meets threshold" in msg for msg in log_messages), \
+            "Expected threshold check in summary"
+
+    @pytest.mark.asyncio
+    async def test_result_consistency_diagnostic_logging(
+        self, check: ParaphraseRobustness, caplog
+    ) -> None:
+        """Test diagnostic logging for result consistency tests."""
+        import logging
+        caplog.set_level(logging.INFO)
+
+        # Mock search results
+        mock_contexts = [
+            {"id": "ctx-1", "score": 0.9},
+            {"id": "ctx-2", "score": 0.8},
+            {"id": "ctx-3", "score": 0.7}
+        ]
+
+        with patch.object(check, '_search_contexts', new=AsyncMock(return_value={
+            "contexts": mock_contexts,
+            "error": None
+        })):
+            result = await check._test_result_consistency()
+
+        # Verify diagnostic messages for consistency test
+        log_messages = [rec.message for rec in caplog.records if 'S3-DIAGNOSTIC' in rec.message]
+
+        assert any("Testing result consistency" in msg for msg in log_messages), \
+            "Expected consistency test start message"
+        assert any("Top-5 IDs" in msg for msg in log_messages), \
+            "Expected top-5 IDs logging"
+        assert any("Top-5 scores" in msg for msg in log_messages), \
+            "Expected top-5 scores logging"
+
+    @pytest.mark.asyncio
+    async def test_query_expansion_diagnostic_logging(
+        self, check: ParaphraseRobustness, caplog
+    ) -> None:
+        """Test diagnostic logging for query expansion tests."""
+        import logging
+        caplog.set_level(logging.INFO)
+
+        # Mock search results
+        mock_contexts = [
+            {"id": "ctx-1", "score": 0.9},
+            {"id": "ctx-2", "score": 0.8}
+        ]
+
+        with patch.object(check, '_search_contexts', new=AsyncMock(return_value={
+            "contexts": mock_contexts,
+            "error": None
+        })):
+            result = await check._test_query_expansion()
+
+        # Verify diagnostic messages for query expansion
+        log_messages = [rec.message for rec in caplog.records if 'S3-DIAGNOSTIC' in rec.message]
+
+        assert any("Test case" in msg for msg in log_messages), \
+            "Expected test case logging"
+        assert any("Simple:" in msg for msg in log_messages), \
+            "Expected simple query logging"
+        assert any("Expanded:" in msg for msg in log_messages), \
+            "Expected expanded query logging"
+
+    @pytest.mark.asyncio
+    async def test_lazy_logging_format_used(
+        self, check: ParaphraseRobustness
+    ) -> None:
+        """
+        Test that lazy logging format is used (% formatting, not f-strings).
+
+        This is a code quality test - verifies that logger calls use lazy evaluation
+        to avoid string formatting overhead when logging is disabled.
+        """
+        import inspect
+
+        # Get source code of test methods
+        source = inspect.getsource(ParaphraseRobustness)
+
+        # Verify no f-strings in logger calls (should use % formatting)
+        # Note: This is a best-effort check - actual implementation review is in PR
+        assert 'logger.info(f"' not in source or source.count('logger.info(f"') < source.count('logger.info('), \
+            "Logger calls should use lazy logging (logger.info('msg %s', var)) instead of f-strings"

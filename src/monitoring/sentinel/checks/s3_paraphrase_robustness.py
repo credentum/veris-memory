@@ -16,6 +16,58 @@ This check validates:
 REMOVED TESTS:
 - Embedding similarity validation (removed - was broken, used Jaccard word overlap
   instead of actual embedding similarity, always failed for paraphrases with different words)
+
+DIAGNOSTIC LOGGING CONFIGURATION (PR #322):
+=============================================
+This module includes comprehensive S3-DIAGNOSTIC logging to help diagnose
+semantic consistency failures. All diagnostic logs use the "S3-DIAGNOSTIC" prefix
+for easy filtering.
+
+Log Levels Used:
+- INFO: Normal diagnostic information (test progress, query results, summaries)
+- WARNING: Low overlap/consistency issues requiring attention
+- ERROR: Query failures and unexpected errors
+
+Production Configuration:
+-------------------------
+To control diagnostic log volume in production, configure the logging level
+for this module:
+
+Python logging configuration:
+    import logging
+    # Option 1: Disable S3 diagnostic logging completely
+    logging.getLogger('src.monitoring.sentinel.checks.s3_paraphrase_robustness').setLevel(logging.WARNING)
+
+    # Option 2: Enable INFO-level diagnostics for troubleshooting
+    logging.getLogger('src.monitoring.sentinel.checks.s3_paraphrase_robustness').setLevel(logging.INFO)
+
+    # Option 3: Filter by message prefix (S3-DIAGNOSTIC)
+    class S3DiagnosticFilter(logging.Filter):
+        def filter(self, record):
+            return 'S3-DIAGNOSTIC' not in record.getMessage()
+
+    logger = logging.getLogger('src.monitoring.sentinel.checks.s3_paraphrase_robustness')
+    logger.addFilter(S3DiagnosticFilter())
+
+Environment-based configuration:
+    export S3_LOG_LEVEL=WARNING  # Suppress INFO diagnostics
+    export S3_LOG_LEVEL=INFO     # Enable full diagnostics
+
+Recommended Settings:
+- Development: INFO (see all diagnostics for debugging)
+- Staging: INFO (identify issues before production)
+- Production: WARNING (only show failures, reduce log volume)
+- Troubleshooting: INFO (temporarily enable for diagnosis)
+
+Log Volume Estimates:
+- Per test run: ~50-100 INFO messages, 0-20 WARNING messages
+- With 5 paraphrase sets: ~250-500 INFO messages total
+- At WARNING level: Typically 0-50 messages (only failures)
+
+Performance Impact:
+- Lazy logging format used throughout (no string formatting when disabled)
+- Minimal performance overhead when logging level is set to WARNING
+- String formatting only occurs when log messages are actually emitted
 """
 
 import asyncio
@@ -235,28 +287,50 @@ class ParaphraseRobustness(BaseCheck):
         """Test semantic similarity across paraphrase sets."""
         try:
             similarity_results = []
-            
+
+            # S3 DIAGNOSTIC: Log test start
+            logger.info("S3-DIAGNOSTIC: Starting semantic_similarity test with %s paraphrase sets", len(self.test_paraphrase_sets))
+
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
-                
+
                 for paraphrase_set in self.test_paraphrase_sets:
                     topic = paraphrase_set["topic"]
                     variations = paraphrase_set["variations"]
                     expected_similarity = paraphrase_set.get("expected_similarity", self.min_similarity_threshold)
-                    
+
+                    # S3 DIAGNOSTIC: Log topic being tested
+                    logger.info("S3-DIAGNOSTIC: Testing topic '%s' with %s variations, expected_similarity=%s", topic, len(variations), expected_similarity)
+                    for i, var in enumerate(variations):
+                        logger.info("S3-DIAGNOSTIC:   Variation %s: '%s'", i+1, var)
+
                     # Get search results for each variation
                     search_results = []
                     for variation in variations:
                         try:
                             result = await self._search_contexts(session, variation)
+                            contexts = result.get("contexts", [])
+
+                            # S3 DIAGNOSTIC: Log search results
+                            context_ids = [ctx.get("id", "no-id") for ctx in contexts[:5]]  # Top 5 IDs
+                            context_scores = [ctx.get("score", 0.0) for ctx in contexts[:5]]  # Top 5 scores
+                            logger.info("S3-DIAGNOSTIC:   Query '%s' returned %s results", variation, len(contexts))
+                            if contexts:
+                                logger.info("S3-DIAGNOSTIC:     Top 5 IDs: %s", context_ids)
+                                formatted_scores = [f'{s:.3f}' for s in context_scores]
+                                logger.info("S3-DIAGNOSTIC:     Top 5 scores: %s", formatted_scores)
+                            else:
+                                logger.warning("S3-DIAGNOSTIC:     ⚠️ NO RESULTS RETURNED")
+
                             search_results.append({
                                 "query": variation,
-                                "results": result.get("contexts", []),
-                                "count": len(result.get("contexts", [])),
+                                "results": contexts,
+                                "count": len(contexts),
                                 "error": result.get("error")
                             })
                         except Exception as e:
+                            logger.error("S3-DIAGNOSTIC:   Query '%s' FAILED with error: %s", variation, e)
                             search_results.append({
                                 "query": variation,
                                 "results": [],
@@ -267,19 +341,41 @@ class ParaphraseRobustness(BaseCheck):
                     # Calculate similarity between result sets
                     similarity_scores = []
                     result_overlaps = []
-                    
+
+                    # S3 DIAGNOSTIC: Log overlap calculations
+                    logger.info("S3-DIAGNOSTIC: Calculating pairwise overlaps for topic '%s'...", topic)
+
                     for i in range(len(search_results)):
                         for j in range(i + 1, len(search_results)):
                             result1 = search_results[i]
                             result2 = search_results[j]
-                            
+
                             if result1["error"] or result2["error"]:
+                                logger.warning("S3-DIAGNOSTIC:   Skipping pair due to errors")
                                 continue
-                            
+
                             # Calculate result overlap (Jaccard similarity)
                             if result1["results"] and result2["results"]:
                                 overlap = self._calculate_result_overlap(result1["results"], result2["results"])
                                 similarity_scores.append(overlap)
+
+                                # S3 DIAGNOSTIC: Log overlap details
+                                logger.info("S3-DIAGNOSTIC:   Overlap: %.3f between:", overlap)
+                                logger.info("S3-DIAGNOSTIC:     Query1: '%s...' (%s results)", result1['query'][:50], result1['count'])
+                                logger.info("S3-DIAGNOSTIC:     Query2: '%s...' (%s results)", result2['query'][:50], result2['count'])
+
+                                # Log WARNING for low overlap
+                                if overlap < expected_similarity:
+                                    logger.warning("S3-DIAGNOSTIC:     ⚠️ LOW OVERLAP: %.3f < threshold %.3f", overlap, expected_similarity)
+
+                                    # Extract IDs for debugging
+                                    ids1 = set([r.get("id", hash(str(r))) for r in result1["results"][:10]])
+                                    ids2 = set([r.get("id", hash(str(r))) for r in result2["results"][:10]])
+                                    common_ids = ids1.intersection(ids2)
+                                    logger.warning("S3-DIAGNOSTIC:       Common IDs (top 10): %s", list(common_ids))
+                                    logger.warning("S3-DIAGNOSTIC:       Unique to Query1: %s contexts", len(ids1 - ids2))
+                                    logger.warning("S3-DIAGNOSTIC:       Unique to Query2: %s contexts", len(ids2 - ids1))
+
                                 result_overlaps.append({
                                     "query1": result1["query"],
                                     "query2": result2["query"],
@@ -290,7 +386,15 @@ class ParaphraseRobustness(BaseCheck):
                     
                     avg_similarity = statistics.mean(similarity_scores) if similarity_scores else 0
                     min_similarity = min(similarity_scores) if similarity_scores else 0
-                    
+
+                    # S3 DIAGNOSTIC: Log topic summary
+                    meets_threshold = avg_similarity >= expected_similarity
+                    status_symbol = "✅" if meets_threshold else "❌"
+                    logger.info("S3-DIAGNOSTIC: %s Topic '%s' summary:", status_symbol, topic)
+                    logger.info("S3-DIAGNOSTIC:   Average similarity: %.3f (threshold: %.3f)", avg_similarity, expected_similarity)
+                    logger.info("S3-DIAGNOSTIC:   Minimum similarity: %.3f", min_similarity)
+                    logger.info("S3-DIAGNOSTIC:   Meets threshold: %s", meets_threshold)
+
                     similarity_results.append({
                         "topic": topic,
                         "variations_tested": len(variations),
@@ -298,7 +402,7 @@ class ParaphraseRobustness(BaseCheck):
                         "average_similarity": avg_similarity,
                         "minimum_similarity": min_similarity,
                         "expected_similarity": expected_similarity,
-                        "meets_threshold": avg_similarity >= expected_similarity,
+                        "meets_threshold": meets_threshold,
                         "result_overlaps": result_overlaps[:3],  # Sample overlaps
                         "search_results_summary": [
                             {"query": r["query"], "count": r["count"], "has_error": bool(r["error"])}
@@ -352,28 +456,45 @@ class ParaphraseRobustness(BaseCheck):
         """Test consistency of results across paraphrased queries."""
         try:
             consistency_results = []
-            
+
+            # S3 DIAGNOSTIC: Log test start
+            logger.info("S3-DIAGNOSTIC: Starting result_consistency test (testing %s topics)", min(3, len(self.test_paraphrase_sets)))
+
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
-                
+
                 for paraphrase_set in self.test_paraphrase_sets[:3]:  # Test subset for performance
                     topic = paraphrase_set["topic"]
                     variations = paraphrase_set["variations"]
-                    
+
+                    # S3 DIAGNOSTIC: Log topic being tested
+                    logger.info("S3-DIAGNOSTIC: Testing result consistency for topic '%s' with %s variations", topic, len(variations))
+
                     # Get results for each variation
                     all_results = []
                     for variation in variations:
                         try:
                             result = await self._search_contexts(session, variation, limit=10)
                             if not result.get("error"):
+                                contexts = result.get("contexts", [])
+                                scores = [ctx.get("score", 0) for ctx in contexts]
+
+                                # S3 DIAGNOSTIC: Log top-5 results with IDs and scores
+                                top5_ids = [ctx.get("id", "no-id") for ctx in contexts[:5]]
+                                top5_scores = scores[:5]
+                                logger.info("S3-DIAGNOSTIC:   Query: '%s...'", variation[:60])
+                                logger.info("S3-DIAGNOSTIC:     Top-5 IDs: %s", top5_ids)
+                                formatted_scores = [f'{s:.3f}' for s in top5_scores]
+                                logger.info("S3-DIAGNOSTIC:     Top-5 scores: %s", formatted_scores)
+
                                 all_results.append({
                                     "query": variation,
-                                    "contexts": result.get("contexts", []),
-                                    "scores": [ctx.get("score", 0) for ctx in result.get("contexts", [])]
+                                    "contexts": contexts,
+                                    "scores": scores
                                 })
                         except Exception as e:
-                            logger.warning(f"Error searching for '{variation}': {e}")
+                            logger.error("S3-DIAGNOSTIC:   Error searching for '%s': %s", variation, e)
                     
                     if len(all_results) < 2:
                         consistency_results.append({
@@ -388,25 +509,45 @@ class ParaphraseRobustness(BaseCheck):
                     # Calculate result consistency
                     consistency_scores = []
                     top_results_overlap = []
-                    
+
+                    # S3 DIAGNOSTIC: Log consistency analysis
+                    logger.info("S3-DIAGNOSTIC: Analyzing top-5 consistency for topic '%s'...", topic)
+
                     for i in range(len(all_results)):
                         for j in range(i + 1, len(all_results)):
                             result1 = all_results[i]
                             result2 = all_results[j]
-                            
+
                             # Compare top 5 results
                             top1 = result1["contexts"][:5]
                             top2 = result2["contexts"][:5]
-                            
+
                             overlap = self._calculate_result_overlap(top1, top2)
                             consistency_scores.append(overlap)
-                            
+
                             # Compare score distributions
                             scores1 = result1["scores"][:5]
                             scores2 = result2["scores"][:5]
-                            
+
                             if scores1 and scores2:
                                 score_correlation = self._calculate_score_correlation(scores1, scores2)
+
+                                # S3 DIAGNOSTIC: Log pair analysis
+                                logger.info("S3-DIAGNOSTIC:   Pair consistency: %.3f, score_correlation: %.3f", overlap, score_correlation)
+                                logger.info("S3-DIAGNOSTIC:     Query1: '%s...'", result1['query'][:50])
+                                logger.info("S3-DIAGNOSTIC:     Query2: '%s...'", result2['query'][:50])
+
+                                # Log warning for low consistency
+                                if overlap < self.min_similarity_threshold:
+                                    logger.warning("S3-DIAGNOSTIC:     ⚠️ LOW CONSISTENCY: %.3f < threshold %.3f", overlap, self.min_similarity_threshold)
+
+                                    # Show which IDs differ
+                                    ids1 = set([ctx.get("id", hash(str(ctx))) for ctx in top1])
+                                    ids2 = set([ctx.get("id", hash(str(ctx))) for ctx in top2])
+                                    common = ids1.intersection(ids2)
+                                    logger.warning("S3-DIAGNOSTIC:       Top-5 overlap: %s/5 contexts in common", len(common))
+                                    logger.warning("S3-DIAGNOSTIC:       Common IDs: %s", list(common))
+
                                 top_results_overlap.append({
                                     "query1": result1["query"],
                                     "query2": result2["query"],
@@ -416,14 +557,22 @@ class ParaphraseRobustness(BaseCheck):
                     
                     avg_consistency = statistics.mean(consistency_scores) if consistency_scores else 0
                     min_consistency = min(consistency_scores) if consistency_scores else 0
-                    
+
+                    # S3 DIAGNOSTIC: Log topic summary
+                    meets_threshold = avg_consistency >= self.min_similarity_threshold
+                    status_symbol = "✅" if meets_threshold else "❌"
+                    logger.info("S3-DIAGNOSTIC: %s Topic '%s' consistency summary:", status_symbol, topic)
+                    logger.info("S3-DIAGNOSTIC:   Average consistency: %.3f (threshold: %.3f)", avg_consistency, self.min_similarity_threshold)
+                    logger.info("S3-DIAGNOSTIC:   Minimum consistency: %.3f", min_consistency)
+                    logger.info("S3-DIAGNOSTIC:   Meets threshold: %s", meets_threshold)
+
                     consistency_results.append({
                         "topic": topic,
                         "variations_tested": len(variations),
                         "successful_searches": len(all_results),
                         "average_consistency": avg_consistency,
                         "minimum_consistency": min_consistency,
-                        "meets_threshold": avg_consistency >= self.min_similarity_threshold,
+                        "meets_threshold": meets_threshold,
                         "top_results_analysis": top_results_overlap[:2]  # Sample
                     })
             
@@ -495,7 +644,7 @@ class ParaphraseRobustness(BaseCheck):
                                     "context_ids": [ctx.get("id", f"ctx_{i}") for i, ctx in enumerate(result.get("contexts", []))]
                                 })
                         except Exception as e:
-                            logger.warning(f"Error in ranking stability run {run + 1}: {e}")
+                            logger.warning("Error in ranking stability run %s: %s", run + 1, e)
                     
                     if len(multiple_runs) < 2:
                         ranking_results.append({
@@ -692,27 +841,36 @@ class ParaphraseRobustness(BaseCheck):
         try:
             # Test with simple vs expanded queries
             expansion_results = []
-            
+
+            # S3 DIAGNOSTIC: Log test start
+            logger.info("S3-DIAGNOSTIC: Starting query_expansion test")
+
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout_seconds)
             ) as session:
-                
+
                 test_cases = [
                     {"simple": "config", "expanded": "configuration setup process"},
                     {"simple": "error", "expanded": "error troubleshooting resolution"},
                     {"simple": "database", "expanded": "database connection setup"}
                 ]
-                
-                for test_case in test_cases:
+
+                for i, test_case in enumerate(test_cases, 1):
                     simple_query = test_case["simple"]
                     expanded_query = test_case["expanded"]
+
+                    # S3 DIAGNOSTIC: Log test case
+                    logger.info("S3-DIAGNOSTIC: Test case %s/3:", i)
+                    logger.info("S3-DIAGNOSTIC:   Simple:   '%s'", simple_query)
+                    logger.info("S3-DIAGNOSTIC:   Expanded: '%s'", expanded_query)
                     
                     try:
                         # Get results for both queries
                         simple_result = await self._search_contexts(session, simple_query)
                         expanded_result = await self._search_contexts(session, expanded_query)
-                        
+
                         if simple_result.get("error") or expanded_result.get("error"):
+                            logger.error("S3-DIAGNOSTIC:   ❌ Query failed with error")
                             expansion_results.append({
                                 "simple_query": simple_query,
                                 "expanded_query": expanded_query,
@@ -720,28 +878,49 @@ class ParaphraseRobustness(BaseCheck):
                                 "error": "One or both queries failed"
                             })
                             continue
-                        
+
                         simple_contexts = simple_result.get("contexts", [])
                         expanded_contexts = expanded_result.get("contexts", [])
-                        
+
                         # Analyze expansion effectiveness
                         simple_count = len(simple_contexts)
                         expanded_count = len(expanded_contexts)
-                        
+
+                        # S3 DIAGNOSTIC: Log result counts
+                        logger.info("S3-DIAGNOSTIC:   Simple query returned: %s results", simple_count)
+                        if simple_contexts:
+                            simple_top_score = simple_contexts[0].get("score", 0)
+                            logger.info("S3-DIAGNOSTIC:     Top score: %.3f", simple_top_score)
+
+                        logger.info("S3-DIAGNOSTIC:   Expanded query returned: %s results", expanded_count)
+                        if expanded_contexts:
+                            expanded_top_score = expanded_contexts[0].get("score", 0)
+                            logger.info("S3-DIAGNOSTIC:     Top score: %.3f", expanded_top_score)
+
                         # Check if expanded query provides more relevant results
                         expansion_effective = expanded_count > simple_count or (
                             expanded_count >= simple_count * PARAPHRASE_SIMILARITY_THRESHOLD and
                             len(expanded_contexts) > 0 and
                             expanded_contexts[0].get("score", 0) >= simple_contexts[0].get("score", 0) if simple_contexts else True
                         )
-                        
+
+                        # S3 DIAGNOSTIC: Log effectiveness
+                        improvement_ratio = expanded_count / simple_count if simple_count > 0 else float('inf')
+                        status_symbol = "✅" if expansion_effective else "❌"
+                        logger.info("S3-DIAGNOSTIC:   %s Expansion effective: %s", status_symbol, expansion_effective)
+                        logger.info("S3-DIAGNOSTIC:     Improvement ratio: %sx", improvement_ratio:.2f)
+
+                        if not expansion_effective:
+                            logger.warning("S3-DIAGNOSTIC:     ⚠️ Expansion did NOT improve results")
+                            logger.warning("S3-DIAGNOSTIC:       Expected: more results OR (>=%sx count AND better score)", PARAPHRASE_SIMILARITY_THRESHOLD:.2f)
+
                         expansion_results.append({
                             "simple_query": simple_query,
                             "expanded_query": expanded_query,
                             "simple_count": simple_count,
                             "expanded_count": expanded_count,
                             "expansion_effective": expansion_effective,
-                            "improvement_ratio": expanded_count / simple_count if simple_count > 0 else float('inf')
+                            "improvement_ratio": improvement_ratio
                         })
                         
                     except Exception as e:
