@@ -107,17 +107,24 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         In-memory storage only works for single-instance deployments.
         Multi-instance deployments need Redis or another distributed storage backend.
+
+        Raises a CRITICAL warning in production without Redis to ensure operators
+        are aware of the limitation.
         """
         environment = os.getenv("ENVIRONMENT", "development").lower()
         redis_url = os.getenv("REDIS_URL", "")
 
         if environment in ["production", "prod"] and not redis_url:
-            api_logger.warning(
-                "⚠️ Rate limiting using in-memory storage in PRODUCTION environment. "
-                "This only works correctly for single-instance deployments. "
-                "For multi-instance deployments, configure Redis backend via REDIS_URL environment variable.",
+            api_logger.critical(
+                "🚨 CRITICAL: Rate limiting using IN-MEMORY storage in PRODUCTION environment. "
+                "⚠️  WARNING: This WILL NOT WORK correctly with multiple instances. "
+                "Rate limits will NOT be shared across instances, allowing attackers to bypass limits. "
+                "🔧 FIX: Configure Redis backend by setting REDIS_URL environment variable. "
+                "📖 For single-instance deployments, this is acceptable but should be documented.",
                 environment=environment,
-                redis_configured=bool(redis_url)
+                redis_configured=False,
+                single_instance_only=True,
+                security_risk="rate_limit_bypass_in_multi_instance"
             )
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
