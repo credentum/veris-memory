@@ -474,6 +474,37 @@ app = FastAPI(
     debug=False,  # Disable debug mode for production security
 )
 
+# Add rate limiting middleware (S5 security fix - MUST be added FIRST)
+# This prevents authentication brute force attacks by limiting ALL requests
+try:
+    from ..api.rate_limit_middleware import RateLimitMiddleware
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+
+    limiter = Limiter(key_func=get_remote_address)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    app.add_middleware(
+        RateLimitMiddleware,
+        limiter=limiter,
+        limit="20/minute"
+    )
+    logger.info("✅ Rate limiting middleware enabled: 20 requests/minute per IP")
+except ImportError as e:
+    # S5 Security: Fail-secure principle - rate limiting MUST be available in production
+    environment = os.getenv("ENVIRONMENT", "development")
+    error_msg = f"Rate limiting middleware not available: {e}"
+
+    if environment == "production":
+        # In production, rate limiting is MANDATORY - fail closed
+        logger.error(f"🚨 CRITICAL: {error_msg}")
+        raise RuntimeError(f"Production deployment requires rate limiting middleware: {e}") from e
+    else:
+        # In development, allow startup but log warning
+        logger.warning(f"⚠️ {error_msg} (allowed in {environment} environment)")
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,

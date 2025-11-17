@@ -21,8 +21,9 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -31,8 +32,81 @@ logger = logging.getLogger(__name__)
 MCP_INTERNAL_URL = os.getenv("MCP_INTERNAL_URL", "http://localhost:8000")
 MCP_FORWARD_TIMEOUT = float(os.getenv("MCP_FORWARD_TIMEOUT", "30.0"))
 
+# Security for admin endpoints
+security = HTTPBearer(auto_error=False)
+
 # Create router for REST compatibility endpoints
 router = APIRouter(prefix="/api", tags=["REST Compatibility"])
+
+
+# === Authentication & Security ===
+
+async def verify_localhost(request: Request) -> None:
+    """
+    Verify request is from localhost only (S5 security fix).
+
+    Admin endpoints and metrics should only be accessible from localhost
+    to prevent unauthorized access in all environments.
+
+    Policy: "We practice like we play" - dev environment is our production test ground.
+    No development mode exemptions allowed.
+    """
+    client_ip = request.client.host if request.client else None
+
+    if not client_ip or client_ip not in ["127.0.0.1", "::1", "localhost"]:
+        logger.warning(
+            f"Admin endpoint access denied - not from localhost",
+            extra={"client_ip": client_ip or "unknown", "path": request.url.path}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin endpoints are restricted to localhost access only"
+        )
+
+
+async def verify_admin_access(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+) -> None:
+    """
+    Verify admin access for administrative endpoints (S5 security fix).
+
+    Requires EITHER:
+    1. Request from localhost (most common for monitoring), OR
+    2. Valid ADMIN_API_KEY in Authorization header
+
+    NO development mode exemptions - enforced in ALL environments.
+    """
+    # Check if request is from localhost
+    client_ip = request.client.host if request.client else None
+
+    # Allow localhost without additional auth (for monitoring tools)
+    if client_ip in ["127.0.0.1", "::1", "localhost"]:
+        return
+
+    # For non-localhost: require ADMIN_API_KEY
+    if not credentials:
+        logger.warning(
+            f"Admin access denied - no credentials",
+            extra={"client_ip": client_ip or "unknown", "path": request.url.path}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required for admin endpoints",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    # Verify API key (required for non-localhost)
+    admin_key = os.getenv("ADMIN_API_KEY")
+    if not admin_key or credentials.credentials != admin_key:
+        logger.warning(
+            f"Admin access denied - invalid credentials",
+            extra={"client_ip": client_ip or "unknown", "path": request.url.path}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid admin credentials"
+        )
 
 
 # === Request/Response Models ===
@@ -298,11 +372,16 @@ async def get_context(
 
 
 @router.get("/admin/config")
-async def get_admin_config() -> Dict[str, Any]:
+async def get_admin_config(
+    request: Request,
+    _: None = Depends(verify_admin_access)
+) -> Dict[str, Any]:
     """
     Get system configuration (for S7 config parity check).
 
     Returns current system configuration including versions and settings.
+
+    S5 Security: Requires localhost access OR valid ADMIN_API_KEY.
     """
     try:
         return {
@@ -326,11 +405,16 @@ async def get_admin_config() -> Dict[str, Any]:
 
 
 @router.get("/admin/stats")
-async def get_admin_stats(request: Request) -> Dict[str, Any]:
+async def get_admin_stats(
+    request: Request,
+    _: None = Depends(verify_admin_access)
+) -> Dict[str, Any]:
     """
     Get system statistics (for sentinel monitoring).
 
     Returns operational statistics by forwarding to /metrics endpoint.
+
+    S5 Security: Requires localhost access OR valid ADMIN_API_KEY.
     """
     try:
         # Forward to the actual metrics endpoint which has real stats
@@ -367,11 +451,16 @@ async def get_admin_stats(request: Request) -> Dict[str, Any]:
 
 
 @router.get("/admin/users")
-async def get_admin_users() -> Dict[str, Any]:
+async def get_admin_users(
+    request: Request,
+    _: None = Depends(verify_admin_access)
+) -> Dict[str, Any]:
     """
     Get user list (placeholder for S5 security check).
 
     Returns empty user list - this endpoint exists for security testing.
+
+    S5 Security: Requires localhost access OR valid ADMIN_API_KEY.
     """
     return {
         "success": True,
@@ -381,9 +470,14 @@ async def get_admin_users() -> Dict[str, Any]:
 
 
 @router.get("/admin")
-async def get_admin_root() -> Dict[str, Any]:
+async def get_admin_root(
+    request: Request,
+    _: None = Depends(verify_admin_access)
+) -> Dict[str, Any]:
     """
     Admin root endpoint (for S5 security check).
+
+    S5 Security: Requires localhost access OR valid ADMIN_API_KEY.
     """
     return {
         "success": True,
@@ -449,8 +543,14 @@ async def health_indexing() -> RedirectResponse:
 # === Metrics Alias ===
 
 @router.get("/metrics")
-async def metrics_alias() -> RedirectResponse:
+async def metrics_alias(
+    request: Request,
+    _: None = Depends(verify_localhost)
+) -> RedirectResponse:
     """
     Metrics endpoint alias (redirects to /metrics at root).
+
+    S5 Security: Restricted to localhost access only.
+    This endpoint was a security vulnerability allowing unauthorized metrics access.
     """
     return RedirectResponse(url="/metrics", status_code=307)

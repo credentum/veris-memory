@@ -39,27 +39,29 @@ admin_router = APIRouter(
 
 
 async def verify_admin_access(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
-    """Verify admin access for administrative endpoints"""
-    
-    # In development, allow access without authentication
-    if os.getenv("ENVIRONMENT", "development").lower() in ["development", "dev"]:
-        return True
-    
+    """
+    Verify admin access for administrative endpoints (S5 security fix).
+
+    S5 Security Policy: NO development mode exemptions.
+    "We practice like we play" - dev environment is our production test ground.
+
+    Requires valid ADMIN_API_KEY in Authorization header in ALL environments.
+    """
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required for admin endpoints",
             headers={"WWW-Authenticate": "Bearer"}
         )
-    
-    # In production, verify API key (placeholder - implement proper auth)
+
+    # Verify API key in ALL environments (no dev exemptions)
     admin_key = os.getenv("ADMIN_API_KEY")
     if not admin_key or credentials.credentials != admin_key:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid admin credentials"
         )
-    
+
     return True
 
 
