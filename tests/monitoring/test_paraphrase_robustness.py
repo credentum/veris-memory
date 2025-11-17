@@ -68,25 +68,23 @@ class TestParaphraseRobustness:
             {"passed": True, "message": "Ranking stability verified"},
             {"passed": True, "message": "Context retrieval robust"},
             {"passed": True, "message": "Query expansion effective"},
-            {"passed": True, "message": "Embedding similarity validated"},
             {"passed": True, "message": "Response quality consistent"}
         ]
-        
+
         with patch.object(check, '_test_semantic_similarity', return_value=mock_results[0]):
             with patch.object(check, '_test_result_consistency', return_value=mock_results[1]):
                 with patch.object(check, '_test_ranking_stability', return_value=mock_results[2]):
                     with patch.object(check, '_test_context_retrieval_robustness', return_value=mock_results[3]):
                         with patch.object(check, '_test_query_expansion', return_value=mock_results[4]):
-                            with patch.object(check, '_validate_embedding_similarity', return_value=mock_results[5]):
-                                with patch.object(check, '_test_response_quality_consistency', return_value=mock_results[6]):
-                                    
-                                    result = await check.run_check()
-        
+                            with patch.object(check, '_test_response_quality_consistency', return_value=mock_results[5]):
+
+                                result = await check.run_check()
+
         assert result.check_id == "S3-paraphrase-robustness"
         assert result.status == "pass"
-        assert "All semantic robustness checks passed: 7 tests successful" in result.message
-        assert result.details["total_tests"] == 7
-        assert result.details["passed_tests"] == 7
+        assert "All semantic robustness checks passed: 6 tests successful" in result.message
+        assert result.details["total_tests"] == 6
+        assert result.details["passed_tests"] == 6
         assert result.details["failed_tests"] == 0
     
     @pytest.mark.asyncio
@@ -98,23 +96,21 @@ class TestParaphraseRobustness:
             {"passed": True, "message": "Ranking stability verified"},
             {"passed": True, "message": "Context retrieval robust"},
             {"passed": True, "message": "Query expansion effective"},
-            {"passed": True, "message": "Embedding similarity validated"},
             {"passed": True, "message": "Response quality consistent"}
         ]
-        
+
         with patch.object(check, '_test_semantic_similarity', return_value=mock_results[0]):
             with patch.object(check, '_test_result_consistency', return_value=mock_results[1]):
                 with patch.object(check, '_test_ranking_stability', return_value=mock_results[2]):
                     with patch.object(check, '_test_context_retrieval_robustness', return_value=mock_results[3]):
                         with patch.object(check, '_test_query_expansion', return_value=mock_results[4]):
-                            with patch.object(check, '_validate_embedding_similarity', return_value=mock_results[5]):
-                                with patch.object(check, '_test_response_quality_consistency', return_value=mock_results[6]):
-                                    
-                                    result = await check.run_check()
-        
+                            with patch.object(check, '_test_response_quality_consistency', return_value=mock_results[5]):
+
+                                result = await check.run_check()
+
         assert result.status == "fail"
         assert "Semantic robustness issues detected: 2 problems found" in result.message
-        assert result.details["passed_tests"] == 5
+        assert result.details["passed_tests"] == 4
         assert result.details["failed_tests"] == 2
     
     @pytest.mark.asyncio
@@ -287,17 +283,6 @@ class TestParaphraseRobustness:
         assert len(result["expansion_analysis"]) > 0
     
     @pytest.mark.asyncio
-    async def test_embedding_similarity_success(self, check: ParaphraseRobustness) -> None:
-        """Test successful embedding similarity validation."""
-        result = await check._validate_embedding_similarity()
-        
-        assert result["passed"] is True
-        assert "Embedding similarity validation" in result["message"]
-        assert result["avg_similarity_score"] >= 0.0
-        assert len(result["similarity_analysis"]) > 0
-        assert result["simulation_mode"] is True  # Should be in simulation mode
-    
-    @pytest.mark.asyncio
     async def test_response_quality_consistency_success(self, check: ParaphraseRobustness) -> None:
         """Test successful response quality consistency."""
         mock_response = AsyncMock()
@@ -388,18 +373,6 @@ class TestParaphraseRobustness:
         assert 0.0 <= stability <= 1.0
         # Should be 1.0 since ranking order is preserved
         assert stability == 1.0
-    
-    @pytest.mark.asyncio
-    async def test_simulate_embedding_similarity(self, check: ParaphraseRobustness) -> None:
-        """Test embedding similarity simulation."""
-        query1 = "test configuration setup"
-        query2 = "configure test settings"
-        
-        similarity = check._simulate_embedding_similarity(query1, query2)
-        
-        assert 0.0 <= similarity <= 1.0
-        # Should be relatively high for similar queries
-        assert similarity > 0.5
     
     @pytest.mark.asyncio
     async def test_run_check_with_exception(self, check: ParaphraseRobustness) -> None:
