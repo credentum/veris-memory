@@ -493,7 +493,17 @@ try:
     )
     logger.info("✅ Rate limiting middleware enabled: 20 requests/minute per IP")
 except ImportError as e:
-    logger.warning(f"⚠️ Rate limiting middleware not available: {e}")
+    # S5 Security: Fail-secure principle - rate limiting MUST be available in production
+    environment = os.getenv("ENVIRONMENT", "development")
+    error_msg = f"Rate limiting middleware not available: {e}"
+
+    if environment == "production":
+        # In production, rate limiting is MANDATORY - fail closed
+        logger.error(f"🚨 CRITICAL: {error_msg}")
+        raise RuntimeError(f"Production deployment requires rate limiting middleware: {e}") from e
+    else:
+        # In development, allow startup but log warning
+        logger.warning(f"⚠️ {error_msg} (allowed in {environment} environment)")
 
 # Add CORS middleware
 app.add_middleware(
