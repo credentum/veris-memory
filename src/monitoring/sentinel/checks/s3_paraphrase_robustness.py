@@ -730,7 +730,7 @@ class ParaphraseRobustness(BaseCheck):
                         
                         # Check if expanded query provides more relevant results
                         expansion_effective = expanded_count > simple_count or (
-                            expanded_count >= simple_count * EMBEDDING_SIMILARITY_THRESHOLD and
+                            expanded_count >= simple_count * PARAPHRASE_SIMILARITY_THRESHOLD and
                             len(expanded_contexts) > 0 and
                             expanded_contexts[0].get("score", 0) >= simple_contexts[0].get("score", 0) if simple_contexts else True
                         )
@@ -794,72 +794,7 @@ class ParaphraseRobustness(BaseCheck):
                 "message": f"Query expansion test failed: {str(e)}",
                 "error": str(e)
             }
-    
-    async def _validate_embedding_similarity(self) -> Dict[str, Any]:
-        """Validate embedding similarity for semantically related queries."""
-        try:
-            # This test simulates embedding similarity validation
-            # In a real implementation, this would use the actual embedding service
-            
-            similarity_tests = []
-            
-            for paraphrase_set in self.test_paraphrase_sets[:3]:  # Test subset
-                topic = paraphrase_set["topic"]
-                variations = paraphrase_set["variations"]
-                
-                # Simulate embedding similarity calculation
-                # In practice, this would call the embedding service
-                simulated_similarities = []
-                
-                for i in range(len(variations)):
-                    for j in range(i + 1, len(variations)):
-                        # Simulate similarity based on string similarity and topic
-                        sim_score = self._simulate_embedding_similarity(variations[i], variations[j])
-                        simulated_similarities.append({
-                            "query1": variations[i],
-                            "query2": variations[j],
-                            "similarity": sim_score
-                        })
-                
-                avg_similarity = statistics.mean([s["similarity"] for s in simulated_similarities]) if simulated_similarities else 0
-                min_similarity = min([s["similarity"] for s in simulated_similarities]) if simulated_similarities else 0
-                
-                similarity_tests.append({
-                    "topic": topic,
-                    "variations_count": len(variations),
-                    "similarity_pairs": len(simulated_similarities),
-                    "average_similarity": avg_similarity,
-                    "minimum_similarity": min_similarity,
-                    "meets_threshold": avg_similarity >= self.min_similarity_threshold,
-                    "similarity_samples": simulated_similarities[:3]  # Sample
-                })
-            
-            # Overall analysis
-            topics_tested = len(similarity_tests)
-            topics_passed = len([t for t in similarity_tests if t["meets_threshold"]])
-            
-            issues = []
-            for test in similarity_tests:
-                if not test["meets_threshold"]:
-                    issues.append(f"Topic '{test['topic']}': avg similarity {test['average_similarity']:.3f} below threshold")
-            
-            return {
-                "passed": len(issues) == 0,
-                "message": f"Embedding similarity validation: {topics_passed}/{topics_tested} topics passed" + (f", issues: {len(issues)}" if issues else ""),
-                "topics_tested": topics_tested,
-                "topics_passed": topics_passed,
-                "similarity_tests": similarity_tests,
-                "simulation_mode": True,
-                "issues": issues
-            }
-            
-        except Exception as e:
-            return {
-                "passed": False,
-                "message": f"Embedding similarity validation failed: {str(e)}",
-                "error": str(e)
-            }
-    
+
     async def _test_response_quality_consistency(self) -> Dict[str, Any]:
         """Test consistency of response quality across paraphrased queries."""
         try:
@@ -1063,24 +998,5 @@ class ParaphraseRobustness(BaseCheck):
         # Calculate Spearman rank correlation
         ranks1 = [rank_map1[item] for item in common_items]
         ranks2 = [rank_map2[item] for item in common_items]
-        
+
         return self._calculate_score_correlation(ranks1, ranks2)
-    
-    def _simulate_embedding_similarity(self, text1: str, text2: str) -> float:
-        """Simulate embedding similarity between two texts."""
-        # Simple similarity based on word overlap and length
-        words1 = set(text1.lower().split())
-        words2 = set(text2.lower().split())
-        
-        if not words1 or not words2:
-            return 0.0
-        
-        intersection = len(words1.intersection(words2))
-        union = len(words1.union(words2))
-        
-        jaccard_sim = intersection / union if union > 0 else 0.0
-        
-        # Add some randomness to simulate real embedding similarity
-        base_similarity = jaccard_sim * JACCARD_WEIGHT + random.uniform(RANDOM_RANGE_MIN, PEARSON_WEIGHT)
-        
-        return min(1.0, max(0.0, base_similarity))
