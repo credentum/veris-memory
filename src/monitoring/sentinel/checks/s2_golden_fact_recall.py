@@ -35,15 +35,19 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
     - S10: 5 queries (pipeline monitoring)
     - Total: 19 queries
 
-    Enhanced structure:
+    Enhanced structure (CURRENT):
     - Golden facts (semantic): 6 queries (3 facts × 2 questions)
     - Graph relationships: 6 queries (3 relationships × 2 questions)
-    - Total: 12 queries
+    - Total: 12 queries (4 test cases × 2 questions initially, enhanced to 6 test cases)
 
     Net savings: 7 queries per cycle (37% reduction from original S2/S9/S10 total)
 
-    Note: Enhanced from initial 8 queries to 12 queries to provide better
-    graph relationship coverage (3 test cases instead of 1).
+    IMPORTANT: Initial implementation used 4 test cases (8 queries) but was
+    enhanced to 6 test cases (12 queries) after code review to provide better
+    graph relationship coverage (3 graph test cases instead of 1).
+
+    The 12-query implementation is CORRECT. Earlier commit messages referencing
+    "8 queries" reflect the initial design, not the final implementation.
 
     Comprehensive testing of graph intent and pipeline stages should be
     done in CI/CD, not runtime monitoring.

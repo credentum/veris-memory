@@ -271,3 +271,89 @@ async def test_payload_structure_matches_api_contract(golden_fact_check):
         # If filters is present, it should not contain "author"
         assert "author" not in retrieve_payload.get("filters", {}), \
             "Author should be in metadata_filters, not filters"
+
+
+@pytest.mark.asyncio
+async def test_dataset_includes_graph_relationship_test_cases(golden_fact_check):
+    """Test that S2 dataset includes 3 graph relationship test cases (code review requirement)."""
+    # Verify we have 6 test cases total
+    assert len(golden_fact_check.test_dataset) == 6, \
+        f"Expected 6 test cases, got {len(golden_fact_check.test_dataset)}"
+
+    # Count test types
+    semantic_tests = [t for t in golden_fact_check.test_dataset if t.get("test_type") == "semantic_search"]
+    graph_tests = [t for t in golden_fact_check.test_dataset if t.get("test_type") == "graph_relationship"]
+
+    assert len(semantic_tests) == 3, f"Expected 3 semantic tests, got {len(semantic_tests)}"
+    assert len(graph_tests) == 3, f"Expected 3 graph tests, got {len(graph_tests)}"
+
+    # Verify graph test cases contain expected content
+    graph_test_contents = [t["kv"] for t in graph_tests]
+
+    # Test case 1: Project tech stack
+    tech_stack_test = next((t for t in graph_test_contents if "Veris Memory" in str(t)), None)
+    assert tech_stack_test is not None, "Missing project tech stack graph test case"
+    assert "Python" in str(tech_stack_test) or "FastAPI" in str(tech_stack_test), \
+        "Tech stack test should reference Python/FastAPI/Neo4j"
+
+    # Test case 2: Feature dependencies
+    dependencies_test = next((t for t in graph_test_contents if "semantic search" in str(t)), None)
+    assert dependencies_test is not None, "Missing feature dependencies graph test case"
+    assert "Qdrant" in str(dependencies_test) or "vector" in str(dependencies_test), \
+        "Dependencies test should reference Qdrant/vector database"
+
+    # Test case 3: Component relationships
+    component_test = next((t for t in graph_test_contents if "monitoring" in str(t)), None)
+    assert component_test is not None, "Missing component relationships graph test case"
+    assert "Sentinel" in str(component_test) or "metrics" in str(component_test), \
+        "Component test should reference Sentinel/metrics/Neo4j"
+
+
+@pytest.mark.asyncio
+async def test_graph_relationship_queries_properly_formed(golden_fact_check):
+    """Test that graph relationship test cases have proper structure."""
+    graph_tests = [t for t in golden_fact_check.test_dataset if t.get("test_type") == "graph_relationship"]
+
+    for i, test in enumerate(graph_tests):
+        # Each test should have kv, questions, and expect_contains
+        assert "kv" in test, f"Graph test {i} missing 'kv' field"
+        assert "questions" in test, f"Graph test {i} missing 'questions' field"
+        assert "expect_contains" in test, f"Graph test {i} missing 'expect_contains' field"
+        assert "test_type" in test, f"Graph test {i} missing 'test_type' field"
+
+        # Each test should have exactly 2 questions
+        assert len(test["questions"]) == 2, \
+            f"Graph test {i} should have 2 questions, got {len(test['questions'])}"
+
+        # Questions should be non-empty strings
+        for q in test["questions"]:
+            assert isinstance(q, str) and len(q) > 0, \
+                f"Graph test {i} has invalid question: {q}"
+
+        # expect_contains should be non-empty string
+        assert isinstance(test["expect_contains"], str) and len(test["expect_contains"]) > 0, \
+            f"Graph test {i} has invalid expect_contains: {test['expect_contains']}"
+
+
+@pytest.mark.asyncio
+async def test_total_query_count_is_12(golden_fact_check):
+    """Test that S2 generates exactly 12 queries (6 test cases × 2 questions each)."""
+    total_queries = sum(len(test["questions"]) for test in golden_fact_check.test_dataset)
+
+    assert total_queries == 12, \
+        f"Expected 12 total queries (6 test cases × 2 questions), got {total_queries}"
+
+    # Verify breakdown
+    semantic_queries = sum(
+        len(test["questions"])
+        for test in golden_fact_check.test_dataset
+        if test.get("test_type") == "semantic_search"
+    )
+    graph_queries = sum(
+        len(test["questions"])
+        for test in golden_fact_check.test_dataset
+        if test.get("test_type") == "graph_relationship"
+    )
+
+    assert semantic_queries == 6, f"Expected 6 semantic queries (3 × 2), got {semantic_queries}"
+    assert graph_queries == 6, f"Expected 6 graph queries (3 × 2), got {graph_queries}"

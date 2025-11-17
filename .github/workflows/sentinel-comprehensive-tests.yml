@@ -92,8 +92,7 @@ jobs:
             --cov=src/monitoring/sentinel/checks/s3_paraphrase_robustness \
             --cov-report=xml \
             --cov-report=term \
-            -v \
-            -k "paraphrase"
+            -v
 
       - name: Upload S3 coverage
         uses: codecov/codecov-action@v3
@@ -162,16 +161,12 @@ jobs:
           echo $! > mcp_server.pid
           sleep 10
 
-      - name: Seed test data for graph relationships
-        run: |
-          python -m tests.fixtures.seed_graph_test_data
-
       - name: Run S9 Comprehensive Graph Intent Tests
         env:
           TARGET_BASE_URL: http://localhost:8000
           SENTINEL_API_KEY: test_sentinel_key_for_ci
         run: |
-          pytest tests/monitoring/test_graph_intent_comprehensive.py \
+          pytest tests/monitoring/test_graph_intent.py \
             --cov=src/monitoring/sentinel/checks/s9_graph_intent \
             --cov-report=xml \
             --cov-report=term \
@@ -247,7 +242,7 @@ jobs:
           TARGET_BASE_URL: http://localhost:8000
           SENTINEL_API_KEY: test_sentinel_key_for_ci
         run: |
-          pytest tests/monitoring/test_content_pipeline_comprehensive.py \
+          pytest tests/monitoring/test_content_pipeline.py \
             --cov=src/monitoring/sentinel/checks/s10_content_pipeline \
             --cov-report=xml \
             --cov-report=term \
