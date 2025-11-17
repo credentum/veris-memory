@@ -36,11 +36,14 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
     - Total: 19 queries
 
     Enhanced structure:
-    - Golden facts: 6 queries (3 facts × 2 questions)
-    - Graph relationships: 2 queries (1 relationship × 2 questions)
-    - Total: 8 queries
+    - Golden facts (semantic): 6 queries (3 facts × 2 questions)
+    - Graph relationships: 6 queries (3 relationships × 2 questions)
+    - Total: 12 queries
 
-    Net savings: 11 queries per cycle (58% reduction from original S2/S9/S10 total)
+    Net savings: 7 queries per cycle (37% reduction from original S2/S9/S10 total)
+
+    Note: Enhanced from initial 8 queries to 12 queries to provide better
+    graph relationship coverage (3 test cases instead of 1).
 
     Comprehensive testing of graph intent and pipeline stages should be
     done in CI/CD, not runtime monitoring.
@@ -68,7 +71,7 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
                 "expect_contains": "San Francisco",
                 "test_type": "semantic_search"
             },
-            # Graph relationship validation (from S9)
+            # Graph relationship validation (from S9) - Enhanced with 3 test cases
             {
                 "kv": {"project": "Veris Memory", "tech_stack": "Python FastAPI Neo4j"},
                 "questions": [
@@ -76,6 +79,24 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
                     "How is Veris Memory implemented?"
                 ],
                 "expect_contains": "Python",
+                "test_type": "graph_relationship"
+            },
+            {
+                "kv": {"feature": "semantic search", "dependencies": "Qdrant vector database embeddings"},
+                "questions": [
+                    "What does semantic search depend on?",
+                    "What components are needed for semantic search?"
+                ],
+                "expect_contains": "Qdrant",
+                "test_type": "graph_relationship"
+            },
+            {
+                "kv": {"component": "monitoring", "related_systems": "Sentinel checks metrics Neo4j"},
+                "questions": [
+                    "What systems are related to monitoring?",
+                    "How does monitoring connect to other components?"
+                ],
+                "expect_contains": "Sentinel",
                 "test_type": "graph_relationship"
             }
         ]
