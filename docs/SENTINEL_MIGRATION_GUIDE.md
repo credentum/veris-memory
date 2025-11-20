@@ -10,6 +10,14 @@ This guide helps you migrate monitoring dashboards and alerting after PR #327 (S
 - **S10**: Deprecated (consolidated into S2)
 - **S2**: Enhanced with graph relationship validation
 
+**Query Count Evolution**:
+- **Original**: 48 queries/cycle (2,880/hour)
+- **After Phase 1 & 2**: 18 queries/cycle (commit 75ce17c)
+- **After Code Review Enhancement**: 22 queries/cycle (commits 8a92bc9 + 86ebcbb)
+  - S2 enhanced from 8 to 12 queries (added 2 more graph test cases)
+  - Final total: 22 queries/cycle = 1,320 queries/hour
+  - **Net reduction**: 54% from original 48 queries
+
 **Timeline**:
 - **Deprecated since**: 2025-11-17
 - **Removal planned**: 2025-12-17 (30 days)

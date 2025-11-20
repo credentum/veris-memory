@@ -160,10 +160,10 @@ class GraphIntentValidation(BaseCheck):
                 "deprecated_since": "2025-11-17",
                 "removal_planned": "2025-12-17",
                 "reason": "Consolidated into S2-golden-fact-recall for query efficiency",
-                "optimization": "Reduced runtime queries from 8 to 6 (core graph validation)",
+                "optimization": "S9 queries reduced from 8 to 0 (functionality moved to S2 which uses 6 queries for graph validation)",
                 "recommendation": "Run comprehensive graph intent tests in CI/CD pipeline",
                 "consolidated_into": "S2-golden-fact-recall",
-                "migration_status": "S2 now includes 3 graph relationship test cases",
+                "migration_status": "S2 now includes 3 graph relationship test cases (6 queries total)",
                 "phase": "2"
             }
         )
