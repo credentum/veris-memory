@@ -3310,7 +3310,7 @@ async def delete_context_rest_endpoint(
             api_key_info=api_key_info,
             neo4j_client=neo4j_client,
             qdrant_client=qdrant_client,
-            redis_client=simple_redis.redis_client if simple_redis else None,
+            redis_client=simple_redis if simple_redis else None,
         )
 
         return result
@@ -3356,7 +3356,7 @@ async def delete_context_endpoint(
             api_key_info=api_key_info,
             neo4j_client=neo4j_client,
             qdrant_client=qdrant_client,
-            redis_client=simple_redis.redis_client if simple_redis else None,
+            redis_client=simple_redis if simple_redis else None,
         )
 
         return result
@@ -3401,7 +3401,7 @@ async def forget_context_endpoint(
             retention_days=request.retention_days,
             api_key_info=api_key_info,
             neo4j_client=neo4j_client,
-            redis_client=simple_redis.redis_client if simple_redis else None,
+            redis_client=simple_redis if simple_redis else None,
         )
 
         return result
