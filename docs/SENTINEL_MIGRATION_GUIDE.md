@@ -383,12 +383,14 @@ If S2 passes, pipeline is healthy.
 
 ### "Where are the comprehensive tests?"
 
-Comprehensive tests moved to CI/CD:
-- `.github/workflows/sentinel-comprehensive-tests.yml`
-- Runs on PR + pre-deployment
-- Full S3 paraphrase matrix (25 tests)
-- Full S9 graph intent (8 tests)
-- Full S10 pipeline (7 tests)
+Comprehensive tests strategy:
+- **S3**: Comprehensive tests in `.github/workflows/sentinel-comprehensive-tests.yml`
+  - Runs on PR + pre-deployment
+  - Full paraphrase robustness testing
+- **S9 & S10**: Deprecated - no longer have comprehensive tests
+  - S9 graph validation consolidated into S2 (runtime monitoring)
+  - S10 pipeline validation implicit in S2's store→retrieve cycle
+  - S2 unit tests cover this functionality (test_s2_golden_fact_recall.py)
 
 ---
 
