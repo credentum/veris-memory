@@ -194,6 +194,7 @@ GRAPH_DATABASE=context_graph
 API_KEY_ADMIN=vmk_admin_secret:admin_user:admin:false
 API_KEY_AGENT=vmk_agent_key:ai_assistant:writer:true
 API_KEY_READER=vmk_readonly:reader_user:reader:false
+API_KEY_VOICEBOT=vmk_voicebot_generate_key:voice_bot:writer:true
 ```
 
 ## Authentication & Authorization
@@ -209,6 +210,7 @@ Veris Memory supports optional API key authentication with role-based access con
 API_KEY_ADMIN=vmk_admin_secret:admin_user:admin:false
 API_KEY_AGENT=vmk_agent_key:ai_assistant:writer:true
 API_KEY_READER=vmk_readonly:reader_user:reader:false
+API_KEY_VOICEBOT=vmk_voicebot_generate_key:voice_bot:writer:true
 ```
 
 ### Authentication Methods
