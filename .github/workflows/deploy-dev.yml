@@ -84,6 +84,8 @@ jobs:
           HOST_CHECK_SECRET: ${{ secrets.HOST_CHECK_SECRET }}
           HETZNER_USER: ${{ secrets.HETZNER_USER }}
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
         run: |
           chmod +x scripts/deploy-dev.sh
           ./scripts/deploy-dev.sh

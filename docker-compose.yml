@@ -2,9 +2,8 @@
 services:
   # Context Store MCP Server (Primary AI Agent Interface)
   context-store:
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile
+    image: ghcr.io/credentum/veris-memory/context-store:latest
+    pull_policy: always
     ports:
       - "8000:8000"  # SECURITY: Accessible via Docker bridge network for MCP clients (external access blocked by firewall)
     environment:
@@ -45,9 +44,8 @@ services:
 
   # REST API Server (Operational Interface & Monitoring)
   api:
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile.api
+    image: ghcr.io/credentum/veris-memory/api:latest
+    pull_policy: always
     ports:
       - "127.0.0.1:8001:8001"  # SECURITY: Bind to localhost only
     environment:
@@ -188,9 +186,8 @@ services:
 
   # Monitoring Dashboard Service
   monitoring-dashboard:
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile
+    image: ghcr.io/credentum/veris-memory/context-store:latest
+    pull_policy: always
     ports:
       - "127.0.0.1:8080:8080"  # SECURITY: Bind to localhost only
     environment:
@@ -225,9 +222,8 @@ services:
   # Requires TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to be set in GitHub Secrets
   # for Telegram alerting. Get bot token from @BotFather, chat ID from @userinfobot
   sentinel:
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile.sentinel
+    image: ghcr.io/credentum/veris-memory/sentinel:latest
+    pull_policy: always
     environment:
       # Telegram Configuration (from GitHub Secrets)
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}

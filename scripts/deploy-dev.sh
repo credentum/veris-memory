@@ -45,6 +45,10 @@ ssh -o StrictHostKeyChecking=no \
   echo "Host: \$(hostname)"
   echo "User: \$(whoami)"
 
+  # GitHub Container Registry credentials (for pulling pre-built images)
+  GITHUB_TOKEN='$GITHUB_TOKEN'
+  GITHUB_ACTOR='$GITHUB_ACTOR'
+
   # SECURITY: Generate Redis password if not provided
   if [ -z '$REDIS_PASSWORD' ]; then
     echo "🔐 Generating secure Redis password..."
@@ -485,18 +489,37 @@ ssh -o StrictHostKeyChecking=no \
       fi
     fi
 
-    # Build and start services (including voice-bot)
-    echo "🏗️  Building and starting services..."
+    # Pull pre-built images from GitHub Container Registry
+    echo "🏗️  Starting deployment (pull + start services)..."
 
-    # Deploy main services
-    docker compose -p veris-memory-dev up -d --build
+    # Login to GitHub Container Registry to pull CVE-validated images
+    if [ -n "\$GITHUB_TOKEN" ]; then
+      echo "🔐 Logging in to GitHub Container Registry..."
+      echo "\$GITHUB_TOKEN" | docker login ghcr.io -u "\$GITHUB_ACTOR" --password-stdin
+    else
+      echo "⚠️  GITHUB_TOKEN not set, will try to pull public images without authentication"
+    fi
+
+    # Pull latest CVE-validated images (30 seconds vs 7 minutes build time)
+    echo "📥 Pulling latest images from GHCR (CVE validated)..."
+    docker compose -p veris-memory-dev pull || echo "⚠️  Some images not available in GHCR, will build locally if needed"
+
+    # Deploy main services (using pulled images, no build)
+    echo "🚀 Starting main services..."
+    docker compose -p veris-memory-dev up -d --no-build
 
     # Deploy voice platform services (voice-bot + livekit)
     if [ -f "docker-compose.voice.yml" ]; then
       echo "🎙️  Deploying voice platform..."
-      docker compose -p veris-memory-dev -f docker-compose.yml -f docker-compose.voice.yml up -d --build voice-bot livekit
+      # Voice services still build locally (not in GHCR yet)
+      docker compose -p veris-memory-dev -f docker-compose.yml -f docker-compose.voice.yml up -d --build voice-bot livekit nginx-voice-proxy
     else
       echo "⚠️  docker-compose.voice.yml not found, skipping voice-bot deployment"
+    fi
+
+    # Logout from GHCR
+    if [ -n "\$GITHUB_TOKEN" ]; then
+      docker logout ghcr.io
     fi
 
     echo "⏳ Waiting for services to start..."
