@@ -74,17 +74,27 @@ Veris Memory implements the **Agent-First Schema Protocol** - a structured appro
 2. `retrieve_context` - Semantic similarity search with agent filters
 3. `query_graph` - Traverse memory relationships and connections
 
-**Agent State Management:** 4. `update_scratchpad` - Manage agent working memory 5. `get_agent_state` - Retrieve current agent state
+**Agent State Management:**
+
+4. `update_scratchpad` - Manage agent working memory
+5. `get_agent_state` - Retrieve current agent state
+
+**Memory Management (Sprint 13):**
+
+6. `delete_context` - Hard delete contexts (human-only, requires admin role)
+7. `forget_context` - Soft delete with retention period (human-only, requires admin role)
 
 ### Tool Coverage
 
-| Tool                | Vector | Graph | KV Store | Purpose                               |
-| ------------------- | ------ | ----- | -------- | ------------------------------------- |
-| `store_context`     | ✅     | ✅    | ➖       | Store with embeddings + relationships |
-| `retrieve_context`  | ✅     | ✅    | ➖       | Hybrid semantic + graph search        |
-| `query_graph`       | ➖     | ✅    | ➖       | Advanced Cypher queries               |
-| `update_scratchpad` | ➖     | ➖    | ✅       | Transient agent memory                |
-| `get_agent_state`   | ➖     | ➖    | ✅       | Agent state retrieval                 |
+| Tool                | Vector | Graph | KV Store | Auth Required | Purpose                               |
+| ------------------- | ------ | ----- | -------- | ------------- | ------------------------------------- |
+| `store_context`     | ✅     | ✅    | ➖       | Optional      | Store with embeddings + relationships |
+| `retrieve_context`  | ✅     | ✅    | ➖       | Optional      | Hybrid semantic + graph search        |
+| `query_graph`       | ➖     | ✅    | ➖       | Optional      | Advanced Cypher queries               |
+| `update_scratchpad` | ➖     | ➖    | ✅       | Optional      | Transient agent memory                |
+| `get_agent_state`   | ➖     | ➖    | ✅       | Optional      | Agent state retrieval                 |
+| `delete_context`    | ✅     | ✅    | ✅       | **Human-only** | Hard delete context (audit logged)   |
+| `forget_context`    | ➖     | ✅    | ✅       | **Human-only** | Soft delete with retention period    |
 
 ### Directory Structure
 
@@ -148,11 +158,16 @@ python -m uvicorn src.mcp_server.main:app --host 0.0.0.0 --port 8000
 
 The context store provides these MCP tools:
 
+**Core Operations:**
 - `store_context`: Store context data with vector embeddings and graph relationships
 - `retrieve_context`: Hybrid retrieval using vector similarity and graph traversal
 - `query_graph`: Direct Cypher queries for advanced graph operations
 - `update_scratchpad`: Transient key-value storage with TTL
 - `get_agent_state`: Retrieve persistent agent memory and state
+
+**Memory Management (Sprint 13):**
+- `delete_context`: Hard delete contexts (human-only, requires admin role)
+- `forget_context`: Soft delete with retention period (human-only, requires admin role)
 
 ## Configuration
 
@@ -173,7 +188,78 @@ MCP_LOG_LEVEL=info
 # Storage settings
 VECTOR_COLLECTION=project_context  # Fixed: Use correct collection name
 GRAPH_DATABASE=context_graph
+
+# API Key Authentication (Sprint 13)
+# Format: API_KEY_{NAME}=key:user_id:role:is_agent
+API_KEY_ADMIN=vmk_admin_secret:admin_user:admin:false
+API_KEY_AGENT=vmk_agent_key:ai_assistant:writer:true
+API_KEY_READER=vmk_readonly:reader_user:reader:false
 ```
+
+## Authentication & Authorization
+
+### API Key Setup
+
+Veris Memory supports optional API key authentication with role-based access control (Sprint 13).
+
+**Configure API keys** via environment variables:
+
+```bash
+# Format: API_KEY_{NAME}=key:user_id:role:is_agent
+API_KEY_ADMIN=vmk_admin_secret:admin_user:admin:false
+API_KEY_AGENT=vmk_agent_key:ai_assistant:writer:true
+API_KEY_READER=vmk_readonly:reader_user:reader:false
+```
+
+### Authentication Methods
+
+**Option 1: X-API-Key Header**
+```bash
+curl -X POST http://localhost:8000/tools/store_context \
+  -H "X-API-Key: vmk_admin_secret" \
+  -H "Content-Type: application/json" \
+  -d '{"type": "log", "content": {"text": "Example"}}'
+```
+
+**Option 2: Authorization Bearer**
+```bash
+curl -X POST http://localhost:8000/tools/store_context \
+  -H "Authorization: Bearer vmk_admin_secret" \
+  -H "Content-Type: application/json" \
+  -d '{"type": "log", "content": {"text": "Example"}}'
+```
+
+### Role-Based Access Control
+
+| Role | Capabilities | Use Case |
+|------|-------------|----------|
+| `admin` | all (including delete) | System administrators |
+| `writer` | read, write, query, cache | AI agents |
+| `reader` | read, query | Read-only applications |
+| `guest` | read | Public access |
+
+### Human-Only Operations
+
+**Critical Safety Feature**: The following operations require `is_agent=false` (human authentication):
+
+- `delete_context` - Hard delete operation (prevents accidental data loss by agents)
+- `forget_context` - Soft delete with retention period (requires human approval)
+
+**Why this matters**: AI agents cannot accidentally or maliciously delete data. Only human-authenticated API keys can perform deletions.
+
+**Example - Human API Key**:
+```bash
+API_KEY_ADMIN=vmk_admin_secret:admin_user:admin:false
+                                              ^^^^^ is_agent=false (human)
+```
+
+**Example - Agent API Key**:
+```bash
+API_KEY_AGENT=vmk_agent_key:ai_assistant:writer:true
+                                               ^^^^ is_agent=true (agent, cannot delete)
+```
+
+For complete API documentation, see [Sprint 13 API Documentation](docs/SPRINT_13_API_DOCUMENTATION.md).
 
 ## Development
 
@@ -584,7 +670,20 @@ class VerisMemoryClient {
 }
 ```
 
-## 🆕 Recent Improvements (v0.9.0)
+## 🆕 Recent Improvements
+
+**Sprint 13: Authentication & Memory Management:**
+- ✅ API key authentication with role-based access control
+- ✅ `delete_context` endpoint - Hard delete (human-only, audit logged)
+- ✅ `forget_context` endpoint - Soft delete with retention period (human-only)
+- ✅ Audit logging for all deletion operations (DeleteAuditLogger)
+- ✅ Embedding pipeline visibility (status in responses)
+- ✅ Namespace management and relationship auto-detection
+- ✅ Human-only operation restrictions (prevents agent deletion)
+
+**Bug Fixes (PR #329):**
+- ✅ Fixed redis_client parameter bug in delete/forget endpoints
+- ✅ Added comprehensive unit tests for redis_client parameter passing
 
 **Search System Fixes (PR #159):**
 - ✅ Fixed vector backend collection mismatch (now uses `project_context`)
@@ -670,13 +769,15 @@ const result = await client.callTool('store_context', {
 
 ### 🛠️ MCP Tools Overview
 
-| Tool                | Purpose                                         | Documentation                                          |
-| ------------------- | ----------------------------------------------- | ------------------------------------------------------ |
-| `store_context`     | Store context with embeddings and relationships | [API Reference](docs/MCP_TOOLS.md#1-store_context)     |
-| `retrieve_context`  | Hybrid search across stored contexts            | [API Reference](docs/MCP_TOOLS.md#2-retrieve_context)  |
-| `query_graph`       | Execute read-only Cypher queries                | [API Reference](docs/MCP_TOOLS.md#3-query_graph)       |
-| `update_scratchpad` | Transient storage with TTL                      | [API Reference](docs/MCP_TOOLS.md#4-update_scratchpad) |
-| `get_agent_state`   | Retrieve agent state with isolation             | [API Reference](docs/MCP_TOOLS.md#5-get_agent_state)   |
+| Tool                | Purpose                                         | Auth Required | Documentation                                          |
+| ------------------- | ----------------------------------------------- | ------------- | ------------------------------------------------------ |
+| `store_context`     | Store context with embeddings and relationships | Optional      | [API Reference](docs/MCP_TOOLS.md#1-store_context)     |
+| `retrieve_context`  | Hybrid search across stored contexts            | Optional      | [API Reference](docs/MCP_TOOLS.md#2-retrieve_context)  |
+| `query_graph`       | Execute read-only Cypher queries                | Optional      | [API Reference](docs/MCP_TOOLS.md#3-query_graph)       |
+| `update_scratchpad` | Transient storage with TTL                      | Optional      | [API Reference](docs/MCP_TOOLS.md#4-update_scratchpad) |
+| `get_agent_state`   | Retrieve agent state with isolation             | Optional      | [API Reference](docs/MCP_TOOLS.md#5-get_agent_state)   |
+| `delete_context`    | Hard delete contexts (audit logged)             | **Human-only** | [API Reference](docs/SPRINT_13_API_DOCUMENTATION.md)   |
+| `forget_context`    | Soft delete with retention period               | **Human-only** | [API Reference](docs/SPRINT_13_API_DOCUMENTATION.md)   |
 
 ## Performance
 
@@ -687,10 +788,18 @@ const result = await client.callTool('store_context', {
 
 ## Security
 
-- **Authentication**: API key authentication for database access
-- **Authorization**: Role-based access control for graph queries
+- **Authentication**: API key authentication with role-based access control (Sprint 13)
+  - Support for X-API-Key and Authorization Bearer headers
+  - Format: `API_KEY_{NAME}=key:user_id:role:is_agent`
+  - See [Authentication & Authorization](#authentication--authorization) section
+- **Authorization**: Role-based access control (admin, writer, reader, guest)
+  - Human-only operations for delete/forget endpoints
+  - Prevents AI agents from accidentally deleting data
+- **Audit Logging**: All deletion operations logged to Redis with retention
 - **Input Validation**: Comprehensive schema validation
 - **Network**: TLS encryption for all external connections
+
+For security documentation, see [docs/SECURITY.md](docs/SECURITY.md) and [docs/SPRINT_13_API_DOCUMENTATION.md](docs/SPRINT_13_API_DOCUMENTATION.md).
 
 ## Contributing
 
