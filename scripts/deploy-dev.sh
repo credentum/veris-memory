@@ -505,6 +505,18 @@ ssh -o StrictHostKeyChecking=no \
     if docker compose -p veris-memory-dev pull; then
       # Successfully pulled images from GHCR
       echo "✅ Images pulled from GHCR successfully"
+
+      # Verify image digests for security (optional but recommended)
+      echo "🔐 Verifying image digests..."
+      for service in api context-store sentinel; do
+        DIGEST=\$(docker inspect ghcr.io/credentum/veris-memory/\$service:latest --format='{{index .RepoDigests 0}}' 2>/dev/null || echo "not found")
+        if [ "\$DIGEST" != "not found" ]; then
+          echo "   ✓ \$service: \$DIGEST"
+        else
+          echo "   ⚠️  \$service: Could not verify digest (image may be built locally)"
+        fi
+      done
+
       echo "🚀 Starting main services with pulled images..."
       docker compose -p veris-memory-dev up -d --no-build
     else
