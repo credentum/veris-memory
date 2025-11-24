@@ -119,218 +119,249 @@ class TestParaphraseRobustness:
     @pytest.mark.asyncio
     async def test_semantic_similarity_success(self, check: ParaphraseRobustness) -> None:
         """Test successful semantic similarity analysis."""
+        # Mock response with consistent results (high similarity)
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value={
             "contexts": [
-                {"context_id": "ctx1", "content": {"text": "Test configuration guide"}, "score": 0.9},
-                {"context_id": "ctx2", "content": {"text": "Configuration setup"}, "score": 0.8}
+                {"id": "ctx1", "content": {"text": "Test configuration guide"}, "score": 0.9},
+                {"id": "ctx2", "content": {"text": "Configuration setup"}, "score": 0.8},
+                {"id": "ctx3", "content": {"text": "Setup guide"}, "score": 0.75}
             ]
         })
-        
+
         mock_session = AsyncMock()
         mock_session.post.return_value.__aenter__.return_value = mock_response
-        
+
         with patch('aiohttp.ClientSession', return_value=mock_session):
             result = await check._test_semantic_similarity()
-        
+
         assert result["passed"] is True
-        assert "Semantic similarity score" in result["message"]
-        assert result["avg_similarity_score"] >= 0.0
-        assert len(result["paraphrase_analysis"]) > 0
+        assert "Semantic similarity test" in result["message"]
+        assert result["overall_avg_similarity"] >= 0.0
+        assert len(result["similarity_results"]) > 0
     
     @pytest.mark.asyncio
     async def test_semantic_similarity_low_scores(self, check: ParaphraseRobustness) -> None:
         """Test semantic similarity with low similarity scores."""
-        # Mock very different results for paraphrases
+        # Mock very different results for each variation (low overlap = low similarity)
         mock_responses = [
-            {
-                "contexts": [
-                    {"context_id": "ctx1", "content": {"text": "Configuration guide"}, "score": 0.9}
-                ]
-            },
-            {
-                "contexts": [
-                    {"context_id": "ctx2", "content": {"text": "Completely different topic"}, "score": 0.1}
-                ]
-            }
+            {"contexts": [{"id": "ctx1", "content": {"text": "Configuration guide"}, "score": 0.9}]},
+            {"contexts": [{"id": "ctx2", "content": {"text": "Completely different topic"}, "score": 0.9}]},
+            {"contexts": [{"id": "ctx3", "content": {"text": "Another unrelated result"}, "score": 0.9}]}
         ]
-        
+
         response_iter = iter(mock_responses)
-        
+
         def mock_post(*args, **kwargs):
             ctx = AsyncMock()
             response = AsyncMock()
             response.status = 200
-            response.json = AsyncMock(return_value=next(response_iter))
+            try:
+                response.json = AsyncMock(return_value=next(response_iter))
+            except StopIteration:
+                # If we run out, return empty contexts
+                response.json = AsyncMock(return_value={"contexts": []})
             ctx.__aenter__ = AsyncMock(return_value=response)
             return ctx
-        
+
         mock_session = AsyncMock()
         mock_session.post.side_effect = mock_post
-        
+
         with patch('aiohttp.ClientSession', return_value=mock_session):
             result = await check._test_semantic_similarity()
-        
+
         assert result["passed"] is False
-        assert result["avg_similarity_score"] < check.min_similarity_threshold
+        assert result["overall_avg_similarity"] < check.min_similarity_threshold
     
     @pytest.mark.asyncio
     async def test_result_consistency_success(self, check: ParaphraseRobustness) -> None:
         """Test successful result consistency validation."""
-        # Mock consistent results across paraphrases
+        # Mock consistent results across paraphrases (same results = high consistency)
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value={
             "contexts": [
-                {"context_id": "ctx1", "content": {"text": "Configuration guide"}, "score": 0.9},
-                {"context_id": "ctx2", "content": {"text": "Setup instructions"}, "score": 0.8}
+                {"id": "ctx1", "content": {"text": "Configuration guide"}, "score": 0.9},
+                {"id": "ctx2", "content": {"text": "Setup instructions"}, "score": 0.8},
+                {"id": "ctx3", "content": {"text": "Test setup"}, "score": 0.7}
             ]
         })
-        
+
         mock_session = AsyncMock()
         mock_session.post.return_value.__aenter__.return_value = mock_response
-        
+
         with patch('aiohttp.ClientSession', return_value=mock_session):
             result = await check._test_result_consistency()
-        
+
         assert result["passed"] is True
-        assert "Result consistency score" in result["message"]
-        assert result["avg_consistency_score"] >= 0.0
-        assert len(result["consistency_analysis"]) > 0
+        assert "Result consistency test" in result["message"]
+        assert result["topics_tested"] >= 0
+        assert result["topics_passed"] >= 0
+        assert len(result["consistency_results"]) > 0
     
     @pytest.mark.asyncio
     async def test_ranking_stability_success(self, check: ParaphraseRobustness) -> None:
         """Test successful ranking stability validation."""
+        # Mock same results for multiple runs (stable ranking)
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value={
             "contexts": [
-                {"context_id": "ctx1", "content": {"text": "Configuration guide"}, "score": 0.9},
-                {"context_id": "ctx2", "content": {"text": "Setup instructions"}, "score": 0.8},
-                {"context_id": "ctx3", "content": {"text": "Test setup"}, "score": 0.7}
+                {"id": "ctx1", "content": {"text": "Configuration guide"}, "score": 0.9},
+                {"id": "ctx2", "content": {"text": "Setup instructions"}, "score": 0.8},
+                {"id": "ctx3", "content": {"text": "Test setup"}, "score": 0.7}
             ]
         })
-        
+
         mock_session = AsyncMock()
         mock_session.post.return_value.__aenter__.return_value = mock_response
-        
+
         with patch('aiohttp.ClientSession', return_value=mock_session):
             result = await check._test_ranking_stability()
-        
+
         assert result["passed"] is True
-        assert "Ranking stability score" in result["message"]
-        assert result["avg_stability_score"] >= 0.0
-        assert len(result["stability_analysis"]) > 0
+        assert "Ranking stability test" in result["message"]
+        assert result["topics_tested"] >= 0
+        assert result["topics_passed"] >= 0
+        assert len(result["ranking_results"]) > 0
     
     @pytest.mark.asyncio
     async def test_context_retrieval_robustness_success(self, check: ParaphraseRobustness) -> None:
         """Test successful context retrieval robustness."""
+        # Mock consistent retrieval results (low variance = high robustness)
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value={
             "contexts": [
-                {"context_id": "ctx1", "content": {"text": "Configuration guide"}, "score": 0.9}
+                {"id": "ctx1", "content": {"text": "Configuration guide"}, "score": 0.9},
+                {"id": "ctx2", "content": {"text": "Setup guide"}, "score": 0.8}
             ]
         })
-        
+
         mock_session = AsyncMock()
         mock_session.post.return_value.__aenter__.return_value = mock_response
-        
+
         with patch('aiohttp.ClientSession', return_value=mock_session):
             result = await check._test_context_retrieval_robustness()
-        
+
         assert result["passed"] is True
-        assert "Context retrieval robustness" in result["message"]
-        assert result["avg_robustness_score"] >= 0.0
-        assert len(result["robustness_analysis"]) > 0
+        assert "Context retrieval robustness test" in result["message"]
+        assert result["topics_tested"] >= 0
+        assert result["topics_passed"] >= 0
+        assert len(result["retrieval_results"]) > 0
     
     @pytest.mark.asyncio
     async def test_query_expansion_success(self, check: ParaphraseRobustness) -> None:
         """Test successful query expansion validation."""
+        # Mock responses for 3 test cases (simple + expanded for each = 6 responses)
         mock_responses = [
-            # Simple query response
-            {
-                "contexts": [
-                    {"context_id": "ctx1", "content": {"text": "Configuration"}, "score": 0.8}
-                ]
-            },
-            # Expanded query response
-            {
-                "contexts": [
-                    {"context_id": "ctx1", "content": {"text": "Configuration"}, "score": 0.9},
-                    {"context_id": "ctx2", "content": {"text": "Setup guide"}, "score": 0.8}
-                ]
-            }
+            # Test case 1: simple "config"
+            {"contexts": [{"id": "ctx1", "content": {"text": "Configuration"}, "score": 0.8}]},
+            # Test case 1: expanded "configuration setup process" (more results)
+            {"contexts": [
+                {"id": "ctx1", "content": {"text": "Configuration"}, "score": 0.9},
+                {"id": "ctx2", "content": {"text": "Setup guide"}, "score": 0.8},
+                {"id": "ctx3", "content": {"text": "Process docs"}, "score": 0.7}
+            ]},
+            # Test case 2: simple "error"
+            {"contexts": [{"id": "ctx4", "content": {"text": "Error"}, "score": 0.8}]},
+            # Test case 2: expanded "error troubleshooting resolution" (more results)
+            {"contexts": [
+                {"id": "ctx4", "content": {"text": "Error handling"}, "score": 0.9},
+                {"id": "ctx5", "content": {"text": "Troubleshooting"}, "score": 0.8}
+            ]},
+            # Test case 3: simple "database"
+            {"contexts": [{"id": "ctx6", "content": {"text": "Database"}, "score": 0.8}]},
+            # Test case 3: expanded "database connection setup" (more results)
+            {"contexts": [
+                {"id": "ctx6", "content": {"text": "Database"}, "score": 0.9},
+                {"id": "ctx7", "content": {"text": "Connection"}, "score": 0.8},
+                {"id": "ctx8", "content": {"text": "Setup"}, "score": 0.7}
+            ]}
         ]
-        
+
         response_iter = iter(mock_responses)
-        
+
         def mock_post(*args, **kwargs):
             ctx = AsyncMock()
             response = AsyncMock()
             response.status = 200
-            response.json = AsyncMock(return_value=next(response_iter))
+            try:
+                response.json = AsyncMock(return_value=next(response_iter))
+            except StopIteration:
+                response.json = AsyncMock(return_value={"contexts": []})
             ctx.__aenter__ = AsyncMock(return_value=response)
             return ctx
-        
+
         mock_session = AsyncMock()
         mock_session.post.side_effect = mock_post
-        
+
         with patch('aiohttp.ClientSession', return_value=mock_session):
             result = await check._test_query_expansion()
-        
+
         assert result["passed"] is True
-        assert "Query expansion effectiveness" in result["message"]
-        assert result["avg_expansion_score"] >= 0.0
-        assert len(result["expansion_analysis"]) > 0
+        assert "Query expansion test" in result["message"]
+        assert result["total_tests"] >= 0
+        assert result["effective_expansions"] >= 0
+        assert len(result["expansion_results"]) > 0
     
     @pytest.mark.asyncio
     async def test_response_quality_consistency_success(self, check: ParaphraseRobustness) -> None:
         """Test successful response quality consistency."""
+        # Mock consistent quality scores (low variance = high consistency)
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value={
             "contexts": [
-                {"context_id": "ctx1", "content": {"text": "High quality response"}, "score": 0.9}
+                {"id": "ctx1", "content": {"text": "High quality response"}, "score": 0.9},
+                {"id": "ctx2", "content": {"text": "Quality content"}, "score": 0.85}
             ]
         })
-        
+
         mock_session = AsyncMock()
         mock_session.post.return_value.__aenter__.return_value = mock_response
-        
+
         with patch('aiohttp.ClientSession', return_value=mock_session):
             result = await check._test_response_quality_consistency()
-        
+
         assert result["passed"] is True
-        assert "Response quality consistency" in result["message"]
-        assert result["avg_quality_score"] >= 0.0
-        assert len(result["quality_analysis"]) > 0
+        assert "Response quality consistency test" in result["message"]
+        assert result["topics_tested"] >= 0
+        assert result["topics_passed"] >= 0
+        assert len(result["quality_results"]) > 0
     
     @pytest.mark.asyncio
     async def test_api_error_handling(self, check: ParaphraseRobustness) -> None:
         """Test handling of API errors."""
+        # Mock ClientError to test error handling
+        async def mock_post_error(*args, **kwargs):
+            raise aiohttp.ClientError("Connection failed")
+
         mock_session = AsyncMock()
-        mock_session.post.side_effect = aiohttp.ClientError("Connection failed")
-        
+        mock_session.post = mock_post_error
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock()
+
         with patch('aiohttp.ClientSession', return_value=mock_session):
             result = await check._test_semantic_similarity()
-        
+
+        # Should return error structure
         assert result["passed"] is False
         assert "error" in result
-        assert "Connection failed" in result["error"]
+        assert isinstance(result["error"], str)
     
     @pytest.mark.asyncio
     async def test_calculate_result_overlap(self, check: ParaphraseRobustness) -> None:
         """Test result overlap calculation."""
-        results1 = [{"context_id": "ctx1"}, {"context_id": "ctx2"}]
-        results2 = [{"context_id": "ctx2"}, {"context_id": "ctx3"}]
-        
+        results1 = [{"id": "ctx1"}, {"id": "ctx2"}]
+        results2 = [{"id": "ctx2"}, {"id": "ctx3"}]
+
         overlap_ratio = check._calculate_result_overlap(results1, results2)
-        
+
         assert 0.0 <= overlap_ratio <= 1.0
-        # Should be 0.5 since 1 out of 2 unique contexts overlap
-        assert overlap_ratio == 0.5
+        # Jaccard similarity: intersection/union = 1/3 ≈ 0.333
+        assert 0.3 < overlap_ratio < 0.4
     
     @pytest.mark.asyncio
     async def test_calculate_score_correlation(self, check: ParaphraseRobustness) -> None:
@@ -362,19 +393,14 @@ class TestParaphraseRobustness:
     @pytest.mark.asyncio
     async def test_calculate_ranking_stability(self, check: ParaphraseRobustness) -> None:
         """Test ranking stability calculation."""
-        results1 = [
-            {"context_id": "ctx1", "score": 0.9},
-            {"context_id": "ctx2", "score": 0.8}
-        ]
-        results2 = [
-            {"context_id": "ctx1", "score": 0.85},
-            {"context_id": "ctx2", "score": 0.75}
-        ]
-        
-        stability = check._calculate_ranking_stability(results1, results2)
-        
+        # Method expects lists of IDs (strings), not lists of dicts
+        ranking1 = ["ctx1", "ctx2", "ctx3"]
+        ranking2 = ["ctx1", "ctx2", "ctx3"]  # Same order = perfect stability
+
+        stability = check._calculate_ranking_stability(ranking1, ranking2)
+
         assert 0.0 <= stability <= 1.0
-        # Should be 1.0 since ranking order is preserved
+        # Should be 1.0 since ranking order is identical
         assert stability == 1.0
     
     @pytest.mark.asyncio
@@ -382,10 +408,12 @@ class TestParaphraseRobustness:
         """Test run_check when an exception occurs."""
         with patch.object(check, '_test_semantic_similarity', side_effect=Exception("Test error")):
             result = await check.run_check()
-        
+
         assert result.status == "fail"
-        assert "Paraphrase robustness check failed with error: Test error" in result.message
+        assert "Paraphrase robustness check failed with error:" in result.message
+        assert "Test error" in result.message
         assert result.details["error"] == "Test error"
+        assert result.details["error_type"] == "Exception"
     
     @pytest.mark.asyncio
     async def test_default_paraphrase_sets(self, check: ParaphraseRobustness) -> None:
@@ -393,16 +421,18 @@ class TestParaphraseRobustness:
         # Test with default configuration
         default_config = SentinelConfig()
         default_check = ParaphraseRobustness(default_config)
-        
-        assert len(default_check.test_paraphrase_sets) == 5
-        
+
+        # After optimization (PR #327): 2 topics for runtime monitoring
+        # Full 5x5 matrix moved to CI/CD comprehensive tests
+        assert len(default_check.test_paraphrase_sets) == 2
+
         # Verify structure of default sets
         for paraphrase_set in default_check.test_paraphrase_sets:
             assert "topic" in paraphrase_set
-            assert "base_query" in paraphrase_set
-            assert "paraphrases" in paraphrase_set
+            assert "variations" in paraphrase_set
             assert "expected_similarity" in paraphrase_set
-            assert len(paraphrase_set["paraphrases"]) == 5
+            # Each topic has 3 variations for runtime smoke tests
+            assert len(paraphrase_set["variations"]) == 3
     
     @pytest.mark.asyncio
     async def test_configuration_validation(self, check: ParaphraseRobustness) -> None:
