@@ -223,9 +223,23 @@ class GraphBackend(BackendSearchInterface):
         
         # Base query with text matching
         where_conditions = []
-        
-        # Text search - use CONTAINS for simple matching
-        where_conditions.append("(n.text CONTAINS $search_text OR n.content CONTAINS $search_text)")
+
+        # Text search - search across all actual Context node fields
+        # Fix for retrieval issue: Context nodes have title, description, keyword, user_input, bot_response
+        # NOT the generic 'text' or 'content' fields that were being searched
+        text_fields = [
+            "n.title",           # Manual contexts
+            "n.description",     # Manual contexts
+            "n.keyword",         # Manual contexts
+            "n.user_input",      # Voice bot contexts
+            "n.bot_response"     # Voice bot contexts
+        ]
+        # Add NULL safety and case-insensitive search using toLower()
+        text_search_conditions = " OR ".join([
+            f"({field} IS NOT NULL AND toLower({field}) CONTAINS toLower($search_text))"
+            for field in text_fields
+        ])
+        where_conditions.append(f"({text_search_conditions})")
         
         # Apply namespace filter
         if options.namespace:
@@ -283,12 +297,20 @@ class GraphBackend(BackendSearchInterface):
                 
                 # Extract required fields with fallbacks
                 result_id = str(node_data.get('id', node_data.get('_id', id(node_data))))
-                text = node_data.get('text', node_data.get('content', ''))
-                
-                # Handle legacy field names
-                if not text:
-                    text = node_data.get('user_message', node_data.get('message', ''))
-                
+
+                # Extract text from actual Context node fields
+                # Try all searchable fields in priority order
+                text = (
+                    node_data.get('title') or
+                    node_data.get('description') or
+                    node_data.get('user_input') or
+                    node_data.get('bot_response') or
+                    node_data.get('keyword') or
+                    node_data.get('user_message') or  # Legacy field
+                    node_data.get('message') or        # Legacy field
+                    ''
+                )
+
                 if not text:
                     backend_logger.warning(f"Node missing text content: {result_id}")
                     continue
@@ -380,10 +402,16 @@ class GraphBackend(BackendSearchInterface):
     def _create_indexes(self):
         """Create performance indexes for common queries."""
         try:
-            # Index on text fields for faster text search
+            # Index on actual searchable fields for faster text search
+            # Updated to match fields used in _build_search_query
             index_queries = [
-                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.text)",
-                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.content)",
+                # Text search fields
+                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.title)",
+                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.description)",
+                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.keyword)",
+                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.user_input)",
+                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.bot_response)",
+                # Filter fields
                 f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.timestamp)",
                 f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.namespace)",
                 f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.type)"
