@@ -830,10 +830,13 @@ async def startup_event() -> None:
     credentials = validate_startup_credentials()
 
     try:
+        # Check if running in test environment
+        is_test_env = os.getenv("ENVIRONMENT") == "test"
+
         # Initialize Neo4j (allow graceful degradation if unavailable)
         if credentials["neo4j_password"]:
             try:
-                neo4j_client = Neo4jClient()
+                neo4j_client = Neo4jClient(test_mode=is_test_env)
                 neo4j_client.connect(
                     username=os.getenv("NEO4J_USER", "neo4j"),
                     password=credentials["neo4j_password"],
@@ -857,7 +860,7 @@ async def startup_event() -> None:
 
         try:
             logger.info("Initializing Qdrant vector database...")
-            qdrant_initializer = VectorDBInitializer()
+            qdrant_initializer = VectorDBInitializer(test_mode=is_test_env)
 
             if qdrant_initializer.connect():
                 qdrant_initialization_status["qdrant_connected"] = True

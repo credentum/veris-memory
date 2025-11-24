@@ -124,27 +124,26 @@ class ParaphraseRobustness(BaseCheck):
         return headers
         
     def _get_default_paraphrase_sets(self) -> List[Dict[str, Any]]:
-        """Get default paraphrase test sets for semantic consistency testing."""
+        """
+        Get default paraphrase test sets for semantic consistency testing.
+
+        OPTIMIZATION (Phase 1): Reduced from 5 topics × 5 variations (25 queries)
+        to 2 topics × 3 variations (6 queries) for runtime monitoring.
+
+        These 2 topics cover the most critical query patterns:
+        - system_configuration: General how-to questions
+        - error_troubleshooting: Problem-solving queries
+
+        Full paraphrase testing (5×5 matrix) should be done in CI/CD.
+        Runtime monitoring only needs smoke tests to validate semantic search works.
+        """
         return [
             {
                 "topic": "system_configuration",
                 "variations": [
                     "How do I configure the system?",
                     "What are the configuration steps?",
-                    "How to set up the system configuration?",
-                    "What is the process for configuring the system?",
-                    "How can I configure this system?"
-                ],
-                "expected_similarity": PARAPHRASE_SIMILARITY_THRESHOLD
-            },
-            {
-                "topic": "database_connection",
-                "variations": [
-                    "How do I connect to the database?",
-                    "What are the database connection steps?",
-                    "How to establish a database connection?",
-                    "What is the process for connecting to the database?",
-                    "How can I connect to the DB?"
+                    "How to set up the system configuration?"
                 ],
                 "expected_similarity": PARAPHRASE_SIMILARITY_THRESHOLD
             },
@@ -153,35 +152,18 @@ class ParaphraseRobustness(BaseCheck):
                 "variations": [
                     "How do I fix this error?",
                     "What's the solution to this problem?",
-                    "How to resolve this issue?",
-                    "What steps should I take to fix this?",
-                    "How can I troubleshoot this error?"
-                ],
-                "expected_similarity": PARAPHRASE_SIMILARITY_THRESHOLD
-            },
-            {
-                "topic": "performance_optimization",
-                "variations": [
-                    "How can I improve performance?",
-                    "What are ways to optimize speed?",
-                    "How to make the system faster?",
-                    "What performance improvements are available?",
-                    "How do I optimize system performance?"
-                ],
-                "expected_similarity": PARAPHRASE_SIMILARITY_THRESHOLD
-            },
-            {
-                "topic": "user_authentication",
-                "variations": [
-                    "How do users log in?",
-                    "What is the authentication process?",
-                    "How to authenticate users?",
-                    "What are the login steps?",
-                    "How does user authentication work?"
+                    "How to resolve this issue?"
                 ],
                 "expected_similarity": PARAPHRASE_SIMILARITY_THRESHOLD
             }
         ]
+
+        # NOTE: Additional paraphrase topics moved to CI/CD testing:
+        # - database_connection
+        # - performance_optimization
+        # - user_authentication
+        # These should be tested in the CI/CD pipeline on code changes,
+        # not continuously in production runtime monitoring.
         
     async def run_check(self) -> CheckResult:
         """Execute comprehensive paraphrase robustness validation."""

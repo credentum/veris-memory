@@ -10,6 +10,17 @@ FROM python:3.11-slim@sha256:2ec5a4a5c3e919570f57675471f081d6299668d909feabd8d48
 # Build arguments
 ARG ENVIRONMENT=production
 
+# Security: Upgrade vulnerable packages to fix CVEs detected in base image
+# CVE-2025-4802, CVE-2025-6965, CVE-2025-7458, CVE-2023-7104, CVE-2023-31484, CVE-2024-56406
+RUN apt-get update && \
+    apt-get upgrade -y \
+        libc-bin \
+        libc6 \
+        libsqlite3-0 \
+        perl-base && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install system dependencies (both build and runtime)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
