@@ -215,17 +215,56 @@ class GraphBackend(BackendSearchInterface):
     # Private helper methods
     
     def _build_search_query(self, query: str, options: SearchOptions) -> tuple[str, Dict[str, Any]]:
-        """Build Cypher query for text search."""
+        """Build Cypher query for text search with multi-word support."""
         parameters = {
-            "search_text": query,
             "limit": options.limit
         }
-        
+
         # Base query with text matching
         where_conditions = []
-        
-        # Text search - use CONTAINS for simple matching
-        where_conditions.append("(n.text CONTAINS $search_text OR n.content CONTAINS $search_text)")
+
+        # Text search - search across all actual Context node fields
+        # Fix for retrieval issue: Context nodes have title, description, keyword, user_input, bot_response
+        # NOT the generic 'text' or 'content' fields that were being searched
+        text_fields = [
+            "n.title",           # Manual contexts
+            "n.description",     # Manual contexts
+            "n.keyword",         # Manual contexts
+            "n.user_input",      # Voice bot contexts
+            "n.bot_response"     # Voice bot contexts
+        ]
+
+        # Enhanced multi-word search: split query into words
+        # Each word must appear in at least one field (AND logic across words, OR across fields)
+        query_words = [word.strip() for word in query.split() if word.strip()]
+
+        if not query_words:
+            # Empty query - match nothing
+            where_conditions.append("false")
+        elif len(query_words) == 1:
+            # Single word - use simple CONTAINS (faster)
+            parameters["search_text"] = query_words[0]
+            text_search_conditions = " OR ".join([
+                f"({field} IS NOT NULL AND toLower({field}) CONTAINS toLower($search_text))"
+                for field in text_fields
+            ])
+            where_conditions.append(f"({text_search_conditions})")
+        else:
+            # Multi-word search - each word must appear in at least one field
+            word_conditions = []
+            for idx, word in enumerate(query_words):
+                param_name = f"word_{idx}"
+                parameters[param_name] = word
+                # This word must appear in at least one field
+                field_conditions = " OR ".join([
+                    f"({field} IS NOT NULL AND toLower({field}) CONTAINS toLower(${param_name}))"
+                    for field in text_fields
+                ])
+                word_conditions.append(f"({field_conditions})")
+
+            # All words must be found (AND across words)
+            combined_condition = " AND ".join(word_conditions)
+            where_conditions.append(f"({combined_condition})")
         
         # Apply namespace filter
         if options.namespace:
@@ -283,12 +322,20 @@ class GraphBackend(BackendSearchInterface):
                 
                 # Extract required fields with fallbacks
                 result_id = str(node_data.get('id', node_data.get('_id', id(node_data))))
-                text = node_data.get('text', node_data.get('content', ''))
-                
-                # Handle legacy field names
-                if not text:
-                    text = node_data.get('user_message', node_data.get('message', ''))
-                
+
+                # Extract text from actual Context node fields
+                # Try all searchable fields in priority order
+                text = (
+                    node_data.get('title') or
+                    node_data.get('description') or
+                    node_data.get('user_input') or
+                    node_data.get('bot_response') or
+                    node_data.get('keyword') or
+                    node_data.get('user_message') or  # Legacy field
+                    node_data.get('message') or        # Legacy field
+                    ''
+                )
+
                 if not text:
                     backend_logger.warning(f"Node missing text content: {result_id}")
                     continue
@@ -380,10 +427,16 @@ class GraphBackend(BackendSearchInterface):
     def _create_indexes(self):
         """Create performance indexes for common queries."""
         try:
-            # Index on text fields for faster text search
+            # Index on actual searchable fields for faster text search
+            # Updated to match fields used in _build_search_query
             index_queries = [
-                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.text)",
-                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.content)",
+                # Text search fields
+                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.title)",
+                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.description)",
+                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.keyword)",
+                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.user_input)",
+                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.bot_response)",
+                # Filter fields
                 f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.timestamp)",
                 f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.namespace)",
                 f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.type)"
