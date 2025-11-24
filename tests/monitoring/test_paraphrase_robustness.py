@@ -8,7 +8,7 @@ Tests the ParaphraseRobustness check with mocked HTTP calls and semantic analysi
 import asyncio
 import statistics
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 import aiohttp
 
@@ -120,22 +120,36 @@ class TestParaphraseRobustness:
     async def test_semantic_similarity_success(self, check: ParaphraseRobustness) -> None:
         """Test successful semantic similarity analysis."""
         # Mock response with consistent results (high similarity)
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
+        # All variations return same contexts = high similarity
+        mock_response_data = {
             "contexts": [
                 {"id": "ctx1", "content": {"text": "Test configuration guide"}, "score": 0.9},
                 {"id": "ctx2", "content": {"text": "Configuration setup"}, "score": 0.8},
                 {"id": "ctx3", "content": {"text": "Setup guide"}, "score": 0.75}
             ]
-        })
+        }
 
+        # Create mock response
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_response_data)
+
+        # Create mock post context manager
+        mock_post_context = AsyncMock()
+        mock_post_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_post_context.__aexit__ = AsyncMock(return_value=None)
+
+        # Create mock session with post as a regular Mock (not AsyncMock)
+        # so it returns the context manager directly without wrapping in coroutine
         mock_session = AsyncMock()
-        mock_session.post.return_value.__aenter__.return_value = mock_response
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.post = Mock(return_value=mock_post_context)
 
-        with patch('aiohttp.ClientSession', return_value=mock_session):
+        # Create mock ClientSession context manager
+        mock_client_session = AsyncMock()
+        mock_client_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_client_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch('aiohttp.ClientSession', return_value=mock_client_session):
             result = await check._test_semantic_similarity()
 
         assert result["passed"] is True
@@ -147,16 +161,18 @@ class TestParaphraseRobustness:
     async def test_semantic_similarity_low_scores(self, check: ParaphraseRobustness) -> None:
         """Test semantic similarity with low similarity scores."""
         # Mock very different results for each variation (low overlap = low similarity)
+        # Each variation returns completely different contexts
         mock_responses = [
             {"contexts": [{"id": "ctx1", "content": {"text": "Configuration guide"}, "score": 0.9}]},
             {"contexts": [{"id": "ctx2", "content": {"text": "Completely different topic"}, "score": 0.9}]},
-            {"contexts": [{"id": "ctx3", "content": {"text": "Another unrelated result"}, "score": 0.9}]}
+            {"contexts": [{"id": "ctx3", "content": {"text": "Another unrelated result"}, "score": 0.9}]},
+            {"contexts": [{"id": "ctx4", "content": {"text": "Fourth different topic"}, "score": 0.9}]}
         ]
 
         response_iter = iter(mock_responses)
 
         def mock_post(*args, **kwargs):
-            ctx = AsyncMock()
+            # Create response for this call
             response = AsyncMock()
             response.status = 200
             try:
@@ -164,15 +180,23 @@ class TestParaphraseRobustness:
             except StopIteration:
                 # If we run out, return empty contexts
                 response.json = AsyncMock(return_value={"contexts": []})
-            ctx.__aenter__ = AsyncMock(return_value=response)
-            return ctx
 
+            # Create async context manager for this post call
+            post_context = AsyncMock()
+            post_context.__aenter__ = AsyncMock(return_value=response)
+            post_context.__aexit__ = AsyncMock(return_value=None)
+            return post_context
+
+        # Create mock session
         mock_session = AsyncMock()
-        mock_session.post.side_effect = mock_post
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.post = mock_post
 
-        with patch('aiohttp.ClientSession', return_value=mock_session):
+        # Create mock ClientSession context manager
+        mock_client_session = AsyncMock()
+        mock_client_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_client_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch('aiohttp.ClientSession', return_value=mock_client_session):
             result = await check._test_semantic_similarity()
 
         assert result["passed"] is False
@@ -347,23 +371,21 @@ class TestParaphraseRobustness:
     
     @pytest.mark.asyncio
     async def test_api_error_handling(self, check: ParaphraseRobustness) -> None:
-        """Test handling of API errors."""
-        # Mock ClientError to test error handling
-        async def mock_post_error(*args, **kwargs):
-            raise aiohttp.ClientError("Connection failed")
+        """Test handling of API errors at the top level."""
+        # Mock ClientSession to raise error during context manager __aenter__
+        # This will be caught by the outer try/except and return passed=False
+        mock_client_session = AsyncMock()
+        mock_client_session.__aenter__ = AsyncMock(side_effect=aiohttp.ClientError("Connection failed"))
+        mock_client_session.__aexit__ = AsyncMock(return_value=None)
 
-        mock_session = AsyncMock()
-        mock_session.post = mock_post_error
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock()
-
-        with patch('aiohttp.ClientSession', return_value=mock_session):
+        with patch('aiohttp.ClientSession', return_value=mock_client_session):
             result = await check._test_semantic_similarity()
 
         # Should return error structure
         assert result["passed"] is False
         assert "error" in result
         assert isinstance(result["error"], str)
+        assert "Connection failed" in result["error"]
     
     @pytest.mark.asyncio
     async def test_calculate_result_overlap(self, check: ParaphraseRobustness) -> None:
