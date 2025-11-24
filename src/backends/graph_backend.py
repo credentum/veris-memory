@@ -215,12 +215,11 @@ class GraphBackend(BackendSearchInterface):
     # Private helper methods
     
     def _build_search_query(self, query: str, options: SearchOptions) -> tuple[str, Dict[str, Any]]:
-        """Build Cypher query for text search."""
+        """Build Cypher query for text search with multi-word support."""
         parameters = {
-            "search_text": query,
             "limit": options.limit
         }
-        
+
         # Base query with text matching
         where_conditions = []
 
@@ -234,12 +233,38 @@ class GraphBackend(BackendSearchInterface):
             "n.user_input",      # Voice bot contexts
             "n.bot_response"     # Voice bot contexts
         ]
-        # Add NULL safety and case-insensitive search using toLower()
-        text_search_conditions = " OR ".join([
-            f"({field} IS NOT NULL AND toLower({field}) CONTAINS toLower($search_text))"
-            for field in text_fields
-        ])
-        where_conditions.append(f"({text_search_conditions})")
+
+        # Enhanced multi-word search: split query into words
+        # Each word must appear in at least one field (AND logic across words, OR across fields)
+        query_words = [word.strip() for word in query.split() if word.strip()]
+
+        if not query_words:
+            # Empty query - match nothing
+            where_conditions.append("false")
+        elif len(query_words) == 1:
+            # Single word - use simple CONTAINS (faster)
+            parameters["search_text"] = query_words[0]
+            text_search_conditions = " OR ".join([
+                f"({field} IS NOT NULL AND toLower({field}) CONTAINS toLower($search_text))"
+                for field in text_fields
+            ])
+            where_conditions.append(f"({text_search_conditions})")
+        else:
+            # Multi-word search - each word must appear in at least one field
+            word_conditions = []
+            for idx, word in enumerate(query_words):
+                param_name = f"word_{idx}"
+                parameters[param_name] = word
+                # This word must appear in at least one field
+                field_conditions = " OR ".join([
+                    f"({field} IS NOT NULL AND toLower({field}) CONTAINS toLower(${param_name}))"
+                    for field in text_fields
+                ])
+                word_conditions.append(f"({field_conditions})")
+
+            # All words must be found (AND across words)
+            combined_condition = " AND ".join(word_conditions)
+            where_conditions.append(f"({combined_condition})")
         
         # Apply namespace filter
         if options.namespace:
