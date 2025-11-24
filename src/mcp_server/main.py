@@ -1011,15 +1011,20 @@ async def startup_event() -> None:
                         logger.warning(f"⚠️ KV backend initialization failed: {e}")
 
                 # Initialize Text Backend (BM25 full-text search)
-                # Issue #311: Text backend was missing, causing hybrid search to only return vector results
-                if TextSearchBackend:
-                    try:
-                        text_backend = TextSearchBackend()
-                        query_dispatcher.register_backend("text", text_backend)
-                        logger.info("✅ Text backend registered with MCP dispatcher")
-                        logger.info("   Note: Text backend uses in-memory BM25 indexing")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Text backend initialization failed: {e}")
+                # DISABLED: Text backend is not production-ready
+                # Issue: Text backend initializes with empty in-memory index and is not auto-seeded
+                # from Neo4j/Qdrant, causing it to return 0 results. In hybrid search mode, this
+                # empty backend (priority 2) may interfere with graph backend (priority 3) results.
+                # TODO: Implement auto-indexing from existing storage before re-enabling
+                # if TextSearchBackend:
+                #     try:
+                #         text_backend = TextSearchBackend()
+                #         query_dispatcher.register_backend("text", text_backend)
+                #         logger.info("✅ Text backend registered with MCP dispatcher")
+                #         logger.info("   Note: Text backend uses in-memory BM25 indexing")
+                #     except Exception as e:
+                #         logger.warning(f"⚠️ Text backend initialization failed: {e}")
+                logger.info("ℹ️ Text backend disabled - awaiting auto-indexing implementation")
 
                 # Initialize unified RetrievalCore
                 retrieval_core = initialize_retrieval_core(query_dispatcher)
