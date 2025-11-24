@@ -22,24 +22,27 @@ class TestParaphraseRobustness:
     @pytest.fixture
     def config(self) -> SentinelConfig:
         """Create a test configuration."""
-        return SentinelConfig({
-            "veris_memory_url": "http://test.example.com:8000",
-            "s3_paraphrase_timeout_sec": 30,
-            "s3_min_similarity_threshold": 0.7,
-            "s3_max_result_variance": 0.3,
-            "s3_test_paraphrase_sets": [
-                {
-                    "topic": "test_configuration",
-                    "base_query": "How to configure test settings",
-                    "paraphrases": [
-                        "Setting up test configuration",
-                        "Test setup configuration guide",
-                        "Configure testing environment"
-                    ],
-                    "expected_similarity": 0.8
-                }
-            ]
-        })
+        # Create base config with proper dataclass field
+        config = SentinelConfig(target_base_url="http://test.example.com:8000")
+
+        # Add custom S3-specific config attributes
+        config.s3_paraphrase_timeout_sec = 30
+        config.s3_min_similarity_threshold = 0.7
+        config.s3_max_result_variance = 0.3
+        config.s3_test_paraphrase_sets = [
+            {
+                "topic": "test_configuration",
+                "base_query": "How to configure test settings",
+                "paraphrases": [
+                    "Setting up test configuration",
+                    "Test setup configuration guide",
+                    "Configure testing environment"
+                ],
+                "expected_similarity": 0.8
+            }
+        ]
+
+        return config
     
     @pytest.fixture
     def check(self, config: SentinelConfig) -> ParaphraseRobustness:
@@ -82,7 +85,7 @@ class TestParaphraseRobustness:
 
         assert result.check_id == "S3-paraphrase-robustness"
         assert result.status == "pass"
-        assert "All semantic robustness checks passed: 6 tests successful" in result.message
+        assert "All paraphrase robustness checks passed: 6 tests successful" in result.message
         assert result.details["total_tests"] == 6
         assert result.details["passed_tests"] == 6
         assert result.details["failed_tests"] == 0
@@ -109,7 +112,7 @@ class TestParaphraseRobustness:
                                 result = await check.run_check()
 
         assert result.status == "fail"
-        assert "Semantic robustness issues detected: 2 problems found" in result.message
+        assert "Semantic consistency issues detected: 2 tests failed" in result.message
         assert result.details["passed_tests"] == 4
         assert result.details["failed_tests"] == 2
     
@@ -388,7 +391,7 @@ class TestParaphraseRobustness:
     async def test_default_paraphrase_sets(self, check: ParaphraseRobustness) -> None:
         """Test default paraphrase sets configuration."""
         # Test with default configuration
-        default_config = SentinelConfig({})
+        default_config = SentinelConfig()
         default_check = ParaphraseRobustness(default_config)
         
         assert len(default_check.test_paraphrase_sets) == 5
@@ -405,11 +408,10 @@ class TestParaphraseRobustness:
     async def test_configuration_validation(self, check: ParaphraseRobustness) -> None:
         """Test configuration parameter validation."""
         # Test with invalid configuration
-        invalid_config = SentinelConfig({
-            "s3_min_similarity_threshold": 1.5,  # Invalid > 1.0
-            "s3_max_result_variance": -0.1,     # Invalid < 0.0
-            "s3_paraphrase_timeout_sec": -5     # Invalid < 0
-        })
+        invalid_config = SentinelConfig()
+        invalid_config.s3_min_similarity_threshold = 1.5  # Invalid > 1.0
+        invalid_config.s3_max_result_variance = -0.1     # Invalid < 0.0
+        invalid_config.s3_paraphrase_timeout_sec = -5     # Invalid < 0
 
         # Should handle invalid config gracefully
         invalid_check = ParaphraseRobustness(invalid_config)
@@ -429,17 +431,16 @@ class TestParaphraseRobustnessDiagnosticLogging:
     @pytest.fixture
     def config(self) -> SentinelConfig:
         """Create a test configuration."""
-        return SentinelConfig({
-            "veris_memory_url": "http://test.example.com:8000",
-            "s3_paraphrase_timeout_sec": 30,
-            "s3_min_similarity_threshold": 0.7,
-            "s3_test_paraphrase_sets": [
-                {
-                    "topic": "test_topic",
-                    "variations": ["query 1", "query 2", "query 3"]
-                }
-            ]
-        })
+        config = SentinelConfig(target_base_url="http://test.example.com:8000")
+        config.s3_paraphrase_timeout_sec = 30
+        config.s3_min_similarity_threshold = 0.7
+        config.s3_test_paraphrase_sets = [
+            {
+                "topic": "test_topic",
+                "variations": ["query 1", "query 2", "query 3"]
+            }
+        ]
+        return config
 
     @pytest.fixture
     def check(self, config: SentinelConfig) -> ParaphraseRobustness:
