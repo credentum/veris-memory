@@ -1,10 +1,26 @@
+# Veris Memory Docker Compose Configuration
+#
+# DEPLOYMENT STRATEGY:
+#   This file has BOTH "image:" (GHCR) and "build:" (local) directives for all services.
+#   Docker Compose behavior:
+#     - docker compose up         → Pulls from GHCR (fast, 30 sec)
+#     - docker compose up --build → Builds locally (slower, 7 min)
+#
+# AUTOMATIC FALLBACK:
+#   If GHCR pull fails (network issue, images not pushed yet), deployment automatically
+#   falls back to local build. See scripts/deploy-dev.sh for implementation.
+#
+# PRODUCTION: Pulls CVE-validated images from GHCR (deployed via GitHub Actions)
+# LOCAL DEV: Can build locally or pull from GHCR (developer's choice)
 
 services:
   # Context Store MCP Server (Primary AI Agent Interface)
   context-store:
+    image: ghcr.io/credentum/veris-memory/context-store:latest
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile
+    pull_policy: always
     ports:
       - "8000:8000"  # SECURITY: Accessible via Docker bridge network for MCP clients (external access blocked by firewall)
     environment:
@@ -45,9 +61,11 @@ services:
 
   # REST API Server (Operational Interface & Monitoring)
   api:
+    image: ghcr.io/credentum/veris-memory/api:latest
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile.api
+    pull_policy: always
     ports:
       - "127.0.0.1:8001:8001"  # SECURITY: Bind to localhost only
     environment:
@@ -188,9 +206,11 @@ services:
 
   # Monitoring Dashboard Service
   monitoring-dashboard:
+    image: ghcr.io/credentum/veris-memory/context-store:latest
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile
+    pull_policy: always
     ports:
       - "127.0.0.1:8080:8080"  # SECURITY: Bind to localhost only
     environment:
@@ -225,9 +245,11 @@ services:
   # Requires TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to be set in GitHub Secrets
   # for Telegram alerting. Get bot token from @BotFather, chat ID from @userinfobot
   sentinel:
+    image: ghcr.io/credentum/veris-memory/sentinel:latest
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile.sentinel
+    pull_policy: always
     environment:
       # Telegram Configuration (from GitHub Secrets)
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
@@ -285,16 +307,24 @@ services:
   # This prevents port binding conflicts when using -f flag with multiple compose files
 
 volumes:
+  # IMPORTANT: Using external volumes with explicit names to preserve data across deployments
+  # This ensures that data persists even when using different project names (-p flag)
+  # These volumes match the original veris-memory_* names to preserve existing data
   qdrant_data:
-    driver: local
+    external: true
+    name: veris-memory_qdrant_data
   neo4j_data:
-    driver: local
+    external: true
+    name: veris-memory_neo4j_data
   neo4j_logs:
-    driver: local
+    external: true
+    name: veris-memory_neo4j_logs
   redis_data:
-    driver: local
+    external: true
+    name: veris-memory_redis_data
   sentinel_data:
-    driver: local
+    external: true
+    name: veris-memory_sentinel_data
   # voice-bot-logs volume is defined in docker-compose.voice.yml
 
 networks:
