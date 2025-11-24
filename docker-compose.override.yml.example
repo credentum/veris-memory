@@ -11,6 +11,9 @@
 #
 # To use GHCR images locally (same as production):
 #   docker compose -f docker-compose.yml up  # Skips override file
+#
+# Note: Volumes are external with explicit names in docker-compose.yml.
+# This preserves data across deployments regardless of project name.
 
 services:
   # Context Store MCP Server - Build locally from source

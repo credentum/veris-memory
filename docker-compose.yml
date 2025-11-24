@@ -281,16 +281,24 @@ services:
   # This prevents port binding conflicts when using -f flag with multiple compose files
 
 volumes:
+  # IMPORTANT: Using external volumes with explicit names to preserve data across deployments
+  # This ensures that data persists even when using different project names (-p flag)
+  # These volumes match the original veris-memory_* names to preserve existing data
   qdrant_data:
-    driver: local
+    external: true
+    name: veris-memory_qdrant_data
   neo4j_data:
-    driver: local
+    external: true
+    name: veris-memory_neo4j_data
   neo4j_logs:
-    driver: local
+    external: true
+    name: veris-memory_neo4j_logs
   redis_data:
-    driver: local
+    external: true
+    name: veris-memory_redis_data
   sentinel_data:
-    driver: local
+    external: true
+    name: veris-memory_sentinel_data
   # voice-bot-logs volume is defined in docker-compose.voice.yml
 
 networks:
