@@ -502,11 +502,17 @@ ssh -o StrictHostKeyChecking=no \
 
     # Pull latest CVE-validated images (30 seconds vs 7 minutes build time)
     echo "📥 Pulling latest images from GHCR (CVE validated)..."
-    docker compose -p veris-memory-dev pull || echo "⚠️  Some images not available in GHCR, will build locally if needed"
-
-    # Deploy main services (using pulled images, no build)
-    echo "🚀 Starting main services..."
-    docker compose -p veris-memory-dev up -d --no-build
+    if docker compose -p veris-memory-dev pull; then
+      # Successfully pulled images from GHCR
+      echo "✅ Images pulled from GHCR successfully"
+      echo "🚀 Starting main services with pulled images..."
+      docker compose -p veris-memory-dev up -d --no-build
+    else
+      # GHCR pull failed - fall back to local build
+      echo "⚠️  Failed to pull images from GHCR (registry unreachable or images not yet pushed)"
+      echo "🏗️  Falling back to local build (this will take ~7 minutes)..."
+      docker compose -p veris-memory-dev up -d --build
+    fi
 
     # Deploy voice platform services (voice-bot + livekit)
     if [ -f "docker-compose.voice.yml" ]; then

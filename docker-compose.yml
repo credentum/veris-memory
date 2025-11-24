@@ -1,23 +1,26 @@
 # Veris Memory Docker Compose Configuration
 #
-# PRODUCTION DEPLOYMENT (uses pre-built GHCR images):
-#   docker compose pull && docker compose up -d --no-build
+# DEPLOYMENT STRATEGY:
+#   This file has BOTH "image:" (GHCR) and "build:" (local) directives for all services.
+#   Docker Compose behavior:
+#     - docker compose up         → Pulls from GHCR (fast, 30 sec)
+#     - docker compose up --build → Builds locally (slower, 7 min)
 #
-# LOCAL DEVELOPMENT (build from source):
-#   Temporarily replace "image: ghcr.io/..." with "build: { context: ., dockerfile: dockerfiles/... }"
-#   Then: docker compose up -d --build
+# AUTOMATIC FALLBACK:
+#   If GHCR pull fails (network issue, images not pushed yet), deployment automatically
+#   falls back to local build. See scripts/deploy-dev.sh for implementation.
 #
-# For most developers, pulling from GHCR is faster (30 sec vs 7 min build time)
+# PRODUCTION: Pulls CVE-validated images from GHCR (deployed via GitHub Actions)
+# LOCAL DEV: Can build locally or pull from GHCR (developer's choice)
 
 services:
   # Context Store MCP Server (Primary AI Agent Interface)
   context-store:
     image: ghcr.io/credentum/veris-memory/context-store:latest
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile
     pull_policy: always
-    # For local development builds, replace above with:
-    # build:
-    #   context: .
-    #   dockerfile: dockerfiles/Dockerfile
     ports:
       - "8000:8000"  # SECURITY: Accessible via Docker bridge network for MCP clients (external access blocked by firewall)
     environment:
@@ -59,6 +62,9 @@ services:
   # REST API Server (Operational Interface & Monitoring)
   api:
     image: ghcr.io/credentum/veris-memory/api:latest
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.api
     pull_policy: always
     ports:
       - "127.0.0.1:8001:8001"  # SECURITY: Bind to localhost only
@@ -201,6 +207,9 @@ services:
   # Monitoring Dashboard Service
   monitoring-dashboard:
     image: ghcr.io/credentum/veris-memory/context-store:latest
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile
     pull_policy: always
     ports:
       - "127.0.0.1:8080:8080"  # SECURITY: Bind to localhost only
@@ -237,6 +246,9 @@ services:
   # for Telegram alerting. Get bot token from @BotFather, chat ID from @userinfobot
   sentinel:
     image: ghcr.io/credentum/veris-memory/sentinel:latest
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.sentinel
     pull_policy: always
     environment:
       # Telegram Configuration (from GitHub Secrets)
