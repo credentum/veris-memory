@@ -137,10 +137,48 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         - Method not allowed (405)
         - Not found (404)
         - All other responses
+
+        EXEMPTIONS (not rate limited):
+        - Health check endpoints (/health, /health/live, /health/ready, /health/detailed)
+        - Metrics endpoints (/metrics, /prometheus)
+        - Internal monitoring traffic (Sentinel, Docker health checks)
         """
+
+        # CRITICAL FIX: Exempt health and metrics endpoints from rate limiting
+        # Docker health checks and monitoring tools must NEVER be rate limited
+        exempt_paths = {
+            "/health",
+            "/health/live",
+            "/health/ready",
+            "/health/detailed",
+            "/metrics",
+            "/prometheus"
+        }
+
+        if request.url.path in exempt_paths:
+            # Skip rate limiting for health/metrics endpoints
+            return await call_next(request)
 
         # Get client IP address
         client_ip = get_remote_address(request)
+
+        # CRITICAL FIX: Exempt Sentinel and internal monitoring IPs from rate limiting
+        # Sentinel needs to make 22 queries/cycle without being blocked
+        # Docker internal network typically uses 172.x.x.x ranges
+        sentinel_ips = {
+            "172.18.0.8",  # Sentinel container in dev
+            "172.17.0.1",  # Docker host
+            "127.0.0.1",   # Localhost
+            "::1"          # IPv6 localhost
+        }
+
+        # Also exempt any IP making requests with Sentinel auth header
+        auth_header = request.headers.get("X-API-Key", "")
+        sentinel_key_prefix = os.getenv("SENTINEL_API_KEY", "sentinel_")
+
+        if client_ip in sentinel_ips or auth_header.startswith(sentinel_key_prefix):
+            # Skip rate limiting for Sentinel monitoring
+            return await call_next(request)
 
         # Get current time window
         current_time = int(time.time())
