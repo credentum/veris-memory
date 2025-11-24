@@ -1,22 +1,15 @@
 name: Deploy to Development Environment
 
 on:
-  push:
+  # Wait for CVE scan to complete before deploying
+  # This ensures GHCR images are available before deployment attempts to pull them
+  workflow_run:
+    workflows: ["CVE Security Scan"]
+    types:
+      - completed
     branches: [main]
-    paths:
-      - 'src/**'
-      - 'schemas/**'
-      - 'contracts/**'
-      - 'voice-bot/**'
-      - 'requirements.txt'
-      - 'dockerfiles/Dockerfile*'
-      - 'docker-compose*.yml'
-      - '.env*'
-      - 'scripts/deploy-dev.sh'
-      - 'scripts/deploy-environment.sh'
-      - 'scripts/init-neo4j-schema.sh'
-      - 'deployments/**'
-      - '.github/workflows/deploy-dev.yml'
+
+  # Manual deployment trigger (doesn't wait for CVE scan)
   workflow_dispatch:
     inputs:
       force_deploy:
@@ -30,8 +23,17 @@ jobs:
     name: Deploy to Dev Environment
     runs-on: ubuntu-latest
     environment: development
-    
+    # Only deploy if CVE scan succeeded (or if manually triggered)
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
     steps:
+      - name: Check CVE Scan Status
+        if: github.event_name == 'workflow_run'
+        run: |
+          echo "🔍 CVE Security Scan completed with status: ${{ github.event.workflow_run.conclusion }}"
+          echo "📦 GHCR images are now available for deployment"
+          echo "⚡ Deployment will pull pre-built images (30 seconds vs 7 minutes)"
+
       - name: Checkout code
         uses: actions/checkout@v4
 
