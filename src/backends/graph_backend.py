@@ -223,9 +223,23 @@ class GraphBackend(BackendSearchInterface):
         
         # Base query with text matching
         where_conditions = []
-        
-        # Text search - use CONTAINS for simple matching
-        where_conditions.append("(n.text CONTAINS $search_text OR n.content CONTAINS $search_text)")
+
+        # Text search - search across all actual Context node fields
+        # Fix for retrieval issue: Context nodes have title, description, keyword, user_input, bot_response
+        # NOT the generic 'text' or 'content' fields that were being searched
+        text_fields = [
+            "n.title",           # Manual contexts
+            "n.description",     # Manual contexts
+            "n.keyword",         # Manual contexts
+            "n.user_input",      # Voice bot contexts
+            "n.bot_response"     # Voice bot contexts
+        ]
+        # Add NULL safety to prevent errors on nodes missing certain fields
+        text_search_conditions = " OR ".join([
+            f"({field} IS NOT NULL AND {field} CONTAINS $search_text)"
+            for field in text_fields
+        ])
+        where_conditions.append(f"({text_search_conditions})")
         
         # Apply namespace filter
         if options.namespace:
