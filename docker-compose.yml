@@ -1,9 +1,23 @@
+# Veris Memory Docker Compose Configuration
+#
+# PRODUCTION DEPLOYMENT (uses pre-built GHCR images):
+#   docker compose pull && docker compose up -d --no-build
+#
+# LOCAL DEVELOPMENT (build from source):
+#   Temporarily replace "image: ghcr.io/..." with "build: { context: ., dockerfile: dockerfiles/... }"
+#   Then: docker compose up -d --build
+#
+# For most developers, pulling from GHCR is faster (30 sec vs 7 min build time)
 
 services:
   # Context Store MCP Server (Primary AI Agent Interface)
   context-store:
     image: ghcr.io/credentum/veris-memory/context-store:latest
     pull_policy: always
+    # For local development builds, replace above with:
+    # build:
+    #   context: .
+    #   dockerfile: dockerfiles/Dockerfile
     ports:
       - "8000:8000"  # SECURITY: Accessible via Docker bridge network for MCP clients (external access blocked by firewall)
     environment:
