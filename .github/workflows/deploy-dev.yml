@@ -111,20 +111,23 @@ jobs:
             if [ "$RUNNING" -gt 0 ]; then
                 echo "✅ Found $RUNNING running services"
 
-                # Restart Python services to load new code
-                # This is reliable unlike hot reload which often fails silently
-                echo "🔄 Restarting Python services to load new code..."
-                docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} restart context-store api sentinel
+                # Recreate Python services to load new code
+                # Using --force-recreate instead of restart because:
+                # - restart only restarts process inside existing container
+                # - git reset changes file inodes, but container caches old inodes
+                # - force-recreate creates fresh containers with new volume bindings
+                echo "🔄 Recreating Python services to load new code..."
+                docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} up -d --force-recreate --no-build context-store api sentinel
 
                 echo "⏱️  Waiting for services to be healthy..."
-                sleep 15
+                sleep 20
 
                 # Verify health
                 if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
                     echo "✅ MCP Server healthy"
                 else
-                    echo "❌ MCP Server not responding after restart"
-                    docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} logs context-store --tail=20
+                    echo "❌ MCP Server not responding after recreate"
+                    docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} logs context-store --tail=30
                     exit 1
                 fi
 
