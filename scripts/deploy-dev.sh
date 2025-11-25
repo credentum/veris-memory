@@ -287,8 +287,9 @@ ssh -o StrictHostKeyChecking=no \
       grep -v "^ENABLE_MCP_RETRY" .env.tmp12 > .env.tmp13 || true
       grep -v "^MCP_RETRY_ATTEMPTS" .env.tmp13 > .env.tmp14 || true
       grep -v "^SENTINEL_API_KEY" .env.tmp14 > .env.tmp15 || true
-      grep -v "^HOST_CHECK_SECRET" .env.tmp15 > .env || true
-      rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13 .env.tmp14 .env.tmp15
+      grep -v "^HOST_CHECK_SECRET" .env.tmp15 > .env.tmp16 || true
+      grep -v "^MCP_API_KEY" .env.tmp16 > .env || true
+      rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13 .env.tmp14 .env.tmp15 .env.tmp16
     fi
 
     # SECURITY: Validate required secrets before writing to .env
@@ -398,6 +399,11 @@ ssh -o StrictHostKeyChecking=no \
       fi
       if [ -n "\$API_KEY_VOICEBOT" ]; then
         printf "API_KEY_VOICEBOT=%s\\n" "\$API_KEY_VOICEBOT"
+        # Extract just the key prefix (before first colon) for VoiceBot to use
+        # API_KEY_VOICEBOT format: key:user_id:role:is_agent
+        # MCP_API_KEY should be just: key
+        MCP_KEY_PREFIX=\${API_KEY_VOICEBOT%%:*}
+        printf "MCP_API_KEY=%s\\n" "\$MCP_KEY_PREFIX"
       fi
 
       # Voice Bot Sprint 13 Configuration
