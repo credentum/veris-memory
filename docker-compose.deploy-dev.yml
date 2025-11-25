@@ -1,0 +1,331 @@
+# ==============================================================================
+# Development DEPLOYMENT Configuration (for dev server, NOT local development)
+# ==============================================================================
+#
+# PURPOSE: Deploy to dev server with INSTANT code updates (no rebuilding)
+#
+# HOW IT WORKS:
+#   1. Uses pre-built GHCR images (dependencies already installed, ~8GB)
+#   2. Mounts local code directories as volumes (not baked into image)
+#   3. Hot reload enabled (auto-restart on code changes)
+#
+# DEPLOYMENT TIME:
+#   - First time: ~30 seconds (pull images)
+#   - Code changes: ~3 seconds (git pull + service restart)
+#   - NO REBUILDING EVER for code changes!
+#
+# USAGE ON DEV SERVER:
+#   cd /opt/veris-memory
+#   git pull origin main                               # Get latest code
+#   docker compose -f docker-compose.deploy-dev.yml up -d   # Start/restart
+#
+# WHEN TO REBUILD (rare):
+#   - requirements.txt changes → need new images
+#   - Dockerfile changes → need new images
+#   - Wait for CVE workflow to build new images, then just pull:
+#     docker compose -f docker-compose.deploy-dev.yml pull
+#
+# ==============================================================================
+
+services:
+  # ===========================================
+  # APPLICATION SERVICES (with volume mounts)
+  # ===========================================
+
+  # Context Store MCP Server (Primary AI Agent Interface)
+  context-store:
+    image: ghcr.io/credentum/veris-memory/context-store:latest
+    pull_policy: always
+    ports:
+      - "8000:8000"
+    volumes:
+      # CODE MOUNTED AS VOLUMES - changes are instant!
+      - ./src:/app/src:ro
+      - ./schemas:/app/schemas:ro
+      - ./contracts:/app/contracts:ro
+      - ./config/.ctxrc.docker.yaml:/app/.ctxrc.yaml:ro
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - NEO4J_RO_PASSWORD=${NEO4J_RO_PASSWORD}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - MCP_SERVER_PORT=8000
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - API_KEY_MCP=${API_KEY_MCP}
+      - API_KEY_SENTINEL=${SENTINEL_API_KEY}
+      - API_KEY_VOICEBOT=${API_KEY_VOICEBOT}
+      - AUTH_REQUIRED=${AUTH_REQUIRED:-true}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - VERIS_CACHE_TTL_SECONDS=${VERIS_CACHE_TTL_SECONDS:-300}
+      - STRICT_EMBEDDINGS=${STRICT_EMBEDDINGS:-false}
+      - EMBEDDING_DIM=${EMBEDDING_DIM:-384}
+      - QDRANT_COLLECTION_NAME=${QDRANT_COLLECTION_NAME:-context_embeddings}
+    # HOT RELOAD: Watches /app/src for changes, auto-restarts
+    command: >
+      python -m uvicorn src.mcp_server.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir /app/src
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - context-store-network
+
+  # REST API Server (Operational Interface & Monitoring)
+  api:
+    image: ghcr.io/credentum/veris-memory/api:latest
+    pull_policy: always
+    ports:
+      - "127.0.0.1:8001:8001"
+    volumes:
+      # CODE MOUNTED AS VOLUMES - changes are instant!
+      - ./src:/app/src:ro
+      - ./schemas:/app/schemas:ro
+      - ./contracts:/app/contracts:ro
+      - ./config/.ctxrc.docker.yaml:/app/.ctxrc.yaml:ro
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - NEO4J_RO_PASSWORD=${NEO4J_RO_PASSWORD}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - API_SERVER_PORT=8001
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - API_KEY_MCP=${API_KEY_MCP}
+    # HOT RELOAD: Watches /app/src for changes, auto-restarts
+    command: >
+      python -m uvicorn src.api.main:app
+      --host 0.0.0.0
+      --port 8001
+      --reload
+      --reload-dir /app/src
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - context-store-network
+
+  # Monitoring Dashboard Service
+  monitoring-dashboard:
+    image: ghcr.io/credentum/veris-memory/context-store:latest
+    pull_policy: always
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      # CODE MOUNTED AS VOLUMES - changes are instant!
+      - ./src:/app/src:ro
+      - ./schemas:/app/schemas:ro
+      - ./config/.ctxrc.docker.yaml:/app/.ctxrc.yaml:ro
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - DASHBOARD_PORT=8080
+      - MONITORING_ENABLED=true
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - API_KEY_MCP=${API_KEY_MCP}
+    command: ["python", "-m", "src.monitoring"]
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/dashboard/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+    networks:
+      - context-store-network
+
+  # Sentinel Monitoring Service
+  sentinel:
+    image: ghcr.io/credentum/veris-memory/sentinel:latest
+    pull_policy: always
+    volumes:
+      # CODE MOUNTED AS VOLUMES - changes are instant!
+      - ./src:/app/src:ro
+      - ./config:/app/config:ro
+      - sentinel_data:/var/lib/sentinel
+      - /backup:/backup:ro
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - SENTINEL_CHECK_INTERVAL=60
+      - TARGET_BASE_URL=http://context-store:8000
+      - SENTINEL_API_URL=http://api:8001
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - QDRANT_URL=http://qdrant:6333
+      - MONITORING_DASHBOARD_URL=http://monitoring-dashboard:8080
+      - SENTINEL_API_KEY=${SENTINEL_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      context-store:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      monitoring-dashboard:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - context-store-network
+
+  # ===========================================
+  # INFRASTRUCTURE SERVICES (no changes needed)
+  # ===========================================
+
+  # Vector Database (Qdrant)
+  qdrant:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.qdrant
+    image: veris-memory/qdrant:v1.15.1-healthcheck
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - context-store-network
+
+  # Graph Database (Neo4j)
+  neo4j:
+    image: neo4j:5.15-community@sha256:69c579facb7acab1e98f28952b91144c89e469a081804a5dafebd6c3030433b8
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./deployments/neo4j-init:/docker-entrypoint-initdb.d:ro
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_default__listen__address=0.0.0.0
+      - NEO4J_dbms_default__advertised__address=localhost
+      - NEO4J_dbms_connector_https_advertised__address=localhost:7473
+      - NEO4J_dbms_connector_http_advertised__address=localhost:7474
+      - NEO4J_dbms_connector_bolt_advertised__address=localhost:7687
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4JLABS_PLUGINS=["apoc"]
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7474"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - context-store-network
+
+  # Cache/KV Store (Redis)
+  redis:
+    image: redis:7.2.5-alpine@sha256:6aaf3f5e6bc8a592fbfe2cccf19eb36d27c39d12dab4f4b01556b7449e7b1f44
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    environment:
+      - REDISCLI_AUTH=${REDIS_PASSWORD}
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --protected-mode yes
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - context-store-network
+
+volumes:
+  qdrant_data:
+    external: true
+    name: veris-memory_qdrant_data
+  neo4j_data:
+    external: true
+    name: veris-memory_neo4j_data
+  neo4j_logs:
+    external: true
+    name: veris-memory_neo4j_logs
+  redis_data:
+    external: true
+    name: veris-memory_redis_data
+  sentinel_data:
+    external: true
+    name: veris-memory_sentinel_data
+
+networks:
+  context-store-network:
+    driver: bridge
+    name: veris-memory-dev_context-store-network

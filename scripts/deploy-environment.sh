@@ -30,7 +30,9 @@ echo "================================================"
 if [ "$ENVIRONMENT" = "development" ]; then
     echo -e "${YELLOW}📦 Deploying to DEVELOPMENT environment${NC}"
     PROJECT_NAME="veris-memory-dev"
-    COMPOSE_FILE="docker-compose.yml"  # Use standard compose for dev
+    # Use volume-mounted compose for FAST code deployments (no rebuild needed)
+    # Code is mounted from host, changes are instant with hot reload
+    COMPOSE_FILE="docker-compose.deploy-dev.yml"
     ENV_FILE=".env.dev"
     API_PORT=8000        # Standard ports for dev (what we test with)
     QDRANT_PORT=6333
@@ -38,6 +40,8 @@ if [ "$ENVIRONMENT" = "development" ]; then
     NEO4J_BOLT_PORT=7687
     REDIS_PORT=6379
     HEALTH_ENDPOINT="http://localhost:8000/health"
+    echo -e "${GREEN}  → Using volume mounts for instant code changes${NC}"
+    echo -e "${GREEN}  → Hot reload enabled (auto-restart on file changes)${NC}"
 else
     echo -e "${GREEN}📦 Deploying to PRODUCTION environment${NC}"
     PROJECT_NAME="veris-memory-prod"
@@ -482,17 +486,38 @@ pull_image "sentinel" || PULL_SUCCESS=false
 # Re-enable exit-on-error
 set -e
 
-# Fallback to building if any pull failed
+# Handle pull results
 if [ "$PULL_SUCCESS" = "false" ]; then
     echo ""
-    echo -e "${YELLOW}⚠️  Failed to pull pre-built images, falling back to local build...${NC}"
-    echo -e "${YELLOW}   This will take 20+ minutes. Consider waiting for CVE workflow to complete.${NC}"
-    echo ""
-    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build 2>&1 | tail -20
+    if [ "$ENVIRONMENT" = "development" ]; then
+        # For development with volume mounts: STILL TRY TO START
+        # The :latest images from previous successful CVE build should work
+        # Code is mounted from host anyway, so image version doesn't matter much
+        echo -e "${YELLOW}⚠️  Could not pull latest SHA images, but will try starting with existing images...${NC}"
+        echo -e "${YELLOW}   Code is mounted from host via volumes, so this should still work.${NC}"
+        echo -e "${YELLOW}   If services fail to start, wait for CVE workflow to push new images.${NC}"
+        echo ""
+        # Only fall back to build if there are NO images at all
+        if ! docker images ghcr.io/credentum/veris-memory/context-store:latest -q 2>/dev/null | grep -q .; then
+            echo -e "${RED}❌ No images available locally. Building is required (20+ minutes)...${NC}"
+            echo -e "${RED}   To avoid this in future, ensure CVE workflow completes before deployment.${NC}"
+            docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build 2>&1 | tail -20
+        fi
+    else
+        # For production: always build if pull fails (code must be in image)
+        echo -e "${YELLOW}⚠️  Failed to pull pre-built images, falling back to local build...${NC}"
+        echo -e "${YELLOW}   This will take 20+ minutes. Consider waiting for CVE workflow to complete.${NC}"
+        echo ""
+        docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build 2>&1 | tail -20
+    fi
 else
     echo ""
     echo -e "${GREEN}  ✅ Successfully pulled all pre-built images from GHCR${NC}"
-    echo -e "${GREEN}     Deployment time: ~30 seconds (vs ~20 minutes for local build)${NC}"
+    if [ "$ENVIRONMENT" = "development" ]; then
+        echo -e "${GREEN}     Code is mounted via volumes - instant updates, no rebuild needed!${NC}"
+    else
+        echo -e "${GREEN}     Deployment time: ~30 seconds (vs ~20 minutes for local build)${NC}"
+    fi
 fi
 
 # STEP 2: Remove ALL containers for this project (prevents any recreate issues)
