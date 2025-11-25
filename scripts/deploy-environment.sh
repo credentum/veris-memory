@@ -433,56 +433,56 @@ echo -e "${BLUE}Step 1/3: Pulling CVE-validated images from GHCR...${NC}"
 GIT_SHA=$(git rev-parse HEAD)
 echo "  → Git commit: $GIT_SHA"
 
-# Log in to GHCR using GITHUB_TOKEN
+# Log in to GHCR using GITHUB_TOKEN (if available)
 if [ -n "$GITHUB_TOKEN" ]; then
     echo "  → Logging in to GitHub Container Registry..."
-    echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin 2>&1 | grep -v "WARNING"
+    echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin 2>&1 | grep -v "WARNING" || true
 else
-    echo "  ⚠️  GITHUB_TOKEN not set, using public images only"
+    echo "  ⚠️  GITHUB_TOKEN not set, trying public images..."
 fi
 
-# Try pulling pre-built images tagged with commit SHA
+# Disable exit-on-error temporarily for pull attempts
+set +e
+
+# Try pulling pre-built images
 PULL_SUCCESS=true
 REPO="ghcr.io/credentum/veris-memory"
 
-echo "  → Pulling context-store image..."
-if docker pull "$REPO/context-store:$GIT_SHA" 2>&1 | tail -5; then
-    # Re-tag as :latest so docker-compose.yml works
-    docker tag "$REPO/context-store:$GIT_SHA" "$REPO/context-store:latest"
-    echo "  ✅ Pulled context-store:$GIT_SHA"
-else
-    echo "  ⚠️  Image not found for commit $GIT_SHA, trying :latest..."
-    if ! docker pull "$REPO/context-store:latest" 2>&1 | tail -5; then
-        echo "  ❌ Failed to pull context-store image"
-        PULL_SUCCESS=false
-    fi
-fi
+# Helper function to pull and tag images
+pull_image() {
+    local service=$1
+    local sha_tag="$REPO/$service:$GIT_SHA"
+    local latest_tag="$REPO/$service:latest"
 
-echo "  → Pulling api image..."
-if docker pull "$REPO/api:$GIT_SHA" 2>&1 | tail -5; then
-    docker tag "$REPO/api:$GIT_SHA" "$REPO/api:latest"
-    echo "  ✅ Pulled api:$GIT_SHA"
-else
-    echo "  ⚠️  Image not found for commit $GIT_SHA, trying :latest..."
-    if ! docker pull "$REPO/api:latest" 2>&1 | tail -5; then
-        echo "  ❌ Failed to pull api image"
-        PULL_SUCCESS=false
-    fi
-fi
+    echo "  → Pulling $service image..."
 
-echo "  → Pulling sentinel image..."
-if docker pull "$REPO/sentinel:$GIT_SHA" 2>&1 | tail -5; then
-    docker tag "$REPO/sentinel:$GIT_SHA" "$REPO/sentinel:latest"
-    echo "  ✅ Pulled sentinel:$GIT_SHA"
-else
-    echo "  ⚠️  Image not found for commit $GIT_SHA, trying :latest..."
-    if ! docker pull "$REPO/sentinel:latest" 2>&1 | tail -5; then
-        echo "  ❌ Failed to pull sentinel image"
-        PULL_SUCCESS=false
+    # Try pulling by commit SHA first
+    if docker pull "$sha_tag" >/dev/null 2>&1; then
+        docker tag "$sha_tag" "$latest_tag"
+        echo "  ✅ Pulled $service:$GIT_SHA"
+        return 0
+    else
+        echo "  ⚠️  SHA image not found, trying :latest..."
+        # Fallback to :latest tag
+        if docker pull "$latest_tag" >/dev/null 2>&1; then
+            echo "  ✅ Pulled $service:latest"
+            return 0
+        else
+            echo "  ❌ Failed to pull $service image"
+            return 1
+        fi
     fi
-fi
+}
 
-# Fallback to building if pull failed
+# Pull all three images
+pull_image "context-store" || PULL_SUCCESS=false
+pull_image "api" || PULL_SUCCESS=false
+pull_image "sentinel" || PULL_SUCCESS=false
+
+# Re-enable exit-on-error
+set -e
+
+# Fallback to building if any pull failed
 if [ "$PULL_SUCCESS" = "false" ]; then
     echo ""
     echo -e "${YELLOW}⚠️  Failed to pull pre-built images, falling back to local build...${NC}"
@@ -490,7 +490,9 @@ if [ "$PULL_SUCCESS" = "false" ]; then
     echo ""
     docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build 2>&1 | tail -20
 else
-    echo -e "${GREEN}  ✅ Successfully pulled pre-built images (deployment time: ~30s vs ~20min build)${NC}"
+    echo ""
+    echo -e "${GREEN}  ✅ Successfully pulled all pre-built images from GHCR${NC}"
+    echo -e "${GREEN}     Deployment time: ~30 seconds (vs ~20 minutes for local build)${NC}"
 fi
 
 # STEP 2: Remove ALL containers for this project (prevents any recreate issues)
