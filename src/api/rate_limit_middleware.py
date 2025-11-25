@@ -172,12 +172,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "::1"          # IPv6 localhost
         }
 
-        # Also exempt any IP making requests with Sentinel auth header
+        # Also exempt any IP making requests with Sentinel or VoiceBot auth header
         auth_header = request.headers.get("X-API-Key", "")
-        sentinel_key_prefix = os.getenv("SENTINEL_API_KEY", "sentinel_")
+        sentinel_key = os.getenv("SENTINEL_API_KEY", "")
+        voicebot_key = os.getenv("API_KEY_VOICEBOT", "")
 
-        if client_ip in sentinel_ips or auth_header.startswith(sentinel_key_prefix):
-            # Skip rate limiting for Sentinel monitoring
+        # Exempt authenticated internal services from rate limiting
+        # - Sentinel: Monitoring service that makes 22+ queries per cycle
+        # - VoiceBot: Voice interface that may burst requests during conversations
+        if client_ip in sentinel_ips:
+            return await call_next(request)
+
+        if auth_header and sentinel_key and auth_header == sentinel_key:
+            return await call_next(request)
+
+        if auth_header and voicebot_key and auth_header == voicebot_key:
             return await call_next(request)
 
         # Get current time window
