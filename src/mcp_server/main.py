@@ -3650,7 +3650,7 @@ async def upsert_fact_endpoint(
         # Convert fact_key to natural language (e.g., "favorite_color" -> "favorite color")
         readable_key = fact_key.replace("_", " ")
 
-        if qdrant_client and embedding_service:
+        if qdrant_client:
             try:
                 # Generate searchable text for embedding
                 # Natural language format enables queries like "what is my color?", "favorite", etc.
@@ -3658,28 +3658,31 @@ async def upsert_fact_endpoint(
                 if user_id:
                     searchable_text = f"User {user_id}: {searchable_text}"
 
-                # Generate embedding
-                embedding = embedding_service.encode([searchable_text])[0]
+                # Generate embedding using robust service
+                embedding = await generate_embedding(searchable_text, adjust_dimensions=True)
 
-                # Store in Qdrant
-                from qdrant_client.models import PointStruct
+                if embedding and len(embedding) > 0:
+                    # Store in Qdrant
+                    from qdrant_client.models import PointStruct
 
-                qdrant_client.upsert(
-                    collection_name=os.getenv("QDRANT_COLLECTION_NAME", "context_embeddings"),
-                    points=[
-                        PointStruct(
-                            id=new_fact_id,
-                            vector=embedding.tolist(),
-                            payload={
-                                "content": new_fact_content,
-                                "metadata": new_fact_metadata,
-                                "searchable_text": searchable_text,
-                            },
-                        )
-                    ],
-                )
-                vector_id = new_fact_id
-                logger.info(f"Stored fact in vector DB: {new_fact_id}")
+                    qdrant_client.upsert(
+                        collection_name=os.getenv("QDRANT_COLLECTION_NAME", "context_embeddings"),
+                        points=[
+                            PointStruct(
+                                id=new_fact_id,
+                                vector=embedding,
+                                payload={
+                                    "content": new_fact_content,
+                                    "metadata": new_fact_metadata,
+                                    "searchable_text": searchable_text,
+                                },
+                            )
+                        ],
+                    )
+                    vector_id = new_fact_id
+                    logger.info(f"Stored fact in vector DB: {new_fact_id}")
+                else:
+                    logger.warning("Embedding generation returned empty, skipping vector storage")
 
             except Exception as vec_err:
                 logger.error(f"Failed to store fact in vector DB: {vec_err}")
