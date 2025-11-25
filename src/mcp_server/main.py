@@ -81,6 +81,7 @@ if (
     )
 
 from ..core.config import Config
+from ..utils.text_generation import generate_searchable_text
 
 # Health check constants
 HEALTH_CHECK_GRACE_PERIOD_DEFAULT = 60
@@ -2189,6 +2190,15 @@ async def store_context(
                                 flattened_properties[key] = json.dumps(safe_value)
                             else:
                                 flattened_properties[key] = safe_value
+
+                # PR #339: Generate searchable_text field for dynamic property indexing
+                # This enables search across both standard fields AND custom properties
+                # NOTE: Phase 1 - Field generation only. PR #340 will update graph_backend.py
+                # to include searchable_text in search queries. New contexts get the field
+                # immediately; existing 531+ facts will be migrated in PR #341.
+                searchable_text = generate_searchable_text(flattened_properties)
+                flattened_properties['searchable_text'] = searchable_text
+                logger.debug(f"Generated searchable_text with {len(searchable_text)} characters")
 
                 graph_id = neo4j_client.create_node(
                     labels=["Context"],
