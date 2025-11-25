@@ -72,7 +72,70 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy to Dev Environment
+      - name: Determine deployment type
+        id: deploy-type
+        run: |
+          # Check if any infrastructure files changed (requires full deploy)
+          INFRA_CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -E "requirements\.txt|Dockerfile|docker-compose.*\.yml" || true)
+
+          if [ -n "$INFRA_CHANGED" ] || [ "${{ github.event.inputs.force_deploy }}" = "true" ]; then
+            echo "type=full" >> $GITHUB_OUTPUT
+            echo "🔄 Infrastructure change detected - full deployment required"
+          else
+            echo "type=fast" >> $GITHUB_OUTPUT
+            echo "⚡ Code-only change - using fast deployment"
+          fi
+
+      - name: Fast Code Deployment (code changes only)
+        if: steps.deploy-type.outputs.type == 'fast'
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 \
+              ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOSSH'
+            set -e
+            echo "⚡ FAST CODE-ONLY DEPLOYMENT"
+            echo "=============================="
+            cd /opt/veris-memory
+
+            # Pull latest code
+            echo "📥 Pulling latest code..."
+            git fetch origin main
+            git reset --hard origin/main
+            echo "✅ Code updated to: $(git rev-parse --short HEAD)"
+
+            # Check if services are running
+            PROJECT_NAME="veris-memory-dev"
+            COMPOSE_FILE="docker-compose.deploy-dev.yml"
+            RUNNING=$(docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} ps --status running -q 2>/dev/null | wc -l)
+
+            if [ "$RUNNING" -gt 0 ]; then
+                echo "✅ Found $RUNNING running services"
+
+                # Trigger hot reload by touching source files
+                echo "🔄 Triggering hot reload..."
+                touch src/__init__.py src/mcp_server/__init__.py src/backends/__init__.py 2>/dev/null || true
+
+                echo "⏱️  Waiting 5s for uvicorn to reload..."
+                sleep 5
+
+                # Verify health
+                if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+                    echo "✅ MCP Server healthy"
+                else
+                    echo "⚠️  MCP Server not responding, restarting services..."
+                    docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} restart context-store api sentinel monitoring-dashboard
+                    sleep 10
+                fi
+            else
+                echo "⚠️  No services running - need full deployment"
+                exit 1
+            fi
+
+            echo ""
+            echo "✅ FAST DEPLOYMENT COMPLETE (~30 seconds)"
+          EOSSH
+
+      - name: Full Deployment (infrastructure changes)
+        if: steps.deploy-type.outputs.type == 'full'
         env:
           NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
           NEO4J_RO_PASSWORD: ${{ secrets.NEO4J_RO_PASSWORD }}
