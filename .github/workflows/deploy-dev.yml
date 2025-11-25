@@ -106,7 +106,15 @@ jobs:
             # Check if services are running
             PROJECT_NAME="veris-memory-dev"
             COMPOSE_FILE="docker-compose.deploy-dev.yml"
-            RUNNING=$(docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} ps --status running -q 2>/dev/null | wc -l)
+
+            # Verify .env file exists (created by full deployment)
+            if [ ! -f .env ]; then
+                echo "❌ ERROR: .env file not found - need full deployment first"
+                exit 1
+            fi
+            echo "✅ Found .env file"
+
+            RUNNING=$(docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} --env-file .env ps --status running -q 2>/dev/null | wc -l)
 
             if [ "$RUNNING" -gt 0 ]; then
                 echo "✅ Found $RUNNING running services"
@@ -116,8 +124,9 @@ jobs:
                 # - restart only restarts process inside existing container
                 # - git reset changes file inodes, but container caches old inodes
                 # - force-recreate creates fresh containers with new volume bindings
+                # Using --env-file .env to explicitly load environment variables
                 echo "🔄 Recreating Python services to load new code..."
-                docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} up -d --force-recreate --no-build context-store api sentinel
+                docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} --env-file .env up -d --force-recreate --no-build context-store api sentinel
 
                 echo "⏱️  Waiting for services to be healthy..."
                 sleep 20
