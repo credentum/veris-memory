@@ -632,6 +632,7 @@ class RetrieveContextRequest(BaseModel):
         include_relationships: Whether to include relationship data
         sort_by: Sort order for results (timestamp or relevance)
         exclude_sources: List of source/author values to exclude from results
+        use_cache: Whether to use cached results (default: true). Set to false for fresh results.
     """
 
     query: str
@@ -649,6 +650,10 @@ class RetrieveContextRequest(BaseModel):
     exclude_sources: Optional[List[str]] = Field(
         default=None,
         description="List of source/author values to exclude (e.g., ['test', 'sentinel_monitor', 'mcp_server'])",
+    )
+    use_cache: bool = Field(
+        default=True,
+        description="Whether to use cached results. Set to false to bypass cache and get fresh results.",
     )
 
 
@@ -2302,6 +2307,18 @@ async def store_context(
 
         if embedding_message:
             response["embedding_message"] = embedding_message
+
+        # Invalidate retrieve_context cache so new entries appear immediately
+        # This prevents stale cached results from hiding newly stored content
+        if simple_redis:
+            try:
+                cache_keys = simple_redis.keys("retrieve:*")
+                if cache_keys:
+                    for key in cache_keys:
+                        simple_redis.delete(key)
+                    logger.info(f"Invalidated {len(cache_keys)} retrieve cache entries after store")
+            except Exception as cache_err:
+                logger.warning(f"Failed to invalidate cache after store: {cache_err}")
 
         return response
 
