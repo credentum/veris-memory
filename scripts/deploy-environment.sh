@@ -426,9 +426,72 @@ echo -e "${BLUE}🔍 DEBUG: Using docker compose command with:${NC}"
 echo "  → Project: $PROJECT_NAME"
 echo "  → Compose file: $COMPOSE_FILE"
 
-# STEP 1: Build images separately (always rebuild to prevent cache issues)
-echo -e "${BLUE}Step 1/3: Building images...${NC}"
-docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build --no-cache 2>&1 | tail -20
+# STEP 1: Pull pre-built images from GitHub Container Registry (30s vs 20min build)
+echo -e "${BLUE}Step 1/3: Pulling CVE-validated images from GHCR...${NC}"
+
+# Get current git commit SHA
+GIT_SHA=$(git rev-parse HEAD)
+echo "  → Git commit: $GIT_SHA"
+
+# Log in to GHCR using GITHUB_TOKEN
+if [ -n "$GITHUB_TOKEN" ]; then
+    echo "  → Logging in to GitHub Container Registry..."
+    echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin 2>&1 | grep -v "WARNING"
+else
+    echo "  ⚠️  GITHUB_TOKEN not set, using public images only"
+fi
+
+# Try pulling pre-built images tagged with commit SHA
+PULL_SUCCESS=true
+REPO="ghcr.io/credentum/veris-memory"
+
+echo "  → Pulling context-store image..."
+if docker pull "$REPO/context-store:$GIT_SHA" 2>&1 | tail -5; then
+    # Re-tag as :latest so docker-compose.yml works
+    docker tag "$REPO/context-store:$GIT_SHA" "$REPO/context-store:latest"
+    echo "  ✅ Pulled context-store:$GIT_SHA"
+else
+    echo "  ⚠️  Image not found for commit $GIT_SHA, trying :latest..."
+    if ! docker pull "$REPO/context-store:latest" 2>&1 | tail -5; then
+        echo "  ❌ Failed to pull context-store image"
+        PULL_SUCCESS=false
+    fi
+fi
+
+echo "  → Pulling api image..."
+if docker pull "$REPO/api:$GIT_SHA" 2>&1 | tail -5; then
+    docker tag "$REPO/api:$GIT_SHA" "$REPO/api:latest"
+    echo "  ✅ Pulled api:$GIT_SHA"
+else
+    echo "  ⚠️  Image not found for commit $GIT_SHA, trying :latest..."
+    if ! docker pull "$REPO/api:latest" 2>&1 | tail -5; then
+        echo "  ❌ Failed to pull api image"
+        PULL_SUCCESS=false
+    fi
+fi
+
+echo "  → Pulling sentinel image..."
+if docker pull "$REPO/sentinel:$GIT_SHA" 2>&1 | tail -5; then
+    docker tag "$REPO/sentinel:$GIT_SHA" "$REPO/sentinel:latest"
+    echo "  ✅ Pulled sentinel:$GIT_SHA"
+else
+    echo "  ⚠️  Image not found for commit $GIT_SHA, trying :latest..."
+    if ! docker pull "$REPO/sentinel:latest" 2>&1 | tail -5; then
+        echo "  ❌ Failed to pull sentinel image"
+        PULL_SUCCESS=false
+    fi
+fi
+
+# Fallback to building if pull failed
+if [ "$PULL_SUCCESS" = "false" ]; then
+    echo ""
+    echo -e "${YELLOW}⚠️  Failed to pull pre-built images, falling back to local build...${NC}"
+    echo -e "${YELLOW}   This will take 20+ minutes. Consider waiting for CVE workflow to complete.${NC}"
+    echo ""
+    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build 2>&1 | tail -20
+else
+    echo -e "${GREEN}  ✅ Successfully pulled pre-built images (deployment time: ~30s vs ~20min build)${NC}"
+fi
 
 # STEP 2: Remove ALL containers for this project (prevents any recreate issues)
 echo -e "${BLUE}Step 2/3: Removing ALL existing containers for clean start...${NC}"
