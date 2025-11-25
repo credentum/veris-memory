@@ -631,6 +631,7 @@ class RetrieveContextRequest(BaseModel):
         filters: Optional additional filters
         include_relationships: Whether to include relationship data
         sort_by: Sort order for results (timestamp or relevance)
+        exclude_sources: List of source/author values to exclude from results
     """
 
     query: str
@@ -645,6 +646,10 @@ class RetrieveContextRequest(BaseModel):
     filters: Optional[Dict[str, Any]] = None
     include_relationships: bool = False
     sort_by: SortBy = Field(SortBy.TIMESTAMP)
+    exclude_sources: Optional[List[str]] = Field(
+        default=None,
+        description="List of source/author values to exclude (e.g., ['test', 'sentinel_monitor', 'mcp_server'])",
+    )
 
 
 class QueryGraphRequest(BaseModel):
@@ -2332,6 +2337,7 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                     if hasattr(request, "sort_by") and request.sort_by
                     else "relevance"
                 ),
+                "exclude_sources": sorted(request.exclude_sources) if request.exclude_sources else None,
             }
             cache_hash = hashlib.sha256(
                 json.dumps(cache_params, sort_keys=True).encode()
@@ -2435,6 +2441,21 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                         }
                     )
 
+                # Apply exclude_sources filter if specified
+                if request.exclude_sources:
+                    original_count = len(results)
+                    exclude_set = set(request.exclude_sources)
+                    results = [
+                        r for r in results
+                        if r.get("metadata", {}).get("source") not in exclude_set
+                        and r.get("metadata", {}).get("author") not in exclude_set
+                    ]
+                    filtered_count = original_count - len(results)
+                    if filtered_count > 0:
+                        logger.info(
+                            f"Filtered {filtered_count} results by exclude_sources: {request.exclude_sources}"
+                        )
+
                 logger.info(
                     f"Unified search completed: results={len(results)}, "
                     f"backends_used={search_response.backends_used}, "
@@ -2464,6 +2485,7 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                                 if hasattr(request, "sort_by") and request.sort_by
                                 else "relevance"
                             ),
+                            "exclude_sources": sorted(request.exclude_sources) if request.exclude_sources else None,
                         }
                         cache_hash = hashlib.sha256(
                             json.dumps(cache_params, sort_keys=True).encode()
@@ -2589,6 +2611,21 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
             results.sort(key=lambda x: x.get("score", 0) or 0, reverse=True)
             logger.info("Sorted results by relevance score (highest first)")
 
+        # Apply exclude_sources filter if specified (legacy path)
+        if request.exclude_sources:
+            original_count = len(results)
+            exclude_set = set(request.exclude_sources)
+            results = [
+                r for r in results
+                if r.get("metadata", {}).get("source") not in exclude_set
+                and r.get("metadata", {}).get("author") not in exclude_set
+            ]
+            filtered_count = original_count - len(results)
+            if filtered_count > 0:
+                logger.info(
+                    f"Filtered {filtered_count} results by exclude_sources: {request.exclude_sources}"
+                )
+
         response = {
             "success": True,
             "results": results[: request.limit],
@@ -2611,6 +2648,7 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                         if hasattr(request, "sort_by") and request.sort_by
                         else "relevance"
                     ),
+                    "exclude_sources": sorted(request.exclude_sources) if request.exclude_sources else None,
                 }
                 cache_hash = hashlib.sha256(
                     json.dumps(cache_params, sort_keys=True).encode()
