@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -764,6 +765,10 @@ class UpsertFactRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(
         None,
         description="Additional metadata to store with the fact",
+    )
+    create_relationships: bool = Field(
+        True,
+        description="Whether to create graph relationships (User)-[:HAS_FACT]->(Fact)",
     )
 
 
@@ -3573,9 +3578,9 @@ async def upsert_fact_endpoint(
                     content = result.get("content", {})
                     metadata = result.get("metadata", {})
 
-                    # Check if this is a fact with our key
+                    # Check if this is a fact with our key (exact match, not substring)
                     is_fact = content.get("content_type") == "fact"
-                    has_key = fact_key in content
+                    has_key = content.get(fact_key) is not None
 
                     # Check user scope if provided
                     same_user = True
@@ -3612,9 +3617,6 @@ async def upsert_fact_endpoint(
                 # Continue with other facts
 
         # Step 3: Store the new fact
-        import uuid
-        from datetime import datetime
-
         new_fact_id = str(uuid.uuid4())
         new_fact_content = {
             "content_type": "fact",
@@ -3674,37 +3676,76 @@ async def upsert_fact_endpoint(
             except Exception as vec_err:
                 logger.error(f"Failed to store fact in vector DB: {vec_err}")
 
-        # Store in graph database
+        # Store in graph database with optional relationships
         graph_id = None
+        relationships_created = 0
         if neo4j_client:
             try:
-                query = """
-                CREATE (c:Context {
-                    id: $id,
-                    type: 'fact',
-                    content_type: 'fact',
-                    fact_key: $fact_key,
-                    fact_value: $fact_value,
-                    searchable_text: $searchable_text,
-                    author: $author,
-                    author_type: $author_type,
-                    source: 'upsert_fact',
-                    created_at: datetime()
-                })
-                RETURN id(c) as graph_id
-                """
-                result = neo4j_client.execute_query(
-                    query,
-                    id=new_fact_id,
-                    fact_key=fact_key,
-                    fact_value=fact_value,
-                    searchable_text=f"{readable_key} is {fact_value}",
-                    author=api_key_info.user_id,
-                    author_type="agent" if api_key_info.is_agent else "human",
-                )
+                if request.create_relationships and user_id:
+                    # Create fact node with relationships to user
+                    # (User)-[:HAS_FACT]->(Fact)-[:HAS_VALUE]->(Value)
+                    query = """
+                    MERGE (u:User {id: $user_id})
+                    CREATE (f:Context:Fact {
+                        id: $id,
+                        type: 'fact',
+                        content_type: 'fact',
+                        fact_key: $fact_key,
+                        fact_value: $fact_value,
+                        searchable_text: $searchable_text,
+                        author: $author,
+                        author_type: $author_type,
+                        source: 'upsert_fact',
+                        created_at: datetime()
+                    })
+                    CREATE (u)-[:HAS_FACT {key: $fact_key, created_at: datetime()}]->(f)
+                    WITH f, $fact_value as val, $readable_key as key
+                    MERGE (v:Value {name: val, type: key})
+                    CREATE (f)-[:HAS_VALUE]->(v)
+                    RETURN id(f) as graph_id
+                    """
+                    result = neo4j_client.execute_query(
+                        query,
+                        id=new_fact_id,
+                        user_id=user_id,
+                        fact_key=fact_key,
+                        fact_value=fact_value,
+                        readable_key=readable_key,
+                        searchable_text=f"{readable_key} is {fact_value}",
+                        author=api_key_info.user_id,
+                        author_type="agent" if api_key_info.is_agent else "human",
+                    )
+                    relationships_created = 2  # HAS_FACT + HAS_VALUE
+                else:
+                    # Create fact node without relationships
+                    query = """
+                    CREATE (c:Context:Fact {
+                        id: $id,
+                        type: 'fact',
+                        content_type: 'fact',
+                        fact_key: $fact_key,
+                        fact_value: $fact_value,
+                        searchable_text: $searchable_text,
+                        author: $author,
+                        author_type: $author_type,
+                        source: 'upsert_fact',
+                        created_at: datetime()
+                    })
+                    RETURN id(c) as graph_id
+                    """
+                    result = neo4j_client.execute_query(
+                        query,
+                        id=new_fact_id,
+                        fact_key=fact_key,
+                        fact_value=fact_value,
+                        searchable_text=f"{readable_key} is {fact_value}",
+                        author=api_key_info.user_id,
+                        author_type="agent" if api_key_info.is_agent else "human",
+                    )
+
                 if result and result[0]:
                     graph_id = str(result[0][0]["graph_id"])
-                logger.info(f"Stored fact in graph DB: {new_fact_id}")
+                logger.info(f"Stored fact in graph DB: {new_fact_id}, relationships: {relationships_created}")
 
             except Exception as graph_err:
                 logger.error(f"Failed to store fact in graph DB: {graph_err}")
@@ -3730,12 +3771,12 @@ async def upsert_fact_endpoint(
             "user_id": user_id,
             "replaced_count": forgotten_count,
             "replaced_ids": old_fact_ids,
+            "relationships_created": relationships_created,
             "message": f"Fact '{fact_key}' upserted successfully, replaced {forgotten_count} old entries",
         }
 
     except Exception as e:
-        import traceback
-        logger.error(f"Upsert fact failed: {traceback.format_exc()}")
+        logger.error(f"Upsert fact failed: {e}")
         return {
             "success": False,
             "error": str(e),
