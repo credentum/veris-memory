@@ -81,7 +81,7 @@ services:
 
       # MCP Server Connection (using existing context-store)
       - MCP_SERVER_URL=http://context-store:8000
-      - MCP_API_KEY=${MCP_API_KEY:-}
+      - API_KEY_VOICEBOT=${API_KEY_VOICEBOT:-}
 
       # Redis for Session State (with authentication)
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
