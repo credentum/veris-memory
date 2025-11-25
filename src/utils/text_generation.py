@@ -6,7 +6,7 @@ This module provides functions to generate unified searchable text from context 
 enabling search across both standard fields and custom properties.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 # System fields that should not be included in searchable text
 SYSTEM_FIELDS = {
