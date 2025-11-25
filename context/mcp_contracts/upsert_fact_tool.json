@@ -1,0 +1,125 @@
+{
+  "schema_version": "1.0",
+  "name": "upsert_fact",
+  "version": "1.0.0",
+  "api_version": "1.0",
+  "min_client_version": "1.0.0",
+  "deprecated_fields": [],
+  "description": "Atomically update or insert a fact by key. Removes old values and stores new value, preventing fact accumulation.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "fact_key": {
+        "type": "string",
+        "description": "The fact key (e.g., 'favorite_color', 'user_name'). Supports snake_case which is converted to human-readable form.",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "fact_value": {
+        "type": "string",
+        "description": "The new value for this fact",
+        "minLength": 1
+      },
+      "user_id": {
+        "type": "string",
+        "description": "Optional user ID to scope the fact. If not provided, fact is global."
+      },
+      "metadata": {
+        "type": "object",
+        "description": "Optional additional metadata",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Source of the fact update (e.g., 'voice_bot', 'api')"
+          },
+          "confidence": {
+            "type": "number",
+            "description": "Confidence score (0.0-1.0)"
+          }
+        }
+      },
+      "create_relationships": {
+        "type": "boolean",
+        "description": "Whether to create graph relationships (User)-[:HAS_FACT]->(Fact)-[:HAS_VALUE]->(Value). Default: true",
+        "default": true
+      }
+    },
+    "required": ["fact_key", "fact_value"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation succeeded"
+      },
+      "context_id": {
+        "type": "string",
+        "description": "Unique identifier for the stored fact"
+      },
+      "message": {
+        "type": "string",
+        "description": "Status message describing what was done"
+      },
+      "old_entries_removed": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Number of old fact entries that were removed"
+      },
+      "relationships_created": {
+        "type": "boolean",
+        "description": "Whether graph relationships were created"
+      }
+    },
+    "required": ["success", "context_id", "message", "old_entries_removed"]
+  },
+  "examples": [
+    {
+      "name": "Update favorite color",
+      "input": {
+        "fact_key": "favorite_color",
+        "fact_value": "blue",
+        "user_id": "user_123"
+      },
+      "output": {
+        "success": true,
+        "context_id": "abc123-def456",
+        "message": "Upserted fact 'favorite color' = 'blue' (removed 2 old entries)",
+        "old_entries_removed": 2,
+        "relationships_created": true
+      }
+    },
+    {
+      "name": "Set user preference without relationships",
+      "input": {
+        "fact_key": "preferred_language",
+        "fact_value": "Spanish",
+        "create_relationships": false
+      },
+      "output": {
+        "success": true,
+        "context_id": "xyz789-abc123",
+        "message": "Upserted fact 'preferred language' = 'Spanish' (no old entries found)",
+        "old_entries_removed": 0,
+        "relationships_created": false
+      }
+    }
+  ],
+  "security": {
+    "rate_limits": {
+      "requests_per_minute": 60,
+      "burst_limit": 10
+    },
+    "validation": {
+      "fact_key_max_length": 100,
+      "fact_value_max_size": 10000,
+      "sanitize_content": true
+    }
+  },
+  "notes": [
+    "This endpoint prevents fact accumulation by removing old entries before storing new values",
+    "The fact_key is converted from snake_case to human-readable format for better search",
+    "When create_relationships is true, creates (User)-[:HAS_FACT]->(Fact)-[:HAS_VALUE]->(Value) relationships",
+    "Requires 'writer' role in API key for authentication"
+  ]
+}

@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -733,6 +734,41 @@ class ForgetContextRequest(BaseModel):
     reason: str = Field(..., min_length=5, description="Reason for forgetting (audit trail)")
     retention_days: int = Field(
         30, ge=1, le=90, description="Days to retain before permanent deletion (1-90)"
+    )
+
+
+class UpsertFactRequest(BaseModel):
+    """Request model for upsert_fact tool.
+
+    Atomically update or insert a user fact. If a fact with the same key exists,
+    it will be soft-deleted and replaced with the new value.
+
+    This enables VoiceBot and other agents to update user facts without
+    accumulating duplicate/stale entries.
+    """
+
+    fact_key: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="The fact key (e.g., 'favorite_color', 'name', 'location')",
+    )
+    fact_value: str = Field(
+        ...,
+        min_length=1,
+        description="The new value for this fact",
+    )
+    user_id: Optional[str] = Field(
+        None,
+        description="User ID to scope the fact (optional, derived from API key if not provided)",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Additional metadata to store with the fact",
+    )
+    create_relationships: bool = Field(
+        True,
+        description="Whether to create graph relationships (User)-[:HAS_FACT]->(Fact)",
     )
 
 
@@ -3486,6 +3522,266 @@ async def forget_context_endpoint(
             "error": str(e),
             "operation": "forget",
             "context_id": request.context_id,
+        }
+
+
+@app.post("/tools/upsert_fact")
+async def upsert_fact_endpoint(
+    request: UpsertFactRequest,
+    api_key_info: Optional[APIKeyInfo] = (
+        Depends(verify_api_key) if API_KEY_AUTH_AVAILABLE else None
+    ),
+) -> Dict[str, Any]:
+    """
+    Atomically update or insert a user fact.
+
+    This endpoint enables agents (like VoiceBot) to update user facts without
+    accumulating duplicate entries. It:
+    1. Searches for existing facts with the same key
+    2. Soft-deletes (forgets) old facts
+    3. Stores the new fact value
+    4. Invalidates retrieve cache
+
+    Args:
+        request: Upsert request with fact_key, fact_value, and optional user_id
+        api_key_info: API key info for authorization
+
+    Returns:
+        Result with new fact ID and count of replaced facts
+    """
+    if not API_KEY_AUTH_AVAILABLE or not api_key_info:
+        return {"success": False, "error": "Authentication required for upsert operations"}
+
+    try:
+        from ..tools.delete_operations import forget_context
+
+        # Determine user_id from request or API key
+        user_id = request.user_id or api_key_info.user_id
+        fact_key = request.fact_key
+        fact_value = request.fact_value
+
+        logger.info(f"Upsert fact: {fact_key}={fact_value} for user={user_id}")
+
+        # Step 1: Search for existing facts with this key
+        old_fact_ids = []
+        if unified_search:
+            try:
+                # Search for facts containing this key
+                search_response = await unified_search.search(
+                    query=fact_key,
+                    limit=20,
+                    search_mode="hybrid",
+                )
+
+                # Find facts that match our criteria
+                for result in search_response.results:
+                    content = result.get("content", {})
+                    metadata = result.get("metadata", {})
+
+                    # Check if this is a fact with our key (exact match, not substring)
+                    is_fact = content.get("content_type") == "fact"
+                    has_key = content.get(fact_key) is not None
+
+                    # Check user scope if provided
+                    same_user = True
+                    if user_id:
+                        result_user = metadata.get("user_id") or content.get("user_id")
+                        same_user = result_user == user_id or result_user is None
+
+                    if is_fact and has_key and same_user:
+                        old_fact_ids.append(result.get("id"))
+
+                logger.info(f"Found {len(old_fact_ids)} existing facts to replace")
+
+            except Exception as search_err:
+                logger.warning(f"Search for existing facts failed: {search_err}")
+                # Continue with storing new fact even if search fails
+
+        # Step 2: Soft-delete old facts
+        forgotten_count = 0
+        for old_id in old_fact_ids:
+            try:
+                forget_result = await forget_context(
+                    context_id=old_id,
+                    reason=f"Replaced by upsert: {fact_key}={fact_value}",
+                    retention_days=30,
+                    api_key_info=api_key_info,
+                    neo4j_client=neo4j_client,
+                    redis_client=simple_redis if simple_redis else None,
+                )
+                if forget_result.get("success"):
+                    forgotten_count += 1
+                    logger.info(f"Forgot old fact: {old_id}")
+            except Exception as forget_err:
+                logger.warning(f"Failed to forget old fact {old_id}: {forget_err}")
+                # Continue with other facts
+
+        # Step 3: Store the new fact
+        new_fact_id = str(uuid.uuid4())
+        new_fact_content = {
+            "content_type": "fact",
+            fact_key: fact_value,
+        }
+        if user_id:
+            new_fact_content["user_id"] = user_id
+
+        new_fact_metadata = {
+            "source": "upsert_fact",
+            "author": api_key_info.user_id,
+            "author_type": "agent" if api_key_info.is_agent else "human",
+            "stored_at": datetime.now().isoformat(),
+            "replaced_facts": old_fact_ids,
+        }
+        if request.metadata:
+            new_fact_metadata.update(request.metadata)
+        if user_id:
+            new_fact_metadata["user_id"] = user_id
+
+        # Store in vector database
+        vector_id = None
+        # Convert fact_key to natural language (e.g., "favorite_color" -> "favorite color")
+        readable_key = fact_key.replace("_", " ")
+
+        if qdrant_client and embedding_service:
+            try:
+                # Generate searchable text for embedding
+                # Natural language format enables queries like "what is my color?", "favorite", etc.
+                searchable_text = f"{readable_key} is {fact_value}"
+                if user_id:
+                    searchable_text = f"User {user_id}: {searchable_text}"
+
+                # Generate embedding
+                embedding = embedding_service.encode([searchable_text])[0]
+
+                # Store in Qdrant
+                from qdrant_client.models import PointStruct
+
+                qdrant_client.upsert(
+                    collection_name=os.getenv("QDRANT_COLLECTION_NAME", "context_embeddings"),
+                    points=[
+                        PointStruct(
+                            id=new_fact_id,
+                            vector=embedding.tolist(),
+                            payload={
+                                "content": new_fact_content,
+                                "metadata": new_fact_metadata,
+                                "searchable_text": searchable_text,
+                            },
+                        )
+                    ],
+                )
+                vector_id = new_fact_id
+                logger.info(f"Stored fact in vector DB: {new_fact_id}")
+
+            except Exception as vec_err:
+                logger.error(f"Failed to store fact in vector DB: {vec_err}")
+
+        # Store in graph database with optional relationships
+        graph_id = None
+        relationships_created = 0
+        if neo4j_client:
+            try:
+                if request.create_relationships and user_id:
+                    # Create fact node with relationships to user
+                    # (User)-[:HAS_FACT]->(Fact)-[:HAS_VALUE]->(Value)
+                    query = """
+                    MERGE (u:User {id: $user_id})
+                    CREATE (f:Context:Fact {
+                        id: $id,
+                        type: 'fact',
+                        content_type: 'fact',
+                        fact_key: $fact_key,
+                        fact_value: $fact_value,
+                        searchable_text: $searchable_text,
+                        author: $author,
+                        author_type: $author_type,
+                        source: 'upsert_fact',
+                        created_at: datetime()
+                    })
+                    CREATE (u)-[:HAS_FACT {key: $fact_key, created_at: datetime()}]->(f)
+                    WITH f, $fact_value as val, $readable_key as key
+                    MERGE (v:Value {name: val, type: key})
+                    CREATE (f)-[:HAS_VALUE]->(v)
+                    RETURN id(f) as graph_id
+                    """
+                    result = neo4j_client.execute_query(
+                        query,
+                        id=new_fact_id,
+                        user_id=user_id,
+                        fact_key=fact_key,
+                        fact_value=fact_value,
+                        readable_key=readable_key,
+                        searchable_text=f"{readable_key} is {fact_value}",
+                        author=api_key_info.user_id,
+                        author_type="agent" if api_key_info.is_agent else "human",
+                    )
+                    relationships_created = 2  # HAS_FACT + HAS_VALUE
+                else:
+                    # Create fact node without relationships
+                    query = """
+                    CREATE (c:Context:Fact {
+                        id: $id,
+                        type: 'fact',
+                        content_type: 'fact',
+                        fact_key: $fact_key,
+                        fact_value: $fact_value,
+                        searchable_text: $searchable_text,
+                        author: $author,
+                        author_type: $author_type,
+                        source: 'upsert_fact',
+                        created_at: datetime()
+                    })
+                    RETURN id(c) as graph_id
+                    """
+                    result = neo4j_client.execute_query(
+                        query,
+                        id=new_fact_id,
+                        fact_key=fact_key,
+                        fact_value=fact_value,
+                        searchable_text=f"{readable_key} is {fact_value}",
+                        author=api_key_info.user_id,
+                        author_type="agent" if api_key_info.is_agent else "human",
+                    )
+
+                if result and result[0]:
+                    graph_id = str(result[0][0]["graph_id"])
+                logger.info(f"Stored fact in graph DB: {new_fact_id}, relationships: {relationships_created}")
+
+            except Exception as graph_err:
+                logger.error(f"Failed to store fact in graph DB: {graph_err}")
+
+        # Step 4: Invalidate retrieve cache
+        if simple_redis:
+            try:
+                cache_keys = simple_redis.keys("retrieve:*")
+                if cache_keys:
+                    for key in cache_keys:
+                        simple_redis.delete(key)
+                    logger.info(f"Invalidated {len(cache_keys)} cache entries after upsert")
+            except Exception as cache_err:
+                logger.warning(f"Failed to invalidate cache: {cache_err}")
+
+        return {
+            "success": True,
+            "id": new_fact_id,
+            "vector_id": vector_id,
+            "graph_id": graph_id,
+            "fact_key": fact_key,
+            "fact_value": fact_value,
+            "user_id": user_id,
+            "replaced_count": forgotten_count,
+            "replaced_ids": old_fact_ids,
+            "relationships_created": relationships_created,
+            "message": f"Fact '{fact_key}' upserted successfully, replaced {forgotten_count} old entries",
+        }
+
+    except Exception as e:
+        logger.error(f"Upsert fact failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "operation": "upsert_fact",
+            "fact_key": request.fact_key,
         }
 
 
