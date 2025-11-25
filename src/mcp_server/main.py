@@ -3637,10 +3637,14 @@ async def upsert_fact_endpoint(
 
         # Store in vector database
         vector_id = None
+        # Convert fact_key to natural language (e.g., "favorite_color" -> "favorite color")
+        readable_key = fact_key.replace("_", " ")
+
         if qdrant_client and embedding_service:
             try:
                 # Generate searchable text for embedding
-                searchable_text = f"{fact_key} is {fact_value}"
+                # Natural language format enables queries like "what is my color?", "favorite", etc.
+                searchable_text = f"{readable_key} is {fact_value}"
                 if user_id:
                     searchable_text = f"User {user_id}: {searchable_text}"
 
@@ -3694,7 +3698,7 @@ async def upsert_fact_endpoint(
                     id=new_fact_id,
                     fact_key=fact_key,
                     fact_value=fact_value,
-                    searchable_text=f"{fact_key} is {fact_value}",
+                    searchable_text=f"{readable_key} is {fact_value}",
                     author=api_key_info.user_id,
                     author_type="agent" if api_key_info.is_agent else "human",
                 )
