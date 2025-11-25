@@ -426,9 +426,9 @@ echo -e "${BLUE}🔍 DEBUG: Using docker compose command with:${NC}"
 echo "  → Project: $PROJECT_NAME"
 echo "  → Compose file: $COMPOSE_FILE"
 
-# STEP 1: Build images separately
+# STEP 1: Build images separately (always rebuild to prevent cache issues)
 echo -e "${BLUE}Step 1/3: Building images...${NC}"
-docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build 2>&1 | tail -20
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build --no-cache 2>&1 | tail -20
 
 # STEP 2: Remove ALL containers for this project (prevents any recreate issues)
 echo -e "${BLUE}Step 2/3: Removing ALL existing containers for clean start...${NC}"
