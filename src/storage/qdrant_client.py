@@ -292,10 +292,11 @@ class VectorDBInitializer:
                 wait=True,  # Ensure immediate availability for retrieval
             )
 
-            # Search for it
-            results = self.client.search(
-                collection_name=collection_name, query_vector=test_vector, limit=1
+            # Search for it (using query_points for qdrant-client v1.7+)
+            response = self.client.query_points(
+                collection_name=collection_name, query=test_vector, limit=1
             )
+            results = response.points
 
             if results and results[0].id == "test-point-001":
                 click.echo("✓ Test point inserted and retrieved successfully")
@@ -435,12 +436,14 @@ class VectorDBInitializer:
             raise ValueError("filter_dict must be a dictionary or None")
 
         try:
-            results = self.client.search(
+            # Use query_points for qdrant-client v1.7+ (search() was deprecated)
+            response = self.client.query_points(
                 collection_name=collection_name,
-                query_vector=query_vector,
+                query=query_vector,
                 limit=limit,
                 query_filter=filter_dict,
             )
+            results = response.points
 
             # Convert results to a more usable format
             search_results = []
