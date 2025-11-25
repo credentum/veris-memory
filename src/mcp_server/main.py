@@ -1398,6 +1398,47 @@ async def health() -> Dict[str, Any]:
     }
 
 
+@app.get("/debug/api-keys")
+async def debug_api_keys() -> Dict[str, Any]:
+    """Debug endpoint to check loaded API keys (names only, not actual keys)."""
+    import os
+
+    # Get loaded keys from manager
+    loaded_keys = {}
+    if API_KEY_AUTH_AVAILABLE:
+        from ..middleware.api_key_auth import get_api_key_manager
+        manager = get_api_key_manager()
+        for key, info in manager.api_keys.items():
+            # Show first 20 chars of key for debugging (safe partial reveal)
+            loaded_keys[info.key_id] = {
+                "key_prefix": key[:20] + "..." if len(key) > 20 else key,
+                "user_id": info.user_id,
+                "role": info.role,
+                "is_agent": info.is_agent,
+            }
+
+    # Check environment variables
+    env_keys = {}
+    for env_var in os.environ:
+        if env_var.startswith("API_KEY_"):
+            value = os.environ[env_var]
+            # Show structure without revealing full key
+            parts = value.split(":")
+            env_keys[env_var] = {
+                "parts_count": len(parts),
+                "key_prefix": parts[0][:20] + "..." if len(parts) > 0 and len(parts[0]) > 20 else (parts[0] if parts else ""),
+                "has_user_id": len(parts) >= 2,
+                "has_role": len(parts) >= 3,
+                "has_is_agent": len(parts) >= 4,
+            }
+
+    return {
+        "loaded_keys": loaded_keys,
+        "env_keys": env_keys,
+        "auth_available": API_KEY_AUTH_AVAILABLE,
+    }
+
+
 @app.get("/health/detailed")
 async def health_detailed() -> Dict[str, Any]:
     """
