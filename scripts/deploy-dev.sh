@@ -250,9 +250,12 @@ ssh -o StrictHostKeyChecking=no \
       fi
     done
 
-    # Dev uses standard docker compose file
-    COMPOSE_FILE="docker-compose.yml"
-    echo "✅ Using standard docker compose for dev environment"
+    # Dev uses volume-mounted compose file for fast deployments
+    # Code is mounted from host, no rebuild needed for code changes
+    COMPOSE_FILE="docker-compose.deploy-dev.yml"
+    echo "✅ Using volume-mounted compose for dev environment"
+    echo "   → Code changes are instant (mounted from host)"
+    echo "   → Hot reload enabled (auto-restart on file changes)"
 
     # Setup dev environment file
     if [ -f ".env.dev" ]; then
@@ -530,7 +533,7 @@ ssh -o StrictHostKeyChecking=no \
     if [ -f "docker-compose.voice.yml" ]; then
       echo "🎙️  Deploying voice platform..."
       # Voice services still build locally (not in GHCR yet)
-      docker compose -p veris-memory-dev -f docker-compose.yml -f docker-compose.voice.yml up -d --build voice-bot livekit nginx-voice-proxy
+      docker compose -p veris-memory-dev -f \$COMPOSE_FILE -f docker-compose.voice.yml up -d --build voice-bot livekit nginx-voice-proxy
     else
       echo "⚠️  docker-compose.voice.yml not found, skipping voice-bot deployment"
     fi
@@ -606,7 +609,7 @@ ssh -o StrictHostKeyChecking=no \
     # Show voice-bot status specifically
     echo ""
     echo "🎙️  Voice Platform Status:"
-    docker compose -p veris-memory-dev -f docker-compose.yml -f docker-compose.voice.yml ps voice-bot livekit 2>/dev/null || echo "Voice services not running"
+    docker compose -p veris-memory-dev -f \$COMPOSE_FILE -f docker-compose.voice.yml ps voice-bot livekit 2>/dev/null || echo "Voice services not running"
 
     echo ""
     echo "✅ Development deployment completed!"
