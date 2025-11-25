@@ -226,12 +226,14 @@ class GraphBackend(BackendSearchInterface):
         # Text search - search across all actual Context node fields
         # Fix for retrieval issue: Context nodes have title, description, keyword, user_input, bot_response
         # NOT the generic 'text' or 'content' fields that were being searched
+        # PR #340: Added searchable_text field for custom property search
         text_fields = [
             "n.title",           # Manual contexts
             "n.description",     # Manual contexts
             "n.keyword",         # Manual contexts
             "n.user_input",      # Voice bot contexts
-            "n.bot_response"     # Voice bot contexts
+            "n.bot_response",    # Voice bot contexts
+            "n.searchable_text"  # PR #340: Unified searchable field (standard + custom properties)
         ]
 
         # Enhanced multi-word search: split query into words
@@ -436,6 +438,7 @@ class GraphBackend(BackendSearchInterface):
                 f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.keyword)",
                 f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.user_input)",
                 f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.bot_response)",
+                f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.searchable_text)",  # PR #340
                 # Filter fields
                 f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.timestamp)",
                 f"CREATE INDEX IF NOT EXISTS FOR (n:{self._node_label}) ON (n.namespace)",

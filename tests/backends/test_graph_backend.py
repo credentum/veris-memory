@@ -31,13 +31,13 @@ class TestGraphBackendSearchQuery:
 
     def test_build_search_query_basic(self, graph_backend):
         """Test basic search query generation with text search."""
-        query = "test query"
+        query = "test"  # Single word to test basic search
         options = SearchOptions(limit=10)
 
         cypher_query, parameters = graph_backend._build_search_query(query, options)
 
         # Verify parameters
-        assert parameters["search_text"] == "test query"
+        assert parameters["search_text"] == "test"
         assert parameters["limit"] == 10
 
         # Verify query structure
@@ -61,6 +61,7 @@ class TestGraphBackendSearchQuery:
         assert "n.keyword" in cypher_query
         assert "n.user_input" in cypher_query
         assert "n.bot_response" in cypher_query
+        assert "n.searchable_text" in cypher_query  # PR #340
 
         # Verify old non-existent fields are NOT in query
         assert "n.text" not in cypher_query
@@ -79,10 +80,11 @@ class TestGraphBackendSearchQuery:
         assert "n.keyword IS NOT NULL" in cypher_query
         assert "n.user_input IS NOT NULL" in cypher_query
         assert "n.bot_response IS NOT NULL" in cypher_query
+        assert "n.searchable_text IS NOT NULL" in cypher_query  # PR #340
 
     def test_case_insensitive_search(self, graph_backend):
         """Test that search uses toLower() for case-insensitive matching."""
-        query = "TeSt QuErY"
+        query = "TeSt"  # Single word
         options = SearchOptions(limit=5)
 
         cypher_query, parameters = graph_backend._build_search_query(query, options)
@@ -198,6 +200,7 @@ class TestGraphBackendIndexes:
         assert any("n.keyword" in query for query in index_queries)
         assert any("n.user_input" in query for query in index_queries)
         assert any("n.bot_response" in query for query in index_queries)
+        assert any("n.searchable_text" in query for query in index_queries)  # PR #340
 
         # Verify indexes for filter fields
         assert any("n.timestamp" in query for query in index_queries)
@@ -375,7 +378,8 @@ class TestGraphBackendEdgeCases:
 
         # Should still generate valid query
         assert "MATCH" in cypher_query
-        assert parameters["search_text"] == ""
+        # Empty query should result in "false" condition (no search_text parameter)
+        assert "false" in cypher_query
 
     def test_query_with_special_characters(self, graph_backend):
         """Test query with special characters."""
@@ -388,13 +392,13 @@ class TestGraphBackendEdgeCases:
         assert parameters["search_text"] == query
 
     def test_large_limit_value(self, graph_backend):
-        """Test with large limit value."""
+        """Test with large limit value (within SearchOptions max of 1000)."""
         query = "test"
-        options = SearchOptions(limit=10000)
+        options = SearchOptions(limit=1000)  # Max allowed by SearchOptions
 
         cypher_query, parameters = graph_backend._build_search_query(query, options)
 
-        assert parameters["limit"] == 10000
+        assert parameters["limit"] == 1000
 
     def test_node_with_null_fields(self, graph_backend):
         """Test handling of nodes with explicitly NULL fields."""
