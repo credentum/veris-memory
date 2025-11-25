@@ -43,6 +43,10 @@ FOR (c:Context) ON (c.author);
 CREATE INDEX context_author_type_idx IF NOT EXISTS
 FOR (c:Context) ON (c.author_type);
 
+// PR #340: Index for searchable_text field (custom property search)
+CREATE INDEX context_searchable_text_idx IF NOT EXISTS
+FOR (c:Context) ON (c.searchable_text);
+
 // Document indexes
 CREATE INDEX document_type_idx IF NOT EXISTS
 FOR (d:Document) ON (d.document_type);

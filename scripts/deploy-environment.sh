@@ -679,6 +679,30 @@ if [ $count -ge $timeout ]; then
     exit 1
 fi
 
+# CRITICAL: Trigger hot reload for volume-mounted code
+# Problem: git pull updates files BEFORE containers start, so uvicorn's --reload
+# doesn't detect any changes (files were already new when it started).
+# Solution: Touch a source file to trigger uvicorn's file watcher and force reload.
+if [ "$ENVIRONMENT" = "development" ]; then
+    echo -e "${BLUE}🔄 Triggering hot reload for volume-mounted code...${NC}"
+
+    # Touch __init__.py to trigger uvicorn's file watcher
+    touch src/__init__.py 2>/dev/null || true
+    touch src/mcp_server/__init__.py 2>/dev/null || true
+    touch src/backends/__init__.py 2>/dev/null || true
+
+    echo "  → Triggered file change, waiting 5s for uvicorn to reload..."
+    sleep 5
+
+    # Verify services are still healthy after reload
+    if curl -f "$HEALTH_ENDPOINT" > /dev/null 2>&1; then
+        echo -e "${GREEN}  ✅ Hot reload completed, services healthy${NC}"
+    else
+        echo -e "${YELLOW}  ⚠️  Services reloading, waiting additional 10s...${NC}"
+        sleep 10
+    fi
+fi
+
 # Bootstrap Qdrant collection if needed
 echo -e "${BLUE}🔧 Bootstrapping Qdrant collection...${NC}"
 if [ -f "ops/bootstrap/qdrant_bootstrap.py" ]; then
