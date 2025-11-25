@@ -100,7 +100,8 @@ jobs:
             echo "📥 Pulling latest code..."
             git fetch origin main
             git reset --hard origin/main
-            echo "✅ Code updated to: $(git rev-parse --short HEAD)"
+            COMMIT=$(git rev-parse --short HEAD)
+            echo "✅ Code updated to: $COMMIT"
 
             # Check if services are running
             PROJECT_NAME="veris-memory-dev"
@@ -110,20 +111,27 @@ jobs:
             if [ "$RUNNING" -gt 0 ]; then
                 echo "✅ Found $RUNNING running services"
 
-                # Trigger hot reload by touching source files
-                echo "🔄 Triggering hot reload..."
-                touch src/__init__.py src/mcp_server/__init__.py src/backends/__init__.py 2>/dev/null || true
+                # Restart Python services to load new code
+                # This is reliable unlike hot reload which often fails silently
+                echo "🔄 Restarting Python services to load new code..."
+                docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} restart context-store api sentinel
 
-                echo "⏱️  Waiting 5s for uvicorn to reload..."
-                sleep 5
+                echo "⏱️  Waiting for services to be healthy..."
+                sleep 15
 
                 # Verify health
                 if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
                     echo "✅ MCP Server healthy"
                 else
-                    echo "⚠️  MCP Server not responding, restarting services..."
-                    docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} restart context-store api sentinel monitoring-dashboard
-                    sleep 10
+                    echo "❌ MCP Server not responding after restart"
+                    docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} logs context-store --tail=20
+                    exit 1
+                fi
+
+                if curl -sf http://localhost:8001/api/v1/health > /dev/null 2>&1; then
+                    echo "✅ REST API healthy"
+                else
+                    echo "⚠️  REST API not responding (non-blocking)"
                 fi
             else
                 echo "⚠️  No services running - need full deployment"
@@ -131,7 +139,7 @@ jobs:
             fi
 
             echo ""
-            echo "✅ FAST DEPLOYMENT COMPLETE (~30 seconds)"
+            echo "✅ FAST DEPLOYMENT COMPLETE - commit: $COMMIT"
           EOSSH
 
       - name: Full Deployment (infrastructure changes)
