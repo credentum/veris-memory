@@ -36,41 +36,52 @@ jobs:
             echo "=============================="
             cd /opt/veris-memory
 
+            PROJECT_NAME="veris-memory-dev"
+            COMPOSE_FILE="docker-compose.deploy-dev.yml"
+
             # Pull latest code
             echo "📥 Pulling latest code..."
             git pull origin main
 
-            # Update code in running containers
-            PROJECT_NAME="veris-memory-dev"
-            CONTAINERS=(
-                "${PROJECT_NAME}-context-store-1"
-                "${PROJECT_NAME}-api-1"
-                "${PROJECT_NAME}-sentinel-1"
-                "${PROJECT_NAME}-monitoring-dashboard-1"
-            )
+            # Check if volume-mounted compose file exists
+            if [ ! -f "$COMPOSE_FILE" ]; then
+                echo "❌ $COMPOSE_FILE not found!"
+                echo "   Run full deployment first to create the compose file."
+                exit 1
+            fi
 
-            for container in "${CONTAINERS[@]}"; do
-                if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
-                    echo "📦 Updating ${container}..."
-                    docker cp src/. ${container}:/app/src/ 2>/dev/null || true
-                    [ -d "schemas" ] && docker cp schemas/. ${container}:/app/schemas/ 2>/dev/null || true
-                    echo "✅ Updated ${container}"
-                fi
-            done
+            # Check if services are running
+            RUNNING=$(docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} ps --status running -q 2>/dev/null | wc -l)
 
-            # Restart services
-            echo "🔄 Restarting services..."
-            docker compose -p ${PROJECT_NAME} restart context-store api sentinel monitoring-dashboard
+            if [ "$RUNNING" -gt 0 ]; then
+                echo "✅ Found $RUNNING running services"
+                echo ""
+                echo "🔄 Restarting services to pick up code changes..."
+                echo "   (Code is mounted via volumes, hot reload should handle this automatically)"
+
+                # With volume mounts + hot reload, we just need to trigger a restart
+                # The --reload flag in uvicorn will detect file changes and restart
+                docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} restart context-store api sentinel monitoring-dashboard 2>/dev/null || {
+                    echo "⚠️  Some services failed to restart, trying up instead..."
+                    docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} up -d context-store api sentinel monitoring-dashboard
+                }
+            else
+                echo "⚠️  No services running. Starting services..."
+                docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} up -d
+            fi
 
             echo "⏱️  Waiting 15s for services..."
             sleep 15
 
             # Health check
+            echo ""
             echo "🏥 Health check:"
             curl -sf http://localhost:8000/health && echo "✅ MCP Server healthy" || echo "⚠️  MCP Server not ready"
             curl -sf http://localhost:8001/api/v1/health && echo "✅ API healthy" || echo "⚠️  API not ready"
 
-            echo "✅ FAST DEPLOYMENT COMPLETE (~30 seconds)"
+            echo ""
+            echo "✅ FAST DEPLOYMENT COMPLETE"
+            echo "   Code mounted via volumes - changes are instant!"
           EOSSH
 
       - name: Cleanup SSH key
