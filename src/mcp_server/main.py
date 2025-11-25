@@ -3564,19 +3564,24 @@ async def upsert_fact_endpoint(
 
         # Step 1: Search for existing facts with this key
         old_fact_ids = []
-        if unified_search:
+        if qdrant_client:
             try:
+                # Generate embedding for fact key to search
+                from ..embedding import generate_embedding
+
+                query_vector = await generate_embedding(fact_key, adjust_dimensions=True)
+
                 # Search for facts containing this key
-                search_response = await unified_search.search(
-                    query=fact_key,
+                vector_results = qdrant_client.search(
+                    query_vector=query_vector,
                     limit=20,
-                    search_mode="hybrid",
                 )
 
                 # Find facts that match our criteria
-                for result in search_response.results:
-                    content = result.get("content", {})
-                    metadata = result.get("metadata", {})
+                for result in vector_results:
+                    payload = result.get("payload", {})
+                    content = payload.get("content", payload) if isinstance(payload, dict) else {}
+                    metadata = payload.get("metadata", {}) if isinstance(payload, dict) else {}
 
                     # Check if this is a fact with our key (exact match, not substring)
                     is_fact = content.get("content_type") == "fact"
@@ -3589,7 +3594,10 @@ async def upsert_fact_endpoint(
                         same_user = result_user == user_id or result_user is None
 
                     if is_fact and has_key and same_user:
-                        old_fact_ids.append(result.get("id"))
+                        # Get context ID from payload or result
+                        context_id = content.get("id") or payload.get("id") or result.get("id")
+                        if context_id:
+                            old_fact_ids.append(context_id)
 
                 logger.info(f"Found {len(old_fact_ids)} existing facts to replace")
 
