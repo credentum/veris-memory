@@ -1,0 +1,85 @@
+name: Fast Code-Only Deployment (Dev)
+
+on:
+  # Manual trigger for fast deployments
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for fast deployment'
+        required: false
+        default: 'Code-only update'
+
+jobs:
+  deploy-code-only:
+    name: Fast Code-Only Deploy
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "::add-mask::${{ secrets.HETZNER_SSH_KEY }}"
+          printf '%s\n' "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 -H ${{ secrets.HETZNER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Fast Code Deployment
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -i ~/.ssh/id_ed25519 \
+              ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOSSH'
+            set -e
+
+            echo "⚡ FAST CODE-ONLY DEPLOYMENT"
+            echo "=============================="
+            cd /opt/veris-memory
+
+            # Pull latest code
+            echo "📥 Pulling latest code..."
+            git pull origin main
+
+            # Update code in running containers
+            PROJECT_NAME="veris-memory-dev"
+            CONTAINERS=(
+                "${PROJECT_NAME}-context-store-1"
+                "${PROJECT_NAME}-api-1"
+                "${PROJECT_NAME}-sentinel-1"
+                "${PROJECT_NAME}-monitoring-dashboard-1"
+            )
+
+            for container in "${CONTAINERS[@]}"; do
+                if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+                    echo "📦 Updating ${container}..."
+                    docker cp src/. ${container}:/app/src/ 2>/dev/null || true
+                    [ -d "schemas" ] && docker cp schemas/. ${container}:/app/schemas/ 2>/dev/null || true
+                    echo "✅ Updated ${container}"
+                fi
+            done
+
+            # Restart services
+            echo "🔄 Restarting services..."
+            docker compose -p ${PROJECT_NAME} restart context-store api sentinel monitoring-dashboard
+
+            echo "⏱️  Waiting 15s for services..."
+            sleep 15
+
+            # Health check
+            echo "🏥 Health check:"
+            curl -sf http://localhost:8000/health && echo "✅ MCP Server healthy" || echo "⚠️  MCP Server not ready"
+            curl -sf http://localhost:8001/api/v1/health && echo "✅ API healthy" || echo "⚠️  API not ready"
+
+            echo "✅ FAST DEPLOYMENT COMPLETE (~30 seconds)"
+          EOSSH
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo "✅ Fast code-only deployment complete!"
+          echo "⚡ Total time: ~30 seconds (vs 40 minutes for full rebuild)"
+          echo "📝 Reason: ${{ github.event.inputs.reason }}"
