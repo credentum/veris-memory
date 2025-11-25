@@ -3662,25 +3662,17 @@ async def upsert_fact_endpoint(
                 embedding = await generate_embedding(searchable_text, adjust_dimensions=True)
 
                 if embedding and len(embedding) > 0:
-                    # Store in Qdrant
-                    from qdrant_client.models import PointStruct
-
-                    qdrant_client.upsert(
-                        collection_name=os.getenv("QDRANT_COLLECTION_NAME", "context_embeddings"),
-                        points=[
-                            PointStruct(
-                                id=new_fact_id,
-                                vector=embedding,
-                                payload={
-                                    "content": new_fact_content,
-                                    "metadata": new_fact_metadata,
-                                    "searchable_text": searchable_text,
-                                },
-                            )
-                        ],
+                    # Store in Qdrant using wrapper method (matches store_context pattern)
+                    vector_id = qdrant_client.store_vector(
+                        vector_id=new_fact_id,
+                        embedding=embedding,
+                        metadata={
+                            "content": new_fact_content,
+                            "metadata": new_fact_metadata,
+                            "searchable_text": searchable_text,
+                        },
                     )
-                    vector_id = new_fact_id
-                    logger.info(f"Stored fact in vector DB: {new_fact_id}")
+                    logger.info(f"Stored fact in vector DB: {vector_id}")
                 else:
                     logger.warning("Embedding generation returned empty, skipping vector storage")
 
