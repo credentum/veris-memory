@@ -46,8 +46,8 @@ ssh -o StrictHostKeyChecking=no \
   echo "User: \$(whoami)"
 
   # GitHub Container Registry credentials (for pulling pre-built images)
-  GITHUB_TOKEN='$GITHUB_TOKEN'
-  GITHUB_ACTOR='$GITHUB_ACTOR'
+  export GITHUB_TOKEN='$GITHUB_TOKEN'
+  export GITHUB_ACTOR='$GITHUB_ACTOR'
 
   # SECURITY: Generate Redis password if not provided
   if [ -z '$REDIS_PASSWORD' ]; then
