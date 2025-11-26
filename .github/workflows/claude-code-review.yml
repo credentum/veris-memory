@@ -65,7 +65,8 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # model: "claude-opus-4-1-20250805"
-          model: "claude-sonnet-4-5-20250929"
+          # model: "claude-sonnet-4-5-20250929"
+          model: "claude-opus-4-5-20251101"
           # -------- ARC-Reviewer Prompt --------
           direct_prompt: |
             You are ARC-Reviewer, a senior staff engineer reviewing pull-requests on the context-store (MCP-based context storage service).
