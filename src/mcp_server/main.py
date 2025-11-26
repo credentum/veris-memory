@@ -772,6 +772,31 @@ class UpsertFactRequest(BaseModel):
     )
 
 
+class GetUserFactsRequest(BaseModel):
+    """Request model for get_user_facts tool.
+
+    Retrieves ALL facts stored for a specific user, bypassing semantic search.
+    This is useful for queries like "What do you know about me?" where we want
+    complete recall of all user facts, not just semantically similar ones.
+    """
+
+    user_id: str = Field(
+        ...,
+        min_length=1,
+        description="The user ID to retrieve facts for",
+    )
+    limit: int = Field(
+        50,
+        ge=1,
+        le=200,
+        description="Maximum number of facts to return",
+    )
+    include_forgotten: bool = Field(
+        False,
+        description="Whether to include soft-deleted (forgotten) facts",
+    )
+
+
 def validate_and_get_credential(
     env_var_name: str, required: bool = True, min_length: int = 8
 ) -> Optional[str]:
@@ -3826,6 +3851,151 @@ async def upsert_fact_endpoint(
             "error": str(e),
             "operation": "upsert_fact",
             "fact_key": request.fact_key,
+        }
+
+
+@app.post("/tools/get_user_facts")
+async def get_user_facts_endpoint(
+    request: GetUserFactsRequest,
+    api_key_info: Optional[APIKeyInfo] = (
+        Depends(verify_api_key) if API_KEY_AUTH_AVAILABLE else None
+    ),
+) -> Dict[str, Any]:
+    """
+    Retrieve ALL facts for a specific user.
+
+    Unlike semantic search (retrieve_context), this endpoint returns all facts
+    stored for a user_id without relying on query similarity. This ensures
+    complete recall for queries like "What do you know about me?"
+
+    Args:
+        request: Request with user_id and optional limit
+        api_key_info: API key info for authorization
+
+    Returns:
+        All facts for the user with their keys and values
+    """
+    if not API_KEY_AUTH_AVAILABLE or not api_key_info:
+        return {"success": False, "error": "Authentication required"}
+
+    try:
+        user_id = request.user_id
+        logger.info(f"Getting all facts for user: {user_id}")
+
+        facts = []
+
+        # Query Neo4j for all facts with this user_id
+        if neo4j_client:
+            try:
+                # Build query based on whether to include forgotten facts
+                if request.include_forgotten:
+                    query = """
+                    MATCH (c:Context)
+                    WHERE c.content_type = 'fact'
+                      AND (c.user_id = $user_id OR c.metadata_user_id = $user_id)
+                    RETURN c.id as id, c.fact_key as fact_key, c.fact_value as fact_value,
+                           c.created_at as created_at, c.forgotten as forgotten,
+                           c.searchable_text as searchable_text
+                    ORDER BY c.created_at DESC
+                    LIMIT $limit
+                    """
+                else:
+                    query = """
+                    MATCH (c:Context)
+                    WHERE c.content_type = 'fact'
+                      AND (c.user_id = $user_id OR c.metadata_user_id = $user_id)
+                      AND (c.forgotten IS NULL OR c.forgotten = false)
+                    RETURN c.id as id, c.fact_key as fact_key, c.fact_value as fact_value,
+                           c.created_at as created_at, c.searchable_text as searchable_text
+                    ORDER BY c.created_at DESC
+                    LIMIT $limit
+                    """
+
+                results = neo4j_client.query(
+                    query,
+                    parameters={"user_id": user_id, "limit": request.limit}
+                )
+
+                for record in results:
+                    fact = {
+                        "id": record.get("id"),
+                        "fact_key": record.get("fact_key"),
+                        "fact_value": record.get("fact_value"),
+                        "created_at": str(record.get("created_at")) if record.get("created_at") else None,
+                        "searchable_text": record.get("searchable_text"),
+                    }
+                    if request.include_forgotten:
+                        fact["forgotten"] = record.get("forgotten", False)
+                    facts.append(fact)
+
+                logger.info(f"Found {len(facts)} facts for user {user_id} in graph")
+
+            except Exception as neo4j_err:
+                logger.warning(f"Neo4j query failed, falling back to vector search: {neo4j_err}")
+
+        # Fallback: Search Qdrant for facts if Neo4j didn't return results
+        if not facts and qdrant_client:
+            try:
+                # Generate embedding for generic fact query
+                query_vector = await generate_embedding(f"facts about user {user_id}", adjust_dimensions=True)
+
+                vector_results = qdrant_client.search(
+                    query_vector=query_vector,
+                    limit=request.limit * 2,  # Get more to filter
+                )
+
+                for result in vector_results:
+                    payload = result.get("payload", {})
+                    content = payload.get("content", {}) if isinstance(payload, dict) else {}
+                    metadata = payload.get("metadata", {}) if isinstance(payload, dict) else {}
+
+                    # Check if this is a fact for our user
+                    is_fact = content.get("content_type") == "fact"
+                    result_user = metadata.get("user_id") or content.get("user_id")
+
+                    if is_fact and result_user == user_id:
+                        fact_key = None
+                        fact_value = None
+
+                        # Extract fact_key and fact_value from content
+                        for key, value in content.items():
+                            if key not in ["content_type", "user_id", "id"]:
+                                fact_key = key
+                                fact_value = value
+                                break
+
+                        if fact_key:
+                            facts.append({
+                                "id": content.get("id") or result.get("id"),
+                                "fact_key": fact_key,
+                                "fact_value": fact_value,
+                                "searchable_text": payload.get("searchable_text"),
+                                "score": result.get("score"),
+                            })
+
+                    if len(facts) >= request.limit:
+                        break
+
+                logger.info(f"Found {len(facts)} facts for user {user_id} in vector store")
+
+            except Exception as vec_err:
+                logger.error(f"Vector search fallback failed: {vec_err}")
+
+        return {
+            "success": True,
+            "user_id": user_id,
+            "facts": facts,
+            "count": len(facts),
+            "message": f"Retrieved {len(facts)} facts for user '{user_id}'",
+        }
+
+    except Exception as e:
+        logger.error(f"Get user facts failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "operation": "get_user_facts",
+            "user_id": request.user_id,
         }
 
 
