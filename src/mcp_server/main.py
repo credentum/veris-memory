@@ -3754,6 +3754,7 @@ async def upsert_fact_endpoint(
                 if request.create_relationships and user_id:
                     # Create fact node with relationships to user
                     # (User)-[:HAS_FACT]->(Fact)-[:HAS_VALUE]->(Value)
+                    # Include user_id on Fact node for get_user_facts queries
                     query = """
                     MERGE (u:User {id: $user_id})
                     CREATE (f:Context:Fact {
@@ -3762,6 +3763,8 @@ async def upsert_fact_endpoint(
                         content_type: 'fact',
                         fact_key: $fact_key,
                         fact_value: $fact_value,
+                        user_id: $user_id,
+                        metadata_user_id: $user_id,
                         searchable_text: $searchable_text,
                         author: $author,
                         author_type: $author_type,
@@ -3788,6 +3791,7 @@ async def upsert_fact_endpoint(
                     relationships_created = 2  # HAS_FACT + HAS_VALUE
                 else:
                     # Create fact node without relationships
+                    # Include user_id for get_user_facts queries
                     query = """
                     CREATE (c:Context:Fact {
                         id: $id,
@@ -3795,6 +3799,8 @@ async def upsert_fact_endpoint(
                         content_type: 'fact',
                         fact_key: $fact_key,
                         fact_value: $fact_value,
+                        user_id: $user_id,
+                        metadata_user_id: $user_id,
                         searchable_text: $searchable_text,
                         author: $author,
                         author_type: $author_type,
@@ -3808,6 +3814,7 @@ async def upsert_fact_endpoint(
                         id=new_fact_id,
                         fact_key=fact_key,
                         fact_value=fact_value,
+                        user_id=user_id,
                         searchable_text=f"{readable_key} is {fact_value}",
                         author=api_key_info.user_id,
                         author_type="agent" if api_key_info.is_agent else "human",
