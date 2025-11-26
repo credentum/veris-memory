@@ -174,9 +174,41 @@ ssh -o StrictHostKeyChecking=no \
     fi
   done
 
-  # Prune system
+  # Prune system (removes dangling images/containers)
   echo "🗑️  Pruning Docker system..."
   docker system prune -f --volumes 2>/dev/null || true
+
+  # CRITICAL: Remove old veris-memory images to prevent disk space accumulation
+  # Each image is 7-8GB, so old versions quickly consume disk space
+  echo "🧹 Removing old veris-memory Docker images..."
+
+  # Get disk usage before cleanup
+  DISK_BEFORE=\$(df -h /var/lib/docker 2>/dev/null | tail -1 | awk '{print \$4}' || echo "unknown")
+  echo "   Disk space before image cleanup: \$DISK_BEFORE available"
+
+  # Remove all unused images (not just dangling) - this is safe after containers are stopped
+  echo "   Removing unused images..."
+  docker image prune -a -f 2>/dev/null || true
+
+  # Specifically target old veris-memory images from GHCR
+  echo "   Cleaning GHCR veris-memory images..."
+  for repo in api context-store sentinel voice-bot; do
+    # Get all image IDs for this repo except the one tagged :latest
+    OLD_IMAGES=\$(docker images "ghcr.io/credentum/veris-memory/\$repo" --format "{{.ID}} {{.Tag}}" 2>/dev/null | grep -v "latest" | awk '{print \$1}' || true)
+    if [ -n "\$OLD_IMAGES" ]; then
+      echo "   Removing old \$repo images..."
+      echo "\$OLD_IMAGES" | xargs -r docker rmi -f 2>/dev/null || true
+    fi
+  done
+
+  # Also clean up any locally built images with old tags
+  echo "   Cleaning locally built veris-memory images..."
+  docker images --filter "reference=*veris-memory*" --format "{{.Repository}}:{{.Tag}} {{.ID}} {{.CreatedSince}}" 2>/dev/null | \
+    grep -E "(weeks|months) ago" | awk '{print \$2}' | xargs -r docker rmi -f 2>/dev/null || true
+
+  # Get disk usage after cleanup
+  DISK_AFTER=\$(df -h /var/lib/docker 2>/dev/null | tail -1 | awk '{print \$4}' || echo "unknown")
+  echo "   Disk space after image cleanup: \$DISK_AFTER available"
 
   # Wait for cleanup
   echo "⏳ Waiting 5 seconds for cleanup to complete..."
@@ -185,10 +217,12 @@ ssh -o StrictHostKeyChecking=no \
   # Verify cleanup
   remaining_containers=\$(docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | wc -l)
   remaining_volumes=\$(docker volume ls --filter "name=veris-memory" --format "{{.Name}}" | wc -l)
+  remaining_images=\$(docker images --filter "reference=*veris-memory*" --format "{{.Repository}}" 2>/dev/null | wc -l || echo "0")
 
   echo "📊 Cleanup summary:"
   echo "  - Remaining containers: \$remaining_containers"
   echo "  - Remaining volumes: \$remaining_volumes"
+  echo "  - Remaining images: \$remaining_images"
 
   if [ "\$remaining_containers" -eq 0 ] && [ "\$remaining_volumes" -eq 0 ]; then
     echo "🎉 Complete cleanup achieved!"
