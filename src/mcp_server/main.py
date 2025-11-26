@@ -3777,16 +3777,18 @@ async def upsert_fact_endpoint(
                     CREATE (f)-[:HAS_VALUE]->(v)
                     RETURN id(f) as graph_id
                     """
-                    result = neo4j_client.execute_query(
+                    result = neo4j_client.query(
                         query,
-                        id=new_fact_id,
-                        user_id=user_id,
-                        fact_key=fact_key,
-                        fact_value=fact_value,
-                        readable_key=readable_key,
-                        searchable_text=f"{readable_key} is {fact_value}",
-                        author=api_key_info.user_id,
-                        author_type="agent" if api_key_info.is_agent else "human",
+                        parameters={
+                            "id": new_fact_id,
+                            "user_id": user_id,
+                            "fact_key": fact_key,
+                            "fact_value": fact_value,
+                            "readable_key": readable_key,
+                            "searchable_text": f"{readable_key} is {fact_value}",
+                            "author": api_key_info.user_id,
+                            "author_type": "agent" if api_key_info.is_agent else "human",
+                        }
                     )
                     relationships_created = 2  # HAS_FACT + HAS_VALUE
                 else:
@@ -3809,19 +3811,21 @@ async def upsert_fact_endpoint(
                     })
                     RETURN id(c) as graph_id
                     """
-                    result = neo4j_client.execute_query(
+                    result = neo4j_client.query(
                         query,
-                        id=new_fact_id,
-                        fact_key=fact_key,
-                        fact_value=fact_value,
-                        user_id=user_id,
-                        searchable_text=f"{readable_key} is {fact_value}",
-                        author=api_key_info.user_id,
-                        author_type="agent" if api_key_info.is_agent else "human",
+                        parameters={
+                            "id": new_fact_id,
+                            "fact_key": fact_key,
+                            "fact_value": fact_value,
+                            "user_id": user_id,
+                            "searchable_text": f"{readable_key} is {fact_value}",
+                            "author": api_key_info.user_id,
+                            "author_type": "agent" if api_key_info.is_agent else "human",
+                        }
                     )
 
-                if result and result[0]:
-                    graph_id = str(result[0][0]["graph_id"])
+                if result and len(result) > 0:
+                    graph_id = str(result[0]["graph_id"])
                 logger.info(f"Stored fact in graph DB: {new_fact_id}, relationships: {relationships_created}")
 
             except Exception as graph_err:
