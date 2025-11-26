@@ -783,7 +783,8 @@ class GetUserFactsRequest(BaseModel):
     user_id: str = Field(
         ...,
         min_length=1,
-        description="The user ID to retrieve facts for",
+        max_length=255,
+        description="The user ID to retrieve facts for (e.g., 'matt', 'user_123')",
     )
     limit: int = Field(
         50,
@@ -3986,6 +3987,8 @@ async def get_user_facts_endpoint(
             "user_id": user_id,
             "facts": facts,
             "count": len(facts),
+            "limit": request.limit,
+            "has_more": len(facts) >= request.limit,
             "message": f"Retrieved {len(facts)} facts for user '{user_id}'",
         }
 
