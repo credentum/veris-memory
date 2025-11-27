@@ -554,6 +554,10 @@ ssh -o StrictHostKeyChecking=no \
         fi
       done
 
+      # Build qdrant locally (not in GHCR - uses custom Dockerfile with curl/wget for health checks)
+      echo "🔨 Building qdrant image locally (not available in GHCR)..."
+      docker compose -p veris-memory-dev build qdrant
+
       echo "🚀 Starting main services with pulled images..."
       docker compose -p veris-memory-dev up -d --no-build
     else
