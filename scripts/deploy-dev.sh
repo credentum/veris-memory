@@ -567,11 +567,11 @@ ssh -o StrictHostKeyChecking=no \
       docker compose -p veris-memory-dev up -d --build
     fi
 
-    # Deploy voice platform services (voice-bot + livekit)
+    # Deploy voice platform services (voice-bot only - livekit was removed in PR #371)
     if [ -f "docker-compose.voice.yml" ]; then
       echo "🎙️  Deploying voice platform..."
       # Voice services still build locally (not in GHCR yet)
-      docker compose -p veris-memory-dev -f \$COMPOSE_FILE -f docker-compose.voice.yml up -d --build voice-bot livekit nginx-voice-proxy
+      docker compose -p veris-memory-dev -f \$COMPOSE_FILE -f docker-compose.voice.yml up -d --build voice-bot
     else
       echo "⚠️  docker-compose.voice.yml not found, skipping voice-bot deployment"
     fi
@@ -647,7 +647,7 @@ ssh -o StrictHostKeyChecking=no \
     # Show voice-bot status specifically
     echo ""
     echo "🎙️  Voice Platform Status:"
-    docker compose -p veris-memory-dev -f \$COMPOSE_FILE -f docker-compose.voice.yml ps voice-bot livekit 2>/dev/null || echo "Voice services not running"
+    docker compose -p veris-memory-dev -f \$COMPOSE_FILE -f docker-compose.voice.yml ps voice-bot 2>/dev/null || echo "Voice services not running"
 
     echo ""
     echo "✅ Development deployment completed!"

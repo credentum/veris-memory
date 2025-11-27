@@ -652,11 +652,11 @@ else
     echo -e "${GREEN}✅ Docker Compose completed successfully${NC}"
 fi
 
-# Deploy voice platform services (voice-bot + livekit)
+# Deploy voice platform services (voice-bot only - livekit was removed in PR #371)
 if [ -f "docker-compose.voice.yml" ]; then
     echo ""
     echo -e "${CYAN}🎙️  Deploying voice platform...${NC}"
-    docker compose -p "$PROJECT_NAME" -f docker-compose.yml -f docker-compose.voice.yml up -d --build voice-bot livekit 2>&1
+    docker compose -p "$PROJECT_NAME" -f docker-compose.yml -f docker-compose.voice.yml up -d --build voice-bot 2>&1
     echo -e "${GREEN}✅ Voice platform deployed${NC}"
 else
     echo -e "${YELLOW}⚠️  docker-compose.voice.yml not found, skipping voice-bot deployment${NC}"
