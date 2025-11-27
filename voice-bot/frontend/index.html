@@ -1,0 +1,187 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voice Bot</title>
+    <style>
+      /* Solarized Dark Color Scheme */
+      :root {
+        --base03:    #002b36;  /* background */
+        --base02:    #073642;  /* background highlights */
+        --base01:    #586e75;  /* comments / secondary content */
+        --base00:    #657b83;  /* body text / default code / primary content */
+        --base0:     #839496;  /* body text / primary content */
+        --base1:     #93a1a1;  /* optional emphasized content */
+        --cyan:      #2aa198;
+        --green:     #859900;
+        --blue:      #268bd2;
+        --yellow:    #b58900;
+        --orange:    #cb4b16;
+        --red:       #dc322f;
+        --magenta:   #d33682;
+        --violet:    #6c71c4;
+      }
+
+      body {
+        font-family: system-ui, sans-serif;
+        padding: 24px;
+        max-width: 600px;
+        background-color: var(--base03);
+        color: var(--base0);
+        margin: 0 auto;
+      }
+
+      button {
+        font-size: 18px;
+        padding: 12px 20px;
+        cursor: pointer;
+        background-color: var(--base02);
+        color: var(--cyan);
+        border: 2px solid var(--cyan);
+        border-radius: 6px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      button:hover {
+        background-color: var(--cyan);
+        color: var(--base03);
+        border-color: var(--cyan);
+      }
+
+      button:active {
+        transform: scale(0.98);
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      #toggle {
+        font-size: 20px;
+        border-color: var(--green);
+        color: var(--green);
+      }
+
+      #toggle:hover {
+        background-color: var(--green);
+        color: var(--base03);
+      }
+
+      #calibrate {
+        font-size: 16px;
+        margin-left: 8px;
+        border-color: var(--blue);
+        color: var(--blue);
+      }
+
+      #calibrate:hover {
+        background-color: var(--blue);
+        color: var(--base03);
+      }
+
+      #status {
+        margin-top: 12px;
+        color: var(--base1);
+        font-size: 16px;
+      }
+
+      #calStatus {
+        margin-top: 8px;
+        font-size: 14px;
+        color: var(--base01);
+      }
+
+      #meter {
+        width: 100%;
+        height: 12px;
+        background: var(--base02);
+        margin-top: 12px;
+        border-radius: 6px;
+        overflow: hidden;
+        border: 1px solid var(--base01);
+      }
+
+      #meterFill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, var(--cyan), var(--green));
+        transition: width 60ms linear;
+      }
+
+      .tuning {
+        margin-top: 20px;
+        padding: 16px;
+        background: var(--base02);
+        border-radius: 8px;
+        border: 1px solid var(--base01);
+      }
+
+      .tuning label {
+        display: block;
+        margin-bottom: 12px;
+        font-size: 14px;
+        color: var(--base0);
+      }
+
+      .tuning input[type="range"] {
+        width: 100%;
+        height: 6px;
+        background: var(--base01);
+        border-radius: 3px;
+        outline: none;
+        -webkit-appearance: none;
+      }
+
+      .tuning input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        background: var(--cyan);
+        border-radius: 50%;
+        cursor: pointer;
+      }
+
+      .tuning input[type="range"]::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        background: var(--cyan);
+        border-radius: 50%;
+        cursor: pointer;
+        border: none;
+      }
+
+      .tuning span {
+        font-weight: bold;
+        margin-left: 8px;
+        color: var(--yellow);
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <button id="toggle">Activate</button>
+      <button id="calibrate">Calibrate Noise Floor</button>
+    </div>
+    <div id="status">Inactive</div>
+    <div id="calStatus"></div>
+    <div id="meter"><div id="meterFill"></div></div>
+
+    <div class="tuning">
+      <label>
+        Speech Threshold: <span id="thrVal"></span>
+        <input id="thr" type="range" min="0.004" max="0.03" step="0.001">
+      </label>
+      <label>
+        Silence Duration (ms): <span id="silVal"></span>
+        <input id="sil" type="range" min="800" max="3000" step="100">
+      </label>
+    </div>
+
+    <audio id="player"></audio>
+    <script src="/static/main.js"></script>
+  </body>
+</html>

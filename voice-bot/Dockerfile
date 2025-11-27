@@ -2,35 +2,31 @@ FROM python:3.11-slim@sha256:fa9b525a0be0c5ae5e6f2209f4be6fdc5a15a36fed0222144d9
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (curl for healthcheck)
 RUN apt-get update && apt-get install -y \
-    gcc \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy backend code
 COPY app/ ./app/
 
-# Copy startup script
-COPY scripts/start.sh ./start.sh
-RUN chmod +x ./start.sh
+# Copy frontend (served as static files)
+COPY frontend/ ./frontend/
 
-# Create non-root user
+# Create non-root user for security
 RUN useradd -m -u 1000 voicebot && \
-    chown -R voicebot:voicebot /app && \
-    mkdir -p /app/logs && \
-    chown -R voicebot:voicebot /app/logs
+    chown -R voicebot:voicebot /app
 
 USER voicebot
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8002/health || exit 1
+# Expose port
+EXPOSE 8000
 
-EXPOSE 8002
+# Run from app directory
+WORKDIR /app/app
 
-CMD ["./start.sh"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
