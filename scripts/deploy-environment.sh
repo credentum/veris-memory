@@ -578,6 +578,11 @@ if [ "$EXISTING_PROJECT" -gt 0 ] || [ "$EXISTING_LIVEKIT" -gt 0 ] || [ "$EXISTIN
     sleep 5
 fi
 
+# Build qdrant locally (not in GHCR - uses custom Dockerfile with curl/wget for health checks)
+# This must happen BEFORE create because qdrant uses a local image name
+echo "  → Building qdrant image locally (not available in GHCR)..."
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build qdrant
+
 # Use separate create and start commands to avoid the recreate race condition
 echo "  → Creating containers without starting them..."
 set +e
