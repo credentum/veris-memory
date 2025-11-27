@@ -84,10 +84,12 @@ async def turn(audio: UploadFile = File(...)):
     """
     started = time.time()
 
-    # 1) Save audio correctly
+    # 1) Save audio to secure temp file (NamedTemporaryFile avoids mktemp race condition)
     suffix = suffix_from_content_type(audio.content_type)
-    tmp_path = Path(tempfile.mktemp(suffix=suffix))
-    tmp_path.write_bytes(await audio.read())
+    tmp_file = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    tmp_path = Path(tmp_file.name)
+    tmp_file.write(await audio.read())
+    tmp_file.close()
 
     try:
         # 2) STT - Transcribe audio

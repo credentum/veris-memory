@@ -17,15 +17,11 @@ from config import (
     MEMORY_API_BASE,
     USER_ID,
     SESSION_ID,
+    mem_headers,
 )
 
 
-def mem_headers() -> dict:
-    """Headers for Veris API requests - sends only the key portion"""
-    return {"X-API-Key": VERIS_API_KEY, "Content-Type": "application/json"}
-
-
-def store_fact(fact_key: str, fact_value: str):
+def store_fact(fact_key: str, fact_value: str) -> None:
     """
     Upsert a single fact to Veris memory using the upsert_fact endpoint.
 

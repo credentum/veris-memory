@@ -16,16 +16,11 @@ from config import (
     REPO_PATHS,
     DEFAULT_REPO,
     CODE_HINT_WORDS,
-    VERIS_API_KEY,
     MEMORY_API_BASE,
     USER_ID,
     SESSION_ID,
+    mem_headers,
 )
-
-
-def mem_headers() -> dict:
-    """Headers for Veris API requests - sends only the key portion"""
-    return {"X-API-Key": VERIS_API_KEY, "Content-Type": "application/json"}
 
 
 def detect_agent_task_llm(text: str) -> tuple[bool, str]:

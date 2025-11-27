@@ -68,3 +68,9 @@ DEFAULT_EXCLUDE_SOURCES = [
 # This enables follow-up questions like "yes please" or "tell me more"
 CHAT_HISTORY: list[dict] = []  # Stores {"role": "user/assistant", "content": "..."}
 MAX_CHAT_HISTORY = 10  # Keep last N exchanges (user + assistant = 2 messages each)
+
+
+# ---- Shared HTTP Headers ----
+def mem_headers() -> dict:
+    """Headers for Veris API requests - sends only the key portion"""
+    return {"X-API-Key": VERIS_API_KEY, "Content-Type": "application/json"}

@@ -18,12 +18,8 @@ from config import (
     USER_ID,
     SESSION_ID,
     DEFAULT_EXCLUDE_SOURCES,
+    mem_headers,
 )
-
-
-def mem_headers() -> dict:
-    """Headers for Veris API requests - sends only the key portion"""
-    return {"X-API-Key": VERIS_API_KEY, "Content-Type": "application/json"}
 
 
 def get_user_facts(user_id: str = None, limit: int = 50) -> List[Dict[str, str]]:
