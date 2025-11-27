@@ -16,6 +16,7 @@ from config import (
     REPO_PATHS,
     DEFAULT_REPO,
     CODE_HINT_WORDS,
+    VERIS_API_KEY,
     MEMORY_API_BASE,
     USER_ID,
     SESSION_ID,
