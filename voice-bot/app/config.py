@@ -1,75 +1,70 @@
-"""Configuration for Voice Bot Service"""
-from pydantic_settings import BaseSettings
-from typing import Optional
+"""
+VoiceBot Configuration
 
+All environment variables, constants, and shared clients.
+"""
 
-class Settings(BaseSettings):
-    """Voice Bot Service Configuration"""
+import os
+import uuid
 
-    # Service Config
-    SERVICE_NAME: str = "voice-bot"
-    HOST: str = "0.0.0.0"
-    PORT: int = 8002
-    LOG_LEVEL: str = "info"
+from dotenv import load_dotenv
+from openai import OpenAI
 
-    # CORS Configuration
-    # Comma-separated list of allowed origins for production
-    # Example: "https://app.example.com,https://admin.example.com"
-    # Use "*" only for development (not recommended for production)
-    CORS_ORIGINS: str = "*"
+load_dotenv()
 
-    # Rate Limiting Configuration
-    # Maximum requests per minute per IP address
-    # Prevents abuse of voice session creation and fact storage endpoints
-    RATE_LIMIT_PER_MINUTE: int = 60  # 60 requests per minute per IP
+# ---- OpenAI Client ----
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-    # LiveKit Config
-    LIVEKIT_URL: str = "ws://livekit:7880"  # Internal URL for backend
-    LIVEKIT_WS_URL: Optional[str] = None  # Public URL for browser clients (ws://IP:7880)
-    LIVEKIT_API_KEY: str
-    LIVEKIT_API_SECRET: str
+# ---- Veris Memory config ----
+# Default to context-store for Docker network, can override for local dev
+MEMORY_API_BASE = os.environ.get("MEMORY_API_BASE", "http://context-store:8000")
 
-    # MCP Server Config (uses existing context-store)
-    MCP_SERVER_URL: str = "http://context-store:8000"
+# API key naming convention (Option B - consistent naming):
+#   API_KEY_MCP      - For Claude CLI and MCP clients
+#   API_KEY_VOICEBOT - For VoiceBot (this app)
+#   API_KEY_SENTINEL - For Sentinel monitoring
+#
+# Key format: key:user_id:role:is_agent (e.g., vmk_voicebot_xxx:voice_bot:writer:true)
+# Only the key portion (before first colon) should be sent in the X-API-Key header
+_API_KEY_RAW = os.environ.get("API_KEY_VOICEBOT") or os.environ.get("MEMORY_API_KEY")
+VERIS_API_KEY = _API_KEY_RAW.split(":")[0] if _API_KEY_RAW else None
 
-    # Sprint 13: API Key Authentication
-    # Required if veris-memory has AUTH_REQUIRED=true
-    # Format: vmk_voicebot_key (any string starting with vmk_)
-    # Must be configured on MCP server as: API_KEY_VOICEBOT=vmk_voicebot_key:voice_bot:writer:true
-    MCP_API_KEY: Optional[str] = None
+# Stable user ID for fact persistence across sessions
+# Can be set explicitly via VOICE_USER_ID, or defaults to "matt"
+USER_ID = os.environ.get("VOICE_USER_ID", "matt")
 
-    # Sprint 13: Author Attribution
-    # Prefix for author field in stored contexts (author will be: {prefix}_{user_id})
-    VOICE_BOT_AUTHOR_PREFIX: str = "voice_bot"
+# Session ID for tracking individual conversation sessions (not used for filtering)
+SESSION_ID = os.environ.get("VOICE_SESSION_ID", f"voice_{uuid.uuid4().hex[:8]}")
 
-    # Sprint 13: Retry Logic
-    # Enable retry with exponential backoff (learned from veris-memory PR #3)
-    ENABLE_MCP_RETRY: bool = True
-    MCP_RETRY_ATTEMPTS: int = 3  # Number of retry attempts for transient failures
+# Debug flag for verbose logging
+DEBUG_MEMORY = os.environ.get("DEBUG_MEMORY") == "1"
 
-    # Redis Config (for session state)
-    REDIS_URL: str = "redis://redis:6379"
+# ---- Claude Agent config ----
+# Map of repo shortcuts to paths - add your repos here
+# Say "review X in voicebot" or "check the voicebot code" to target a specific repo
+REPO_PATHS = {
+    "voicebot": os.environ.get("REPO_VOICEBOT", "/opt/veris-memory/voice-bot"),
+    "voice bot": os.environ.get("REPO_VOICEBOT", "/opt/veris-memory/voice-bot"),  # speech variation
+    "veris": os.environ.get("REPO_VERIS", "/opt/veris-memory"),
+    "veris-memory": os.environ.get("REPO_VERIS", "/opt/veris-memory"),
+}
 
-    # Voice Processing
-    STT_PROVIDER: str = "deepgram"  # deepgram, whisper, google
-    TTS_PROVIDER: str = "elevenlabs"  # elevenlabs, google, azure
-    STT_API_KEY: Optional[str] = None
-    TTS_API_KEY: Optional[str] = None
+# Default repo when no specific repo is mentioned
+DEFAULT_REPO = os.environ.get("DEFAULT_REPO_PATH", "/opt/veris-memory")
 
-    # SSL Configuration
-    # Optional: Enable HTTPS by providing SSL certificate paths
-    # For self-signed certificates: openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365
-    SSL_KEYFILE: Optional[str] = None  # Path to SSL private key file
-    SSL_CERTFILE: Optional[str] = None  # Path to SSL certificate file
+# Quick keyword check before LLM (saves API calls for obvious non-code questions)
+CODE_HINT_WORDS = ["code", "repo", "file", "function", "bug", "error", "implement", "backend", "frontend"]
 
-    # Feature Flags
-    ENABLE_VOICE_COMMANDS: bool = True
-    ENABLE_FACT_STORAGE: bool = True
-    ENABLE_CONVERSATION_TRACE: bool = True
+# ---- Memory filtering ----
+# Default sources to exclude from retrieval (test/system noise)
+DEFAULT_EXCLUDE_SOURCES = [
+    "sentinel_monitor", "test", "voice_bot_test", "mcp_server",
+    "pr339_verification", "test_pr339", "documentation", "devops",
+    "index_test",
+]
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
-
-settings = Settings()
+# ---- Session Chat History ----
+# Short-term memory for conversation flow within a session
+# This enables follow-up questions like "yes please" or "tell me more"
+CHAT_HISTORY: list[dict] = []  # Stores {"role": "user/assistant", "content": "..."}
+MAX_CHAT_HISTORY = 10  # Keep last N exchanges (user + assistant = 2 messages each)
