@@ -87,7 +87,9 @@ jobs:
           fi
 
       - name: Fast Code Deployment (code changes only)
+        id: fast-deploy
         if: steps.deploy-type.outputs.type == 'fast'
+        continue-on-error: true
         run: |
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 \
               ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOSSH'
@@ -113,6 +115,23 @@ jobs:
                 exit 1
             fi
             echo "✅ Found .env file"
+
+            # Validate all required secrets are present in .env
+            # If any are missing, exit with code 2 to trigger full deployment
+            REQUIRED_SECRETS="NEO4J_PASSWORD REDIS_PASSWORD API_KEY_MCP SENTINEL_API_KEY"
+            MISSING_SECRETS=""
+            for SECRET in $REQUIRED_SECRETS; do
+                if ! grep -q "^${SECRET}=" .env || [ -z "$(grep "^${SECRET}=" .env | cut -d= -f2-)" ]; then
+                    MISSING_SECRETS="$MISSING_SECRETS $SECRET"
+                fi
+            done
+
+            if [ -n "$MISSING_SECRETS" ]; then
+                echo "❌ ERROR: Missing required secrets in .env:$MISSING_SECRETS"
+                echo "⚠️  Fast deployment cannot proceed - need full deployment to rebuild .env"
+                exit 2
+            fi
+            echo "✅ All required secrets present in .env"
 
             RUNNING=$(docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} --env-file .env ps --status running -q 2>/dev/null | wc -l)
 
@@ -154,8 +173,15 @@ jobs:
             echo "✅ FAST DEPLOYMENT COMPLETE - commit: $COMMIT"
           EOSSH
 
-      - name: Full Deployment (infrastructure changes)
-        if: steps.deploy-type.outputs.type == 'full'
+      - name: Log fallback reason
+        if: steps.fast-deploy.outcome == 'failure'
+        run: |
+          echo "⚠️ Fast deployment failed - falling back to full deployment"
+          echo "This usually means .env is missing required secrets"
+          echo "Full deployment will rebuild .env with all secrets from GitHub"
+
+      - name: Full Deployment (infrastructure changes or fast deploy failed)
+        if: steps.deploy-type.outputs.type == 'full' || steps.fast-deploy.outcome == 'failure'
         env:
           NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
           NEO4J_RO_PASSWORD: ${{ secrets.NEO4J_RO_PASSWORD }}
