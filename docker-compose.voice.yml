@@ -53,6 +53,11 @@ services:
       # Mount app code for hot-reload during development
       - ./voice-bot/app:/app/app:ro
       - ./voice-bot/frontend:/app/frontend:ro
+      # Mount Claude CLI OAuth credentials from host
+      # Run 'claude auth login' on host first to authenticate
+      - ${CLAUDE_CONFIG_DIR:-~/.claude}:/home/voicebot/.claude:ro
+      # Mount veris-memory repo for agent code review
+      - .:/opt/veris-memory:ro
 
 # Networks (uses existing network from main docker-compose.yml)
 networks:

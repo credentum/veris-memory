@@ -2,10 +2,16 @@ FROM python:3.11-slim@sha256:fa9b525a0be0c5ae5e6f2209f4be6fdc5a15a36fed0222144d9
 
 WORKDIR /app
 
-# Install system dependencies (curl for healthcheck)
+# Install system dependencies (curl for healthcheck, Node.js for Claude CLI)
 RUN apt-get update && apt-get install -y \
     curl \
+    gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Claude CLI globally
+RUN npm install -g @anthropic-ai/claude-code
 
 # Install Python dependencies
 COPY requirements.txt .
@@ -18,8 +24,11 @@ COPY app/ ./app/
 COPY frontend/ ./frontend/
 
 # Create non-root user for security
+# Use UID 1000 to match typical host user for OAuth credential mounting
 RUN useradd -m -u 1000 voicebot && \
-    chown -R voicebot:voicebot /app
+    chown -R voicebot:voicebot /app && \
+    mkdir -p /home/voicebot/.claude && \
+    chown -R voicebot:voicebot /home/voicebot/.claude
 
 USER voicebot
 
