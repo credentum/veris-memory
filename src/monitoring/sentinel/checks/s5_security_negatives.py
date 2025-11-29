@@ -695,8 +695,11 @@ class SecurityNegatives(BaseCheck):
                         status = response.status
                         status_counts[status] = status_counts.get(status, 0) + 1
 
-                        # Count all valid security responses: 401, 403 (auth required), 405 (method not allowed)
-                        if status in [401, 403, 405]:
+                        # Only count actual auth failures: 401 (Unauthorized), 403 (Forbidden)
+                        # PR #383: Don't count 405 (Method Not Allowed) as auth failure
+                        # 405 means wrong HTTP method - authentication wasn't even evaluated
+                        # This was causing false positives when endpoint only accepts POST
+                        if status in [401, 403]:
                             failed_auth_count += 1
 
                         response.close()
@@ -710,13 +713,28 @@ class SecurityNegatives(BaseCheck):
                 # Detect if system is vulnerable to rapid auth attempts
                 anomalies = []
 
-                # If we can make >200 failed auth attempts per minute without rate limiting, flag it
-                # Threshold increased from 100 to 200 (2025-11-29):
-                # - 100/min was causing false positives in production workloads
-                # - Sentinel's own test sends 50 concurrent requests which can exceed 100/min
-                # - 200/min is a more realistic threshold for detecting actual attacks
-                # - Still detects credential stuffing attacks (typically 1000s of attempts)
-                if attempts_per_minute > 200 and not rate_limiting_active:
+                # PR #383: Skip rate limiting check if all responses were 405 (Method Not Allowed)
+                # 405 means the endpoint doesn't accept GET requests, so auth wasn't tested
+                # This avoids false positives when the endpoint only accepts POST
+                all_responses_405 = (
+                    status_counts.get(405, 0) == test_attempts or
+                    (status_counts.get(405, 0) > 0 and failed_auth_count == 0)
+                )
+
+                if all_responses_405:
+                    # Auth wasn't tested - endpoint uses different HTTP method
+                    logger.debug(
+                        "S5: Skipping auth rate limit check - endpoint returned 405 "
+                        "(Method Not Allowed), authentication was not evaluated"
+                    )
+                elif attempts_per_minute > 200 and not rate_limiting_active and failed_auth_count > 0:
+                    # Only flag if we got actual auth failures (401/403)
+                    # If we can make >200 failed auth attempts per minute without rate limiting, flag it
+                    # Threshold increased from 100 to 200 (2025-11-29):
+                    # - 100/min was causing false positives in production workloads
+                    # - Sentinel's own test sends 50 concurrent requests which can exceed 100/min
+                    # - 200/min is a more realistic threshold for detecting actual attacks
+                    # - Still detects credential stuffing attacks (typically 1000s of attempts)
                     anomalies.append({
                         "type": "no_rate_limiting_on_auth",
                         "severity": "medium",
