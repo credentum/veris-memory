@@ -159,9 +159,107 @@
         margin-left: 8px;
         color: var(--yellow);
       }
+
+      /* Debug Panel Styles */
+      #debugToggle {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        font-size: 14px;
+        padding: 8px 12px;
+        border-color: var(--violet);
+        color: var(--violet);
+        background: var(--base02);
+      }
+
+      #debugToggle:hover {
+        background-color: var(--violet);
+        color: var(--base03);
+      }
+
+      #debugToggle.active {
+        background-color: var(--violet);
+        color: var(--base03);
+      }
+
+      #debugPanel {
+        display: none;
+        margin-top: 20px;
+        padding: 16px;
+        background: var(--base02);
+        border-radius: 8px;
+        border: 1px solid var(--violet);
+        font-family: monospace;
+        font-size: 13px;
+      }
+
+      #debugPanel.visible {
+        display: block;
+      }
+
+      #debugPanel h3 {
+        margin: 0 0 12px 0;
+        color: var(--violet);
+        font-size: 14px;
+      }
+
+      .debug-section {
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--base01);
+      }
+
+      .debug-section:last-child {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+      }
+
+      .debug-label {
+        color: var(--base01);
+        font-size: 11px;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+
+      .debug-value {
+        color: var(--base0);
+        word-wrap: break-word;
+      }
+
+      .debug-value.user {
+        color: var(--cyan);
+      }
+
+      .debug-value.assistant {
+        color: var(--green);
+      }
+
+      .debug-timings {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .timing-item {
+        background: var(--base03);
+        padding: 6px 10px;
+        border-radius: 4px;
+      }
+
+      .timing-label {
+        color: var(--base01);
+        font-size: 10px;
+      }
+
+      .timing-value {
+        color: var(--yellow);
+        font-weight: bold;
+      }
     </style>
   </head>
   <body>
+    <button id="debugToggle">Debug</button>
     <div>
       <button id="toggle">Activate</button>
       <button id="calibrate">Calibrate Noise Floor</button>
@@ -179,6 +277,26 @@
         Silence Duration (ms): <span id="silVal"></span>
         <input id="sil" type="range" min="800" max="3000" step="100">
       </label>
+    </div>
+
+    <div id="debugPanel">
+      <h3>Debug Info</h3>
+      <div class="debug-section">
+        <div class="debug-label">User Said (STT)</div>
+        <div class="debug-value user" id="debugUserSaid">-</div>
+      </div>
+      <div class="debug-section">
+        <div class="debug-label">Assistant Said</div>
+        <div class="debug-value assistant" id="debugAssistantSaid">-</div>
+      </div>
+      <div class="debug-section">
+        <div class="debug-label">Memory</div>
+        <div class="debug-value" id="debugMemory">-</div>
+      </div>
+      <div class="debug-section">
+        <div class="debug-label">Timings</div>
+        <div class="debug-timings" id="debugTimings">-</div>
+      </div>
     </div>
 
     <audio id="player"></audio>

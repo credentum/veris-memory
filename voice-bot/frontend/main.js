@@ -3,8 +3,92 @@ const statusEl = document.getElementById("status");
 const meterFill = document.getElementById("meterFill");
 const player = document.getElementById("player");
 
+// Debug elements
+const debugToggleBtn = document.getElementById("debugToggle");
+const debugPanel = document.getElementById("debugPanel");
+const debugUserSaid = document.getElementById("debugUserSaid");
+const debugAssistantSaid = document.getElementById("debugAssistantSaid");
+const debugMemory = document.getElementById("debugMemory");
+const debugTimings = document.getElementById("debugTimings");
+
 let isActive = false;
 let isBusy = false; // true while sending or playing assistant audio
+
+// Debug mode with localStorage persistence
+const DEBUG_STORAGE_KEY = "voicebot_debug_enabled";
+let debugEnabled = localStorage.getItem(DEBUG_STORAGE_KEY) === "true";
+
+function updateDebugUI() {
+  if (debugToggleBtn) {
+    debugToggleBtn.classList.toggle("active", debugEnabled);
+    debugToggleBtn.textContent = debugEnabled ? "Debug ON" : "Debug";
+  }
+  if (debugPanel) {
+    debugPanel.classList.toggle("visible", debugEnabled);
+  }
+}
+
+function toggleDebug() {
+  debugEnabled = !debugEnabled;
+  localStorage.setItem(DEBUG_STORAGE_KEY, debugEnabled ? "true" : "false");
+  updateDebugUI();
+}
+
+function displayDebugInfo(debug) {
+  if (!debug) return;
+
+  if (debugUserSaid) {
+    debugUserSaid.textContent = debug.user_said || "-";
+  }
+
+  if (debugAssistantSaid) {
+    debugAssistantSaid.textContent = debug.assistant_said || "-";
+  }
+
+  if (debugMemory) {
+    const parts = [];
+    if (debug.memory_results !== undefined) {
+      parts.push(`${debug.memory_results} memory results`);
+    }
+    if (debug.direct_facts !== undefined && debug.direct_facts > 0) {
+      parts.push(`${debug.direct_facts} direct facts`);
+    }
+    if (debug.is_agent_task) {
+      parts.push(`Agent task → ${debug.agent_repo || "default repo"}`);
+    }
+    debugMemory.textContent = parts.length > 0 ? parts.join(" | ") : "No memory retrieved";
+  }
+
+  if (debugTimings && debug.timings) {
+    const t = debug.timings;
+    let html = "";
+    if (t.stt_ms !== undefined) {
+      html += `<div class="timing-item"><div class="timing-label">STT</div><div class="timing-value">${t.stt_ms}ms</div></div>`;
+    }
+    if (t.memory_ms !== undefined) {
+      html += `<div class="timing-item"><div class="timing-label">Memory</div><div class="timing-value">${t.memory_ms}ms</div></div>`;
+    }
+    if (t.llm_ms !== undefined) {
+      html += `<div class="timing-item"><div class="timing-label">LLM</div><div class="timing-value">${t.llm_ms}ms</div></div>`;
+    }
+    if (t.agent_ms !== undefined) {
+      html += `<div class="timing-item"><div class="timing-label">Agent</div><div class="timing-value">${t.agent_ms}ms</div></div>`;
+    }
+    if (t.tts_ms !== undefined) {
+      html += `<div class="timing-item"><div class="timing-label">TTS</div><div class="timing-value">${t.tts_ms}ms</div></div>`;
+    }
+    if (t.total_ms !== undefined) {
+      html += `<div class="timing-item"><div class="timing-label">Total</div><div class="timing-value">${t.total_ms}ms</div></div>`;
+    }
+    debugTimings.innerHTML = html || "-";
+  }
+}
+
+// Initialize debug UI
+if (debugToggleBtn) {
+  debugToggleBtn.addEventListener("click", toggleDebug);
+}
+updateDebugUI();
 
 let stream = null;
 let recorder = null;
@@ -106,12 +190,34 @@ async function sendTurn(blob) {
   const fd = new FormData();
   fd.append("audio", blob, `recording.${ext}`);
 
+  const headers = {};
+  if (debugEnabled) {
+    headers["X-Debug"] = "true";
+  }
+
   const res = await fetch("/api/turn", {
     method: "POST",
-    body: fd
+    body: fd,
+    headers: headers
   });
 
   if (!res.ok) throw new Error(await res.text());
+
+  // If debug mode, response is JSON with audio + debug info
+  if (debugEnabled) {
+    const json = await res.json();
+    // Decode base64 audio
+    const audioData = atob(json.audio);
+    const audioArray = new Uint8Array(audioData.length);
+    for (let i = 0; i < audioData.length; i++) {
+      audioArray[i] = audioData.charCodeAt(i);
+    }
+    const audioBlob = new Blob([audioArray], { type: "audio/mpeg" });
+    // Display debug info
+    displayDebugInfo(json.debug);
+    return audioBlob;
+  }
+
   return await res.blob();
 }
 

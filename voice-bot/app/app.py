@@ -5,12 +5,14 @@ FastAPI application with voice conversation capabilities.
 Integrates with Veris Memory for persistent context and Claude CLI for code tasks.
 """
 
+import base64
 import tempfile
 import time
 from pathlib import Path
+from typing import Optional
 
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import Response, FileResponse
+from fastapi import FastAPI, File, Header, UploadFile
+from fastapi.responses import Response, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -71,7 +73,10 @@ def suffix_from_content_type(ctype: str) -> str:
 
 
 @app.post("/api/turn")
-async def turn(audio: UploadFile = File(...)):
+async def turn(
+    audio: UploadFile = File(...),
+    x_debug: Optional[str] = Header(None, alias="X-Debug")
+):
     """
     Handle one conversation turn with memory:
     1. Receive audio blob
@@ -80,9 +85,11 @@ async def turn(audio: UploadFile = File(...)):
     4. Get LLM response with memory context
     5. Store turn to Veris
     6. Generate speech (TTS)
-    7. Return audio
+    7. Return audio (or JSON with debug info if X-Debug header is set)
     """
     started = time.time()
+    debug_mode = x_debug == "true"
+    debug_info = {"timings": {}}
 
     # 1) Save audio to secure temp file (NamedTemporaryFile avoids mktemp race condition)
     suffix = suffix_from_content_type(audio.content_type)
@@ -93,6 +100,7 @@ async def turn(audio: UploadFile = File(...)):
 
     try:
         # 2) STT - Transcribe audio
+        stt_start = time.time()
         with open(tmp_path, "rb") as f:
             stt = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -100,17 +108,24 @@ async def turn(audio: UploadFile = File(...)):
                 language="en",  # Force English to prevent wrong language detection from background noise
             )
         user_text = stt.text.strip()
+        debug_info["timings"]["stt_ms"] = int((time.time() - stt_start) * 1000)
+        debug_info["user_said"] = user_text
         if DEBUG_MEMORY:
             print(f"User said: {user_text}")
 
         # 2b) Check if this is a Claude agent task (code review, analysis, etc.)
         is_agent_task, repo_path, task = detect_agent_task(user_text)
+        debug_info["is_agent_task"] = is_agent_task
         if is_agent_task:
+            debug_info["agent_repo"] = repo_path
             if DEBUG_MEMORY:
                 print(f"→ Agent task detected, routing to Claude CLI")
 
             # Call Claude agent
+            agent_start = time.time()
             assistant_text = call_claude_agent(task, repo_path)
+            debug_info["timings"]["agent_ms"] = int((time.time() - agent_start) * 1000)
+            debug_info["assistant_said"] = assistant_text
 
             # Store the interaction to memory
             duration_ms = int((time.time() - started) * 1000)
@@ -124,12 +139,21 @@ async def turn(audio: UploadFile = File(...)):
             store_agent_finding(task, assistant_text, repo_path)
 
             # Generate TTS response
+            tts_start = time.time()
             tts = client.audio.speech.create(
                 model="tts-1",
                 voice="alloy",
                 input=assistant_text,
                 response_format="mp3",
             )
+            debug_info["timings"]["tts_ms"] = int((time.time() - tts_start) * 1000)
+            debug_info["timings"]["total_ms"] = int((time.time() - started) * 1000)
+
+            if debug_mode:
+                return JSONResponse({
+                    "audio": base64.b64encode(tts.content).decode("utf-8"),
+                    "debug": debug_info
+                })
 
             return Response(
                 content=tts.content,
@@ -138,6 +162,7 @@ async def turn(audio: UploadFile = File(...)):
             )
 
         # 3) Retrieve memory with intelligent expansion for personal questions
+        memory_start = time.time()
         memory_results = []
         direct_facts = []  # Facts from get_user_facts endpoint (complete recall)
 
@@ -199,6 +224,10 @@ async def turn(audio: UploadFile = File(...)):
             if DEBUG_MEMORY:
                 print(f"→ Added {len(direct_facts)} direct facts to context")
 
+        debug_info["timings"]["memory_ms"] = int((time.time() - memory_start) * 1000)
+        debug_info["memory_results"] = len(memory_results)
+        debug_info["direct_facts"] = len(direct_facts)
+
         if DEBUG_MEMORY:
             if memory_block:
                 print(f"Memory context:\n{memory_block}")
@@ -206,6 +235,7 @@ async def turn(audio: UploadFile = File(...)):
                 print("No relevant memory found for this query")
 
         # 4) LLM with memory injected + chat history for conversation flow
+        llm_start = time.time()
         messages = [
             {"role": "system", "content": "You are my personal voice assistant. Be concise, practical, and grounded. Use the memory context to recall information about the user when asked. Pay attention to recent conversation history for context on follow-up questions."},
         ]
@@ -227,6 +257,8 @@ async def turn(audio: UploadFile = File(...)):
             messages=messages,
         )
         assistant_text = chat.choices[0].message.content.strip()
+        debug_info["timings"]["llm_ms"] = int((time.time() - llm_start) * 1000)
+        debug_info["assistant_said"] = assistant_text
         if DEBUG_MEMORY:
             print(f"Assistant says: {assistant_text}")
 
@@ -262,15 +294,24 @@ async def turn(audio: UploadFile = File(...)):
             store_fact(fact["fact_key"], fact["fact_value"])
 
         # 6) TTS - Generate speech
+        tts_start = time.time()
         tts = client.audio.speech.create(
             model="tts-1",
             voice="alloy",
             input=assistant_text,
             response_format="mp3",
         )
+        debug_info["timings"]["tts_ms"] = int((time.time() - tts_start) * 1000)
+        debug_info["timings"]["total_ms"] = int((time.time() - started) * 1000)
 
         # Get audio bytes
         audio_bytes = tts.content
+
+        if debug_mode:
+            return JSONResponse({
+                "audio": base64.b64encode(audio_bytes).decode("utf-8"),
+                "debug": debug_info
+            })
 
         return Response(
             content=audio_bytes,
