@@ -131,28 +131,34 @@ class ParaphraseRobustness(BaseCheck):
         to 2 topics × 3 variations (6 queries) for runtime monitoring.
 
         These 2 topics cover the most critical query patterns:
-        - system_configuration: General how-to questions
-        - error_troubleshooting: Problem-solving queries
+        - database_configuration: Neo4j database setup questions
+        - connection_troubleshooting: Database connection error queries
 
         Full paraphrase testing (5×5 matrix) should be done in CI/CD.
         Runtime monitoring only needs smoke tests to validate semantic search works.
+
+        IMPORTANT (PR #380): Queries must be SPECIFIC and domain-relevant.
+        Generic queries like "How do I fix this error?" are too vague and
+        cause low overlap scores because they match unrelated content.
+        Specific queries with clear semantic content (Neo4j, connection, timeout)
+        produce consistent results across paraphrases.
         """
         return [
             {
-                "topic": "system_configuration",
+                "topic": "database_configuration",
                 "variations": [
-                    "How do I configure the system?",
-                    "What are the configuration steps?",
-                    "How to set up the system configuration?"
+                    "How do I configure Neo4j database connection settings?",
+                    "What are the steps to set up Neo4j database configuration?",
+                    "How to configure the Neo4j connection in Veris Memory?"
                 ],
                 "expected_similarity": PARAPHRASE_SIMILARITY_THRESHOLD
             },
             {
-                "topic": "error_troubleshooting",
+                "topic": "connection_troubleshooting",
                 "variations": [
-                    "How do I fix this error?",
-                    "What's the solution to this problem?",
-                    "How to resolve this issue?"
+                    "How do I troubleshoot Neo4j connection timeout errors?",
+                    "What causes Neo4j connection timeout failures?",
+                    "How to resolve Neo4j connection timeout issues?"
                 ],
                 "expected_similarity": PARAPHRASE_SIMILARITY_THRESHOLD
             }
