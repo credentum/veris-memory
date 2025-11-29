@@ -1,17 +1,36 @@
+# Stage 1: Install Claude CLI using official Node.js image
+# Using pinned digest avoids curl-pipe-bash pattern and ensures reproducible builds
+FROM node:20.18-slim@sha256:46c54d3ed02d1c2b755c2ca928a766bf9a049e5f29933d7d6fe0d7e9b1b29678 AS node-builder
+
+# Install Claude CLI with pinned version for reproducibility
+RUN npm install -g @anthropic-ai/claude-code@2.0.55
+
+# Stage 2: Python application
 FROM python:3.11-slim@sha256:fa9b525a0be0c5ae5e6f2209f4be6fdc5a15a36fed0222144d98ac0d08f876d4
 
 WORKDIR /app
 
-# Install system dependencies (curl for healthcheck, Node.js for Claude CLI)
-RUN apt-get update && apt-get install -y \
+# Security: Upgrade vulnerable packages to fix CVEs detected in base image
+# CVE-2025-4802, CVE-2025-6965, CVE-2025-7458, CVE-2023-7104, CVE-2023-31484, CVE-2024-56406
+RUN apt-get update && \
+    apt-get upgrade -y \
+        libc-bin \
+        libc6 \
+        libsqlite3-0 \
+        perl-base && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install system dependencies (curl for healthcheck)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    gnupg \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude CLI globally
-RUN npm install -g @anthropic-ai/claude-code
+# Copy Node.js runtime and Claude CLI from builder stage
+COPY --from=node-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js /usr/local/bin/claude && \
+    chmod +x /usr/local/bin/claude
 
 # Install Python dependencies
 COPY requirements.txt .
