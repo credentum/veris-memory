@@ -116,9 +116,30 @@ class BackupRestore(BaseCheck):
 
         self.max_backup_age_hours = config.get("s6_backup_max_age_hours", 24)
         self.database_url = config.get("database_url", "postgresql://localhost/veris_memory")
-        # Lowered from 1 MB to 10 KB to avoid false positives on legitimately small backups
-        # (SSH keys: ~1KB, tmux data: ~100 bytes, sentinel data, etc.)
-        self.min_backup_size_mb = config.get("min_backup_size_mb", 0.01)  # 10 KB
+        # Lowered from 10 KB to 1 KB to avoid false positives on legitimately small backups
+        # (SSH keys: ~1KB, tmux data: ~87 bytes, sentinel data, etc.)
+        # PR #382: Further lowered after dev ops analysis showed valid 87-byte backups
+        self.min_backup_size_mb = config.get("min_backup_size_mb", 0.001)  # 1 KB
+
+        # Exception list for volumes that are legitimately very small
+        # These volumes may be under 1KB and should not trigger size warnings
+        self.small_volume_exceptions = config.get("small_volume_exceptions", [
+            "tmux-data",      # May be empty or very small (~87 bytes)
+            "ssh-keys",       # SSH keys are typically 1-2KB
+            "voice-bot-logs"  # May be empty initially (~89 bytes)
+        ])
+
+        # Tiered retention policies by backup type (PR #382)
+        # Different backup directories have different retention requirements
+        self.retention_policies = config.get("retention_policies", {
+            "/backup/health": 14,           # Health check backups: 14 days
+            "/backup/daily": 7,             # Daily backups: 7 days
+            "/backup/backup-weekly": 90,    # Weekly archive: 90 days
+            "/backup/backup-monthly": 365,  # Monthly archive: 365 days
+            "/backup/backup-ultimate": 30,  # Ultimate backups: 30 days
+            "/backup/weekly": 90,           # Alternate weekly location
+            "/backup/monthly": 365,         # Alternate monthly location
+        })
         
     async def run_check(self) -> CheckResult:
         """Execute comprehensive backup/restore validation check."""
@@ -340,12 +361,26 @@ class BackupRestore(BaseCheck):
                             # Check file size
                             size_mb = backup_file.stat().st_size / (1024 * 1024)
                             if size_mb < self.min_backup_size_mb:
-                                integrity_results.append({
-                                    "file": str(backup_file),
-                                    "status": "fail",
-                                    "issue": f"Backup too small: {size_mb:.1f}MB < {self.min_backup_size_mb}MB"
-                                })
-                                continue
+                                # Check if this is an expected small volume (PR #382)
+                                is_exception = any(
+                                    exc in str(backup_file) for exc in self.small_volume_exceptions
+                                )
+                                if is_exception:
+                                    # Small file is expected for this volume type
+                                    integrity_results.append({
+                                        "file": str(backup_file),
+                                        "status": "pass",
+                                        "size_mb": size_mb,
+                                        "note": "Small file expected for this volume type"
+                                    })
+                                    continue
+                                else:
+                                    integrity_results.append({
+                                        "file": str(backup_file),
+                                        "status": "fail",
+                                        "issue": f"Backup too small: {size_mb:.3f}MB < {self.min_backup_size_mb}MB"
+                                    })
+                                    continue
                             
                             # Basic file format validation
                             if backup_file.suffix == '.sql':
@@ -419,7 +454,17 @@ class BackupRestore(BaseCheck):
             }
     
     async def _validate_backup_format(self) -> Dict[str, Any]:
-        """Validate backup file formats and structure."""
+        """Validate backup file formats and structure.
+
+        PR #382: Updated to validate tar.gz archives and manifest.json files.
+        The backup system uses tar.gz compressed volumes with manifest.json
+        metadata files, not direct SQL dumps inside archives.
+
+        Validation strategy:
+        - tar.gz: Test gzip integrity with 'gzip -t' command
+        - manifest.json: Validate JSON structure and required fields
+        - SQL files: Check for SQL keywords (CREATE, INSERT, etc.)
+        """
         try:
             format_results = []
             accessible_paths = 0
@@ -428,58 +473,124 @@ class BackupRestore(BaseCheck):
                 path = Path(backup_path)
                 if path.exists():
                     accessible_paths += 1
-                    backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump")) + list(path.glob("**/*.tar.gz"))
 
+                    # Find backup files - prioritize tar.gz as that's the primary format
+                    backup_files = list(path.glob("**/*.tar.gz"))
+                    sql_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump"))
+                    manifest_files = list(path.glob("**/manifest.json"))
+
+                    # Validate tar.gz files (primary backup format)
                     for backup_file in backup_files[:3]:  # Sample a few files
+                        try:
+                            format_info = {
+                                "file": str(backup_file),
+                                "format": "tar.gz",
+                                "size_mb": backup_file.stat().st_size / (1024 * 1024)
+                            }
+
+                            # Test gzip integrity (PR #382)
+                            # Use 'gzip -t' instead of 'tar -tzf' as it's faster
+                            # and doesn't require reading the full archive
+                            result = subprocess.run(
+                                ['gzip', '-t', str(backup_file)],
+                                capture_output=True,
+                                text=True,
+                                timeout=10
+                            )
+
+                            if result.returncode == 0:
+                                format_info["valid_format"] = True
+                                format_info["integrity"] = "pass"
+                            else:
+                                format_info["valid_format"] = False
+                                format_info["integrity"] = "fail"
+                                format_info["error"] = result.stderr.strip() or "gzip integrity check failed"
+
+                            format_results.append(format_info)
+
+                        except subprocess.TimeoutExpired:
+                            format_results.append({
+                                "file": str(backup_file),
+                                "format": "tar.gz",
+                                "valid_format": False,
+                                "error": "Integrity check timed out"
+                            })
+                        except Exception as e:
+                            format_results.append({
+                                "file": str(backup_file),
+                                "format": "tar.gz",
+                                "valid_format": False,
+                                "error": str(e)
+                            })
+
+                    # Validate manifest.json files (PR #382)
+                    for manifest_file in manifest_files[:3]:
+                        try:
+                            with open(manifest_file, 'r') as f:
+                                data = json.load(f)
+
+                            # Check for expected manifest fields
+                            has_timestamp = "timestamp" in data
+                            has_type = "type" in data
+                            has_databases = "databases" in data
+
+                            format_results.append({
+                                "file": str(manifest_file),
+                                "format": "manifest",
+                                "valid_format": True,
+                                "has_timestamp": has_timestamp,
+                                "has_type": has_type,
+                                "databases": data.get("databases", [])
+                            })
+                        except json.JSONDecodeError as e:
+                            format_results.append({
+                                "file": str(manifest_file),
+                                "format": "manifest",
+                                "valid_format": False,
+                                "error": f"Invalid JSON: {str(e)}"
+                            })
+                        except Exception as e:
+                            format_results.append({
+                                "file": str(manifest_file),
+                                "format": "manifest",
+                                "valid_format": False,
+                                "error": str(e)
+                            })
+
+                    # Validate SQL files if present (legacy format)
+                    for backup_file in sql_files[:2]:
                         try:
                             format_info = {
                                 "file": str(backup_file),
                                 "format": backup_file.suffix,
                                 "size_mb": backup_file.stat().st_size / (1024 * 1024)
                             }
-                            
+
                             if backup_file.suffix == '.sql':
                                 # Validate SQL backup structure
                                 with open(backup_file, 'r', encoding='utf-8', errors='ignore') as f:
                                     content = f.read(5000)  # Read first 5KB
-                                    
+
                                     # Check for essential database objects
                                     has_tables = 'CREATE TABLE' in content.upper()
                                     has_data = 'INSERT INTO' in content.upper()
-                                    has_constraints = any(keyword in content.upper() for keyword in ['PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE'])
-                                    
+                                    has_constraints = any(
+                                        keyword in content.upper()
+                                        for keyword in ['PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE']
+                                    )
+
                                     format_info.update({
                                         "has_tables": has_tables,
                                         "has_data": has_data,
                                         "has_constraints": has_constraints,
                                         "valid_format": has_tables or has_data
                                     })
-                            
                             elif backup_file.suffix == '.dump':
                                 # PostgreSQL dump validation
                                 format_info["valid_format"] = True  # Assume valid if readable
-                            
-                            elif backup_file.suffix == '.tar.gz':
-                                # Archive validation
-                                try:
-                                    result = subprocess.run(
-                                        ['tar', '-tzf', str(backup_file)],
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=5
-                                    )
-                                    file_list = result.stdout.strip().split('\n') if result.returncode == 0 else []
-                                    format_info.update({
-                                        "valid_format": result.returncode == 0,
-                                        "file_count": len(file_list),
-                                        "contains_sql": any('.sql' in f for f in file_list[:10])
-                                    })
-                                except subprocess.TimeoutExpired:
-                                    format_info["valid_format"] = False
-                                    format_info["error"] = "Archive listing timed out"
-                            
+
                             format_results.append(format_info)
-                            
+
                         except Exception as e:
                             format_results.append({
                                 "file": str(backup_file),
@@ -487,7 +598,7 @@ class BackupRestore(BaseCheck):
                                 "valid_format": False,
                                 "error": str(e)
                             })
-            
+
             invalid_formats = [r for r in format_results if not r.get("valid_format", False)]
 
             # Graceful degradation: If NO backup paths are accessible, return warn status
@@ -626,54 +737,82 @@ class BackupRestore(BaseCheck):
             }
     
     async def _validate_retention_policy(self) -> Dict[str, Any]:
-        """Validate backup retention policy compliance."""
+        """Validate backup retention policy compliance with tiered retention.
+
+        PR #382: Implements tiered retention policies based on backup type.
+        Different backup directories have different retention requirements:
+        - /backup/health: 14 days (frequent health checks)
+        - /backup/daily: 7 days (daily backups)
+        - /backup/backup-weekly: 90 days (weekly archives)
+        - /backup/backup-monthly: 365 days (monthly archives)
+        - /backup/backup-ultimate: 30 days (ultimate backups)
+
+        Backups within their retention period are compliant.
+        Only backups exceeding their path-specific retention trigger violations.
+        """
         try:
             retention_info = []
             policy_violations = []
             accessible_paths = 0
 
-            # Check for backup files older than retention period
-            # Updated from 30 to 14 days to match actual health backup retention policy
-            # (per deployment analysis: health-backup-retention.sh uses 14-day retention)
-            retention_days = self.config.get("s6_retention_days", 14)
-            cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
+            # Default retention for paths not in the tiered policy
+            default_retention_days = self.config.get("s6_retention_days", 14)
 
             for backup_path in self.backup_paths:
                 path = Path(backup_path)
                 if path.exists():
                     accessible_paths += 1
-                    backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump")) + list(path.glob("**/*.tar.gz"))
+
+                    # Get retention policy for this specific path (PR #382)
+                    # Check exact match first, then parent directories
+                    retention_days = default_retention_days
+                    for policy_path, policy_days in self.retention_policies.items():
+                        if str(path) == policy_path or str(path).startswith(policy_path + "/"):
+                            retention_days = policy_days
+                            break
+
+                    cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
+
+                    backup_files = (
+                        list(path.glob("**/*.sql")) +
+                        list(path.glob("**/*.dump")) +
+                        list(path.glob("**/*.tar.gz"))
+                    )
 
                     old_backups = []
                     recent_backups = []
-                    
+
                     for backup_file in backup_files:
                         modified_time = datetime.fromtimestamp(backup_file.stat().st_mtime)
                         age_days = (datetime.utcnow() - modified_time).days
-                        
+
                         if modified_time < cutoff_date:
                             old_backups.append({
                                 "file": str(backup_file),
                                 "age_days": age_days,
-                                "size_mb": backup_file.stat().st_size / (1024 * 1024)
+                                "size_mb": backup_file.stat().st_size / (1024 * 1024),
+                                "retention_days": retention_days
                             })
                         else:
                             recent_backups.append({
                                 "file": str(backup_file),
                                 "age_days": age_days
                             })
-                    
+
                     retention_info.append({
                         "path": str(path),
+                        "retention_days": retention_days,
                         "total_backups": len(backup_files),
                         "recent_backups": len(recent_backups),
                         "old_backups": len(old_backups),
-                        "old_backup_files": old_backups
+                        "old_backup_files": old_backups[:5]  # Limit to first 5 for brevity
                     })
-                    
+
                     if old_backups:
                         total_old_size = sum(b["size_mb"] for b in old_backups)
-                        policy_violations.append(f"{path}: {len(old_backups)} backups older than {retention_days} days ({total_old_size:.1f}MB)")
+                        policy_violations.append(
+                            f"{path}: {len(old_backups)} backups older than {retention_days} days ({total_old_size:.1f}MB)"
+                        )
 
             # Graceful degradation: If NO backup paths are accessible, return warn status
             if accessible_paths == 0 and len(self.backup_paths) > 0:
@@ -684,19 +823,19 @@ class BackupRestore(BaseCheck):
                     "data_available": False,
                     "retention_info": [],
                     "violations": [],
-                    "retention_days": retention_days,
+                    "retention_policies": self.retention_policies,
                     "setup_required": "Mount backup volumes to container for retention policy checking"
                 }
 
             return {
                 "passed": len(policy_violations) == 0,
-                "message": f"Retention policy: {len(policy_violations)} violations found" if policy_violations else "Retention policy compliant",
+                "message": f"Retention policy: {len(policy_violations)} violations found" if policy_violations else "Retention policy compliant (tiered)",
                 "retention_info": retention_info,
                 "violations": policy_violations,
-                "retention_days": retention_days,
+                "retention_policies": self.retention_policies,
                 "accessible_paths": accessible_paths
             }
-            
+
         except Exception as e:
             return {
                 "passed": False,
