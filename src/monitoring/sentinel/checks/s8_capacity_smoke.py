@@ -621,19 +621,33 @@ class CapacitySmoke(BaseCheck):
                 # Threshold history:
                 # - Original: 1.0 (too strict, caused false positives)
                 # - PR #306: 1.5 (still too strict for production workloads)
-                # - PR #XXX: 2.5 (realistic threshold for production variability)
+                # - PR #375: 2.5 (realistic threshold for production variability)
+                # - PR #376: Skip CV check if avg < 100ms (fast responses don't need CV check)
                 #
-                # Rationale for 2.5:
-                # - Production workloads have natural variability due to:
-                #   - Database query variance (Neo4j, Qdrant)
-                #   - Connection pool contention
-                #   - REST→MCP forwarding overhead (PR #269)
-                #   - Network latency fluctuations
-                # - CV of 2.0-2.5 is normal for real-world API performance
-                if cv_warm > 2.5:  # Realistic threshold for production variability
+                # Rationale for skipping CV when avg < 100ms:
+                # - When responses are very fast (e.g., 19ms avg), high CV is acceptable
+                # - Even "slow" outliers (e.g., 130ms) are still excellent performance
+                # - CV is mathematically sensitive to small absolute variations at low averages
+                # - Example: 19ms avg with 130ms outliers = CV ~3.0, but 130ms is still fast!
+                # - Only check CV when avg response time indicates potential performance issues
+                #
+                # Minimum average threshold for CV check (100ms)
+                # - Below 100ms: Performance is excellent, CV doesn't matter
+                # - Above 100ms: CV becomes meaningful for detecting inconsistency
+                MIN_AVG_FOR_CV_CHECK_MS = 100.0
+
+                if avg_warm >= MIN_AVG_FOR_CV_CHECK_MS and cv_warm > 2.5:
+                    # Only flag CV issues when average response time is slow enough to matter
                     issues.append(
                         f"High response time variability (CV warm: {cv_warm:.2f}, "
                         f"CV all: {cv_all:.2f}, threshold: 2.5)"
+                    )
+                elif avg_warm < MIN_AVG_FOR_CV_CHECK_MS and cv_warm > 2.5:
+                    # Log but don't fail - fast responses with high CV are acceptable
+                    logger.info(
+                        "S8: Skipping CV check - avg response %.1fms < %.1fms threshold "
+                        "(CV warm: %.2f, CV all: %.2f - acceptable for fast responses)",
+                        avg_warm, MIN_AVG_FOR_CV_CHECK_MS, cv_warm, cv_all
                     )
 
             # PR #274: Check application-only latency if metrics endpoint provides breakdown
@@ -664,6 +678,9 @@ class CapacitySmoke(BaseCheck):
                         "cv_all_requests": cv_all,
                         "cv_warm_requests": cv_warm,
                         "cv_threshold": 2.5,
+                        "min_avg_for_cv_check_ms": 100.0,
+                        "cv_check_skipped": avg_warm < 100.0,
+                        "cv_check_skip_reason": "Fast responses (avg < 100ms) - CV not checked" if avg_warm < 100.0 else None,
                         "cold_start_excluded": True,
                         "avg_warm_response_time_ms": avg_warm
                     }
