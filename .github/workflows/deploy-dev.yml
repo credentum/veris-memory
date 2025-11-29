@@ -180,6 +180,29 @@ jobs:
           echo "This usually means .env is missing required secrets"
           echo "Full deployment will rebuild .env with all secrets from GitHub"
 
+      - name: Force cleanup stale containers
+        if: steps.deploy-type.outputs.type == 'full' || steps.fast-deploy.outcome == 'failure'
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519 \
+              ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} << 'EOSSH'
+            echo "🧹 Force cleanup of stale containers before deployment..."
+
+            # PR #384: Force remove all veris-memory containers by ID
+            # This handles the "container name already in use" error
+            STALE_CONTAINERS=$(docker ps -aq --filter "name=veris-memory" 2>/dev/null || true)
+            if [ -n "$STALE_CONTAINERS" ]; then
+              echo "   Found stale containers, force removing..."
+              echo "$STALE_CONTAINERS" | xargs -r docker rm -f 2>/dev/null || true
+            else
+              echo "   No stale containers found"
+            fi
+
+            # Also clean up any orphaned networks
+            docker network prune -f 2>/dev/null || true
+
+            echo "✅ Cleanup complete"
+          EOSSH
+
       - name: Full Deployment (infrastructure changes or fast deploy failed)
         if: steps.deploy-type.outputs.type == 'full' || steps.fast-deploy.outcome == 'failure'
         env:
