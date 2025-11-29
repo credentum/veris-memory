@@ -56,10 +56,10 @@ class ConfigParity(BaseCheck):
             "MCP_INTERNAL_URL",      # REST compatibility layer internal URL (PR #269)
             "MCP_FORWARD_TIMEOUT"    # REST to MCP forwarding timeout (PR #269)
         ])
-        # Expected versions - Phase 4 Update (2025-11-08), Corrected 2025-11-15
+        # Expected versions - Phase 4 Update (2025-11-08), Corrected 2025-11-29
         #
         # These versions were determined by inspecting the actual running deployment:
-        # - Python 3.11: Context-store deployment Python version (dockerfiles/Dockerfile:8)
+        # - Python 3.11: Sentinel uses Python 3.11-slim (dockerfiles/Dockerfile.sentinel)
         # - FastAPI 0.115: From requirements.txt and verified via `pip show fastapi`
         # - Uvicorn 0.32: From requirements.txt and verified via `pip show uvicorn`
         #
@@ -70,6 +70,8 @@ class ConfigParity(BaseCheck):
         #    to reduce manual updates (future enhancement)
         #
         # Version History:
+        # - 2025-11-29: Fixed Python version to 3.11 to match Dockerfile.sentinel (PR #381)
+        #   Previous comment was incorrect - Dockerfile.sentinel uses python:3.11-slim
         # - 2025-11-15: Fixed validation to match Sentinel environment (3.10) with >= comparison
         #   for packages (issue #281 - configuration drift false positives)
         # - 2025-11-15: Reverted to 3.11/0.115/0.32 for currently deployed context-store
@@ -83,7 +85,7 @@ class ConfigParity(BaseCheck):
         # When service endpoint is available, this should validate remote service versions
         # These versions should match Dockerfile.sentinel (Sentinel container)
         self.expected_versions = config.get("s7_expected_versions", {
-            "python": "3.10",    # Sentinel uses Python 3.10 (Dockerfile.sentinel)
+            "python": "3.11",    # Sentinel uses Python 3.11 (dockerfiles/Dockerfile.sentinel)
             "fastapi": "0.115",  # Minimum required FastAPI version (allows newer)
             "uvicorn": "0.32"    # Minimum required Uvicorn version (allows newer)
         })
