@@ -1,6 +1,6 @@
 # Stage 1: Install Claude CLI using official Node.js image
 # Using pinned digest avoids curl-pipe-bash pattern and ensures reproducible builds
-FROM node:20.18-slim@sha256:46c54d3ed02d1c2b755c2ca928a766bf9a049e5f29933d7d6fe0d7e9b1b29678 AS node-builder
+FROM node:20.18-slim@sha256:ffc11dbf16dd0abcbb7b837410601b4d5592db2d03741e13a4a5336ab74d7ccb AS node-builder
 
 # Install Claude CLI with pinned version for reproducibility
 RUN npm install -g @anthropic-ai/claude-code@2.0.55
