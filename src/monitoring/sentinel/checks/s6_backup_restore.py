@@ -328,10 +328,12 @@ class BackupRestore(BaseCheck):
         """Check backup file integrity."""
         try:
             integrity_results = []
-            
+            accessible_paths = 0
+
             for backup_path in self.backup_paths:
                 path = Path(backup_path)
                 if path.exists():
+                    accessible_paths += 1
                     backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump")) + list(path.glob("**/*.tar.gz"))
                     for backup_file in backup_files[:5]:  # Limit to 5 files for performance
                         try:
@@ -388,12 +390,25 @@ class BackupRestore(BaseCheck):
                             })
             
             failed_integrity = [r for r in integrity_results if r["status"] == "fail"]
-            
+
+            # Graceful degradation: If NO backup paths are accessible, return warn status
+            if accessible_paths == 0 and len(self.backup_paths) > 0:
+                return {
+                    "passed": True,  # Don't fail the check
+                    "status": "warn",  # Indicate insufficient data
+                    "message": "Backup integrity: insufficient data (0 accessible paths, backups may exist on host)",
+                    "data_available": False,
+                    "integrity_results": [],
+                    "failed_files": [],
+                    "setup_required": "Mount backup volumes to container for integrity checking"
+                }
+
             return {
                 "passed": len(failed_integrity) == 0,
                 "message": f"Integrity check: {len(integrity_results) - len(failed_integrity)}/{len(integrity_results)} files passed" if integrity_results else "No backup files to check",
                 "integrity_results": integrity_results,
-                "failed_files": failed_integrity
+                "failed_files": failed_integrity,
+                "accessible_paths": accessible_paths
             }
             
         except Exception as e:
@@ -407,10 +422,12 @@ class BackupRestore(BaseCheck):
         """Validate backup file formats and structure."""
         try:
             format_results = []
-            
+            accessible_paths = 0
+
             for backup_path in self.backup_paths:
                 path = Path(backup_path)
                 if path.exists():
+                    accessible_paths += 1
                     backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump")) + list(path.glob("**/*.tar.gz"))
 
                     for backup_file in backup_files[:3]:  # Sample a few files
@@ -472,21 +489,34 @@ class BackupRestore(BaseCheck):
                             })
             
             invalid_formats = [r for r in format_results if not r.get("valid_format", False)]
-            
+
+            # Graceful degradation: If NO backup paths are accessible, return warn status
+            if accessible_paths == 0 and len(self.backup_paths) > 0:
+                return {
+                    "passed": True,  # Don't fail the check
+                    "status": "warn",  # Indicate insufficient data
+                    "message": "Backup format: insufficient data (0 accessible paths, backups may exist on host)",
+                    "data_available": False,
+                    "format_results": [],
+                    "invalid_formats": [],
+                    "setup_required": "Mount backup volumes to container for format validation"
+                }
+
             return {
                 "passed": len(invalid_formats) == 0,
                 "message": f"Format validation: {len(format_results) - len(invalid_formats)}/{len(format_results)} files valid" if format_results else "No backup files to validate",
                 "format_results": format_results,
-                "invalid_formats": invalid_formats
+                "invalid_formats": invalid_formats,
+                "accessible_paths": accessible_paths
             }
-            
+
         except Exception as e:
             return {
                 "passed": False,
                 "message": f"Backup format validation failed: {str(e)}",
                 "error": str(e)
             }
-    
+
     async def _test_restore_procedure(self) -> Dict[str, Any]:
         """Test restore procedure with a small test database."""
         try:
@@ -600,16 +630,18 @@ class BackupRestore(BaseCheck):
         try:
             retention_info = []
             policy_violations = []
+            accessible_paths = 0
 
             # Check for backup files older than retention period
             # Updated from 30 to 14 days to match actual health backup retention policy
             # (per deployment analysis: health-backup-retention.sh uses 14-day retention)
             retention_days = self.config.get("s6_retention_days", 14)
             cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
-            
+
             for backup_path in self.backup_paths:
                 path = Path(backup_path)
                 if path.exists():
+                    accessible_paths += 1
                     backup_files = list(path.glob("**/*.sql")) + list(path.glob("**/*.dump")) + list(path.glob("**/*.tar.gz"))
 
                     old_backups = []
@@ -642,13 +674,27 @@ class BackupRestore(BaseCheck):
                     if old_backups:
                         total_old_size = sum(b["size_mb"] for b in old_backups)
                         policy_violations.append(f"{path}: {len(old_backups)} backups older than {retention_days} days ({total_old_size:.1f}MB)")
-            
+
+            # Graceful degradation: If NO backup paths are accessible, return warn status
+            if accessible_paths == 0 and len(self.backup_paths) > 0:
+                return {
+                    "passed": True,  # Don't fail the check
+                    "status": "warn",  # Indicate insufficient data
+                    "message": "Retention policy: insufficient data (0 accessible paths, backups may exist on host)",
+                    "data_available": False,
+                    "retention_info": [],
+                    "violations": [],
+                    "retention_days": retention_days,
+                    "setup_required": "Mount backup volumes to container for retention policy checking"
+                }
+
             return {
                 "passed": len(policy_violations) == 0,
                 "message": f"Retention policy: {len(policy_violations)} violations found" if policy_violations else "Retention policy compliant",
                 "retention_info": retention_info,
                 "violations": policy_violations,
-                "retention_days": retention_days
+                "retention_days": retention_days,
+                "accessible_paths": accessible_paths
             }
             
         except Exception as e:

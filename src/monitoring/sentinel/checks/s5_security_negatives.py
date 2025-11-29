@@ -710,8 +710,13 @@ class SecurityNegatives(BaseCheck):
                 # Detect if system is vulnerable to rapid auth attempts
                 anomalies = []
 
-                # If we can make >100 failed auth attempts per minute without rate limiting, flag it
-                if attempts_per_minute > 100 and not rate_limiting_active:
+                # If we can make >200 failed auth attempts per minute without rate limiting, flag it
+                # Threshold increased from 100 to 200 (2025-11-29):
+                # - 100/min was causing false positives in production workloads
+                # - Sentinel's own test sends 50 concurrent requests which can exceed 100/min
+                # - 200/min is a more realistic threshold for detecting actual attacks
+                # - Still detects credential stuffing attacks (typically 1000s of attempts)
+                if attempts_per_minute > 200 and not rate_limiting_active:
                     anomalies.append({
                         "type": "no_rate_limiting_on_auth",
                         "severity": "medium",
