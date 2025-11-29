@@ -138,9 +138,18 @@ ssh -o StrictHostKeyChecking=no \
   docker network rm veris-memory_voice-network 2>/dev/null && echo "  ✓ Removed: veris-memory_voice-network" || echo "  ℹ️ Already removed"
 
   # Force stop any remaining containers with our project name
+  # PR #384: Use -f flag and remove by ID to handle stuck containers
   echo "🛑 Force stopping any remaining veris-memory containers..."
   docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker stop 2>/dev/null || true
-  docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker rm 2>/dev/null || true
+  docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker rm -f 2>/dev/null || true
+
+  # PR #384: Also remove by container ID to handle name conflicts
+  echo "🧹 Removing containers by ID (handles name conflicts)..."
+  VERIS_CONTAINERS=\$(docker ps -aq --filter "name=veris-memory" 2>/dev/null || true)
+  if [ -n "\$VERIS_CONTAINERS" ]; then
+    echo "   Found \$(echo "\$VERIS_CONTAINERS" | wc -l) containers to remove"
+    echo "\$VERIS_CONTAINERS" | xargs -r docker rm -f 2>/dev/null || true
+  fi
 
   # CRITICAL: Remove ALL instances of fixed-name containers
   echo "🛑 Stopping fixed-name containers (livekit-server, voice-bot)..."
