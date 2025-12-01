@@ -579,38 +579,20 @@ if [ "$EXISTING_PROJECT" -gt 0 ] || [ "$EXISTING_LIVEKIT" -gt 0 ] || [ "$EXISTIN
 fi
 
 # Build qdrant locally (not in GHCR - uses custom Dockerfile with curl/wget for health checks)
-# This must happen BEFORE create because qdrant uses a local image name
+# This must happen BEFORE starting services because qdrant uses a local image name
 echo "  → Building qdrant image locally (not available in GHCR)..."
 docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build qdrant
 
-# Use separate create and start commands to avoid the recreate race condition
-echo "  → Creating containers without starting them..."
+# PR #387: Use 'up --force-recreate' instead of 'create + start' to ensure
+# containers are recreated with fresh state. This fixes issues where:
+# - Python modules are cached in memory from previous container runs
+# - Volume-mounted code changes aren't picked up without container restart
+# - Sentinel checks fail because old code is cached despite volume updates
+echo "  → Starting services with force-recreate (ensures fresh container state)..."
 set +e
-CREATE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" create --no-build 2>&1)
-CREATE_EXIT=$?
+COMPOSE_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --force-recreate --no-build 2>&1)
+COMPOSE_EXIT=$?
 set -e
-
-if [ $CREATE_EXIT -ne 0 ]; then
-    echo -e "${RED}❌ Container creation failed:${NC}"
-    echo "$CREATE_OUTPUT"
-    exit 1
-fi
-
-echo "  → Starting created containers..."
-set +e
-START_OUTPUT=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" start 2>&1)
-START_EXIT=$?
-set -e
-
-if [ $START_EXIT -ne 0 ]; then
-    echo -e "${RED}❌ Container start failed:${NC}"
-    echo "$START_OUTPUT"
-    COMPOSE_OUTPUT="$CREATE_OUTPUT\n$START_OUTPUT"
-    COMPOSE_EXIT=$START_EXIT
-else
-    COMPOSE_OUTPUT="$CREATE_OUTPUT\n$START_OUTPUT"
-    COMPOSE_EXIT=0
-fi
 
 if [ $COMPOSE_EXIT -ne 0 ]; then
     echo ""
@@ -688,15 +670,22 @@ fi
 # Problem: git pull updates files BEFORE containers start, so uvicorn's --reload
 # doesn't detect any changes (files were already new when it started).
 # Solution: Touch a source file to trigger uvicorn's file watcher and force reload.
+# Note: With --force-recreate (PR #387), containers are now recreated fresh,
+# but we keep this for extra safety in case file watchers need a kick.
 if [ "$ENVIRONMENT" = "development" ]; then
     echo -e "${BLUE}🔄 Triggering hot reload for volume-mounted code...${NC}"
 
-    # Touch __init__.py to trigger uvicorn's file watcher
+    # Touch __init__.py to trigger uvicorn's file watcher (MCP server)
     touch src/__init__.py 2>/dev/null || true
     touch src/mcp_server/__init__.py 2>/dev/null || true
     touch src/backends/__init__.py 2>/dev/null || true
 
-    echo "  → Triggered file change, waiting 5s for uvicorn to reload..."
+    # PR #387: Also touch Sentinel files in case Sentinel has file watching
+    touch src/monitoring/__init__.py 2>/dev/null || true
+    touch src/monitoring/sentinel/__init__.py 2>/dev/null || true
+    touch src/monitoring/sentinel/checks/__init__.py 2>/dev/null || true
+
+    echo "  → Triggered file change, waiting 5s for services to reload..."
     sleep 5
 
     # Verify services are still healthy after reload
