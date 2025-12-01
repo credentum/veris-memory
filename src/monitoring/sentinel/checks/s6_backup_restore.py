@@ -827,9 +827,18 @@ class BackupRestore(BaseCheck):
                     "setup_required": "Mount backup volumes to container for retention policy checking"
                 }
 
+            # PR #389: Include violation details in message for Telegram visibility
+            if policy_violations:
+                violation_summary = "; ".join(policy_violations[:3])  # Show first 3
+                if len(policy_violations) > 3:
+                    violation_summary += f" (+{len(policy_violations) - 3} more)"
+                message = f"Retention policy violations: {violation_summary}"
+            else:
+                message = "Retention policy compliant (tiered)"
+
             return {
                 "passed": len(policy_violations) == 0,
-                "message": f"Retention policy: {len(policy_violations)} violations found" if policy_violations else "Retention policy compliant (tiered)",
+                "message": message,
                 "retention_info": retention_info,
                 "violations": policy_violations,
                 "retention_policies": self.retention_policies,
