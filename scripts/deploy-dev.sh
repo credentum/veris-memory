@@ -113,10 +113,16 @@ ssh -o StrictHostKeyChecking=no \
   echo "📝 Recent commits:"
   git log --oneline -5
 
-  # BACKUP PHASE - Preserve data before cleanup
+  # BACKUP PHASE - Preserve data before cleanup (non-fatal)
+  # PR #388: Make backup non-fatal - don't fail deployment if nothing to backup
+  # This can happen when containers aren't running from a previous failed deployment
   echo "💾 Creating backup before cleanup..."
   if [ -f "/opt/veris-memory/scripts/backup-restore-integration.sh" ]; then
-    bash /opt/veris-memory/scripts/backup-restore-integration.sh backup dev
+    if bash /opt/veris-memory/scripts/backup-restore-integration.sh backup dev; then
+      echo "✅ Backup completed successfully"
+    else
+      echo "⚠️  Backup failed or nothing to backup (non-fatal, continuing deployment)"
+    fi
   else
     echo "⚠️  Backup script not found, skipping backup"
   fi
