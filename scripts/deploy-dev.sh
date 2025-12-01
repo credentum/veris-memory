@@ -567,13 +567,16 @@ ssh -o StrictHostKeyChecking=no \
       echo "🔨 Building qdrant image locally (not available in GHCR)..."
       docker compose -p veris-memory-dev build qdrant
 
-      echo "🚀 Starting main services with pulled images..."
-      docker compose -p veris-memory-dev up -d --no-build
+      # PR #387: Use --force-recreate to ensure containers get fresh state
+      # This fixes issues where Python modules are cached from previous runs
+      echo "🚀 Starting main services with pulled images (force-recreate for fresh state)..."
+      docker compose -p veris-memory-dev up -d --force-recreate --no-build
     else
       # GHCR pull failed - fall back to local build
       echo "⚠️  Failed to pull images from GHCR (registry unreachable or images not yet pushed)"
       echo "🏗️  Falling back to local build (this will take ~7 minutes)..."
-      docker compose -p veris-memory-dev up -d --build
+      # PR #387: Use --force-recreate to ensure containers get fresh state
+      docker compose -p veris-memory-dev up -d --force-recreate --build
     fi
 
     # Deploy voice platform services (voice-bot only - livekit was removed in PR #371)
