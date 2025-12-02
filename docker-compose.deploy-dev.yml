@@ -62,6 +62,11 @@ services:
       - STRICT_EMBEDDINGS=${STRICT_EMBEDDINGS:-false}
       - EMBEDDING_DIM=${EMBEDDING_DIM:-384}
       - QDRANT_COLLECTION_NAME=${QDRANT_COLLECTION_NAME:-context_embeddings}
+      # HyDE (Hypothetical Document Embeddings) Configuration
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - HYDE_ENABLED=${HYDE_ENABLED:-false}
+      - HYDE_API_PROVIDER=${HYDE_API_PROVIDER:-openrouter}
+      - HYDE_MODEL=${HYDE_MODEL:-x-ai/grok-4.1-fast:free}
     # HOT RELOAD: Watches /app/src for changes, auto-restarts
     command: >
       python -m uvicorn src.mcp_server.main:app
