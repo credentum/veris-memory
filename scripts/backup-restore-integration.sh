@@ -67,10 +67,12 @@ log "Action: $ACTION, Environment: $ENVIRONMENT"
 # Function to create backup
 create_backup() {
     echo -e "${YELLOW}💾 Creating backup before deployment...${NC}"
-    
-    # Check if containers are running
-    if ! docker ps | grep -q "veris-memory-${ENVIRONMENT}"; then
-        echo -e "${YELLOW}ℹ️  No running containers to backup${NC}"
+
+    # Check if ANY database containers are running (the ones we actually backup)
+    # We only backup qdrant, neo4j, and redis - not the API containers
+    if ! docker ps | grep -qE "veris-memory-${ENVIRONMENT}-(qdrant|neo4j|redis)"; then
+        echo -e "${YELLOW}ℹ️  No database containers running to backup (qdrant/neo4j/redis not found)${NC}"
+        log "No database containers found - this is expected on fresh deployment or after cleanup"
         return 0
     fi
     
