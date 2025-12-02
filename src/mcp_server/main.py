@@ -1495,6 +1495,7 @@ async def health_detailed() -> Dict[str, Any]:
             "qdrant": "unknown",
             "redis": "unknown",
             "embeddings": "unknown",  # Sprint 13: Add embedding status
+            "hyde": "unknown",  # PR #405: HyDE service status
         },
         "startup_time": _server_startup_time,
         "uptime_seconds": int(startup_elapsed),
@@ -1590,9 +1591,64 @@ async def health_detailed() -> Dict[str, Any]:
     else:
         health_status["services"]["embeddings"] = "unknown"
 
+    # PR #405: Check HyDE (Hypothetical Document Embeddings) service health
+    try:
+        from ..core.hyde_generator import get_hyde_generator
+        hyde_generator = get_hyde_generator()
+        hyde_metrics = hyde_generator.get_metrics()
+        hyde_config = hyde_generator.config
+
+        # Check if HyDE is enabled
+        hyde_enabled = hyde_config.enabled
+        api_key_set = bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"))
+
+        # Calculate error rate
+        llm_calls = hyde_metrics.get("llm_calls", 0)
+        llm_errors = hyde_metrics.get("llm_errors", 0)
+        error_rate = llm_errors / llm_calls if llm_calls > 0 else 0.0
+
+        # Build HyDE status
+        hyde_status = {
+            "enabled": hyde_enabled,
+            "api_key_set": api_key_set,
+            "model": hyde_config.model,
+            "api_provider": hyde_config.api_provider,
+            "metrics": {
+                "llm_calls": llm_calls,
+                "llm_errors": llm_errors,
+                "error_rate": round(error_rate, 4),
+                "cache_hits": hyde_metrics.get("cache_hits", 0),
+                "cache_misses": hyde_metrics.get("cache_misses", 0),
+                "cache_hit_rate": round(hyde_metrics.get("cache_hit_rate", 0.0), 4),
+            }
+        }
+        health_status["hyde"] = hyde_status
+
+        # Determine HyDE service health
+        if not hyde_enabled:
+            health_status["services"]["hyde"] = "disabled"
+        elif not api_key_set:
+            health_status["services"]["hyde"] = "degraded"
+            health_status["hyde_warning"] = "OPENROUTER_API_KEY not set - HyDE will fall back to regular search"
+        elif error_rate > 0.1 and llm_calls >= 10:
+            health_status["services"]["hyde"] = "degraded"
+            health_status["hyde_warning"] = f"High error rate: {error_rate:.1%} ({llm_errors}/{llm_calls} calls failed)"
+        else:
+            health_status["services"]["hyde"] = "healthy"
+
+    except ImportError:
+        health_status["services"]["hyde"] = "unavailable"
+        health_status["hyde"] = {"enabled": False, "error": "HyDE module not installed"}
+    except Exception as e:
+        health_status["services"]["hyde"] = "error"
+        health_status["hyde"] = {"enabled": False, "error": str(e)}
+        logger.error(f"HyDE health check exception: {e}")
+
     # Final status determination
+    # Note: "disabled" and "unavailable" are acceptable states (not failures)
     all_services = list(health_status["services"].values())
-    if all(s == "healthy" for s in all_services):
+    acceptable_states = {"healthy", "disabled", "unavailable"}
+    if all(s in acceptable_states for s in all_services):
         health_status["status"] = "healthy"
     elif any(s == "initializing" for s in all_services) and in_grace_period:
         health_status["status"] = "initializing"
