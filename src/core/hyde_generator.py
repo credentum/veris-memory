@@ -25,7 +25,12 @@ class HyDEConfig:
     """Configuration for HyDE generator."""
 
     enabled: bool = True
-    model: str = "gpt-4o-mini"  # Fast and cost-effective
+    # Default to free Grok model via OpenRouter
+    model: str = "x-ai/grok-4.1-fast:free"
+    # API provider: "openrouter" (default, free) or "openai"
+    api_provider: str = "openrouter"
+    # Base URL for the API (OpenRouter by default)
+    base_url: str = "https://openrouter.ai/api/v1"
     max_tokens: int = 150
     temperature: float = 0.7
     cache_enabled: bool = True
@@ -75,9 +80,22 @@ Answer:"""
             config: Configuration options. If None, uses defaults from environment.
         """
         if config is None:
+            # Determine API provider - OpenRouter is default (free Grok model)
+            api_provider = os.getenv("HYDE_API_PROVIDER", "openrouter").lower()
+
+            # Set defaults based on provider
+            if api_provider == "openrouter":
+                default_model = "x-ai/grok-4.1-fast:free"
+                default_base_url = "https://openrouter.ai/api/v1"
+            else:  # openai
+                default_model = "gpt-4o-mini"
+                default_base_url = "https://api.openai.com/v1"
+
             config = HyDEConfig(
                 enabled=os.getenv("HYDE_ENABLED", "true").lower() == "true",
-                model=os.getenv("HYDE_MODEL", "gpt-4o-mini"),
+                model=os.getenv("HYDE_MODEL", default_model),
+                api_provider=api_provider,
+                base_url=os.getenv("HYDE_BASE_URL", default_base_url),
                 max_tokens=int(os.getenv("HYDE_MAX_TOKENS", "150")),
                 temperature=float(os.getenv("HYDE_TEMPERATURE", "0.7")),
                 cache_enabled=os.getenv("HYDE_CACHE_ENABLED", "true").lower() == "true",
@@ -107,15 +125,42 @@ Answer:"""
         )
 
     async def _get_openai_client(self):
-        """Get or create the OpenAI client."""
+        """Get or create the OpenAI-compatible client (supports OpenRouter and OpenAI)."""
         if self._client is None:
             try:
                 from openai import AsyncOpenAI
 
-                api_key = os.getenv("OPENAI_API_KEY")
-                if not api_key:
-                    raise ValueError("OPENAI_API_KEY environment variable not set")
-                self._client = AsyncOpenAI(api_key=api_key)
+                # Get API key based on provider
+                if self.config.api_provider == "openrouter":
+                    api_key = os.getenv("OPENROUTER_API_KEY")
+                    if not api_key:
+                        raise ValueError(
+                            "OPENROUTER_API_KEY environment variable not set. "
+                            "Get a free key at https://openrouter.ai/keys"
+                        )
+                    # OpenRouter uses OpenAI-compatible API
+                    self._client = AsyncOpenAI(
+                        api_key=api_key,
+                        base_url=self.config.base_url,
+                        default_headers={
+                            "HTTP-Referer": "https://github.com/credentum/veris-memory",
+                            "X-Title": "Veris Memory HyDE",
+                        }
+                    )
+                else:  # openai
+                    api_key = os.getenv("OPENAI_API_KEY")
+                    if not api_key:
+                        raise ValueError("OPENAI_API_KEY environment variable not set")
+                    self._client = AsyncOpenAI(
+                        api_key=api_key,
+                        base_url=self.config.base_url if self.config.base_url != "https://openrouter.ai/api/v1" else None
+                    )
+
+                logger.info(
+                    f"HyDE LLM client initialized: provider={self.config.api_provider}, "
+                    f"model={self.config.model}"
+                )
+
             except ImportError:
                 raise ImportError("openai package not installed. Install with: pip install openai")
         return self._client
