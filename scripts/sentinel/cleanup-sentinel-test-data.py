@@ -5,6 +5,8 @@ Cleanup script for Sentinel test data in Veris Memory.
 PR #399: Sentinel S2 Golden Fact Recall was storing test facts without cleanup,
 causing database bloat. This script removes existing sentinel test data.
 
+PR #403: Now cleans up from ALL backends (Neo4j + Qdrant) to prevent orphaned data.
+
 Usage:
     python scripts/sentinel/cleanup-sentinel-test-data.py [--dry-run] [--batch-size N]
 
@@ -12,13 +14,15 @@ Options:
     --dry-run       Show what would be deleted without actually deleting
     --batch-size N  Delete in batches of N (default: 1000)
     --url URL       Veris Memory URL (default: http://localhost:8000)
+    --sentinel-key  Sentinel API key for internal cleanup (env: SENTINEL_API_KEY)
 """
 
 import argparse
 import json
+import os
 import sys
 import time
-from typing import Dict, Any
+from typing import Dict, Any, List
 import urllib.request
 import urllib.error
 
@@ -45,6 +49,54 @@ def query_graph(base_url: str, cypher_query: str) -> Dict[str, Any]:
         return {"error": f"URL Error: {e.reason}"}
     except Exception as e:
         return {"error": str(e)}
+
+
+def get_sentinel_context_ids(base_url: str, batch_size: int) -> List[str]:
+    """Get IDs of sentinel test contexts for cleanup."""
+    query = f"""
+        MATCH (n:Context)
+        WHERE n.type = 'log'
+          AND n.metadata CONTAINS 'sentinel'
+          AND n.metadata CONTAINS 'golden_recall'
+        RETURN n.id as context_id
+        LIMIT {batch_size}
+    """
+    result = query_graph(base_url, query)
+    if "error" in result:
+        return []
+
+    results = result.get("results", [])
+    return [r.get("context_id") for r in results if r.get("context_id")]
+
+
+def sentinel_cleanup(base_url: str, context_id: str, sentinel_key: str) -> Dict[str, Any]:
+    """Clean up a context using the internal sentinel cleanup endpoint.
+
+    PR #403: Deletes from ALL backends (Neo4j + Qdrant).
+    """
+    url = f"{base_url}/internal/sentinel/cleanup"
+    payload = json.dumps({
+        "context_id": context_id,
+        "sentinel_key": sentinel_key
+    }).encode('utf-8')
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return json.loads(response.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8') if e.fp else "No error body"
+        return {"success": False, "error": f"HTTP {e.code}: {error_body}"}
+    except urllib.error.URLError as e:
+        return {"success": False, "error": f"URL Error: {e.reason}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 def count_sentinel_data(base_url: str) -> Dict[str, int]:
@@ -144,6 +196,16 @@ def main():
         default="http://localhost:8000",
         help="Veris Memory URL (default: http://localhost:8000)"
     )
+    parser.add_argument(
+        "--sentinel-key",
+        default=os.getenv("SENTINEL_API_KEY", ""),
+        help="Sentinel API key for internal cleanup (env: SENTINEL_API_KEY)"
+    )
+    parser.add_argument(
+        "--neo4j-only",
+        action="store_true",
+        help="Only clean from Neo4j (skip Qdrant cleanup)"
+    )
     args = parser.parse_args()
 
     # Security: Validate batch_size bounds to prevent injection/DoS
@@ -157,6 +219,9 @@ def main():
     print(f"Target URL: {args.url}")
     print(f"Batch size: {args.batch_size}")
     print(f"Dry run: {args.dry_run}")
+    print(f"Multi-backend cleanup: {not args.neo4j_only}")
+    if not args.neo4j_only and not args.sentinel_key:
+        print("WARNING: No SENTINEL_API_KEY set - multi-backend cleanup may fail")
     print()
 
     # Count existing data
@@ -195,38 +260,78 @@ def main():
 
     # Delete in batches
     total_deleted = 0
+    total_deleted_neo4j = 0
+    total_deleted_qdrant = 0
     batch_num = 0
 
     print()
     print("Deleting sentinel test data...")
 
-    while True:
-        batch_num += 1
+    if args.neo4j_only:
+        # Legacy Neo4j-only deletion (for backward compatibility)
+        while True:
+            batch_num += 1
 
-        # Try metadata-based deletion first
-        result = delete_sentinel_data_batch(args.url, args.batch_size)
+            # Try metadata-based deletion first
+            result = delete_sentinel_data_batch(args.url, args.batch_size)
 
-        if not result["success"]:
-            # Fall back to author-based deletion
-            result = delete_sentinel_data_by_author(args.url, args.batch_size)
+            if not result["success"]:
+                # Fall back to author-based deletion
+                result = delete_sentinel_data_by_author(args.url, args.batch_size)
 
-        if not result["success"]:
-            print(f"ERROR: {result.get('error', 'Unknown error')}")
-            break
+            if not result["success"]:
+                print(f"ERROR: {result.get('error', 'Unknown error')}")
+                break
 
-        deleted = result["deleted"]
-        if deleted == 0:
-            break
+            deleted = result["deleted"]
+            if deleted == 0:
+                break
 
-        total_deleted += deleted
-        print(f"  Batch {batch_num}: Deleted {deleted} entries (total: {total_deleted})")
+            total_deleted += deleted
+            print(f"  Batch {batch_num}: Deleted {deleted} entries from Neo4j (total: {total_deleted})")
 
-        # Small delay to avoid overwhelming the database
-        time.sleep(0.5)
+            # Small delay to avoid overwhelming the database
+            time.sleep(0.5)
+    else:
+        # PR #403: Multi-backend cleanup (Neo4j + Qdrant)
+        while True:
+            batch_num += 1
+
+            # Get context IDs for this batch
+            context_ids = get_sentinel_context_ids(args.url, args.batch_size)
+            if not context_ids:
+                break
+
+            batch_deleted = 0
+            batch_neo4j = 0
+            batch_qdrant = 0
+
+            for context_id in context_ids:
+                result = sentinel_cleanup(args.url, context_id, args.sentinel_key)
+                if result.get("success"):
+                    batch_deleted += 1
+                    deleted_from = result.get("deleted_from", [])
+                    if "neo4j" in deleted_from:
+                        batch_neo4j += 1
+                    if "qdrant" in deleted_from:
+                        batch_qdrant += 1
+
+            total_deleted += batch_deleted
+            total_deleted_neo4j += batch_neo4j
+            total_deleted_qdrant += batch_qdrant
+
+            print(f"  Batch {batch_num}: Deleted {batch_deleted} entries "
+                  f"(Neo4j: {batch_neo4j}, Qdrant: {batch_qdrant}) - Total: {total_deleted}")
+
+            # Small delay to avoid overwhelming the database
+            time.sleep(0.5)
 
     print()
     print("=" * 60)
     print(f"Cleanup complete. Total deleted: {total_deleted}")
+    if not args.neo4j_only:
+        print(f"  - Neo4j deletions: {total_deleted_neo4j}")
+        print(f"  - Qdrant deletions: {total_deleted_qdrant}")
     print("=" * 60)
 
     # Verify final counts

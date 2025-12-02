@@ -387,11 +387,12 @@ async def test_total_query_count_is_12(golden_fact_check):
 
 # ============================================================================
 # PR #399: Cleanup Tests - Prevent database bloat from sentinel test data
+# PR #403: Updated to test multi-backend cleanup (Neo4j + Qdrant)
 # ============================================================================
 
 @pytest.mark.asyncio
 async def test_cleanup_fact_deletes_context(golden_fact_check):
-    """Test that _cleanup_fact sends correct Cypher DELETE query (PR #399)."""
+    """Test that _cleanup_fact sends cleanup request via internal endpoint (PR #403)."""
     mock_session = AsyncMock()
     context_id = "ctx_test_cleanup_123"
     captured_payload = None
@@ -399,7 +400,12 @@ async def test_cleanup_fact_deletes_context(golden_fact_check):
     async def capture_cleanup_call(session, method, url, data, expected_status, timeout):
         nonlocal captured_payload
         captured_payload = data
-        return True, "Success", 5.0, {"results": [{"deleted": 1}]}
+        # PR #403: Return new sentinel cleanup response format
+        return True, "Success", 5.0, {
+            "success": True,
+            "deleted_from": ["neo4j", "qdrant"],
+            "message": "Sentinel test data cleaned from: neo4j, qdrant"
+        }
 
     with patch.object(golden_fact_check, 'test_api_call', side_effect=capture_cleanup_call):
         result = await golden_fact_check._cleanup_fact(mock_session, context_id)
@@ -407,15 +413,15 @@ async def test_cleanup_fact_deletes_context(golden_fact_check):
     # Verify cleanup was attempted
     assert result["success"] is True
     assert result["context_id"] == context_id
-    assert result["deleted_count"] == 1
+    assert "deleted_from" in result
+    assert "neo4j" in result["deleted_from"]
+    assert "qdrant" in result["deleted_from"]
 
-    # Verify the Cypher query structure
+    # Verify the payload structure for internal cleanup endpoint
     assert captured_payload is not None
-    assert "query" in captured_payload
-    query = captured_payload["query"]
-    assert "MATCH" in query
-    assert "DETACH DELETE" in query
-    assert context_id in query
+    assert "context_id" in captured_payload
+    assert captured_payload["context_id"] == context_id
+    assert "sentinel_key" in captured_payload
 
 
 @pytest.mark.asyncio
@@ -465,7 +471,12 @@ async def test_cleanup_fact_accepts_valid_context_id_formats(golden_fact_check):
     ]
 
     async def mock_api_call(session, method, url, data, expected_status, timeout):
-        return True, "Success", 5.0, {"results": [{"deleted": 1}]}
+        # PR #403: Return new sentinel cleanup response format
+        return True, "Success", 5.0, {
+            "success": True,
+            "deleted_from": ["neo4j", "qdrant"],
+            "message": "Cleaned"
+        }
 
     with patch.object(golden_fact_check, 'test_api_call', side_effect=mock_api_call):
         for valid_id in valid_ids:

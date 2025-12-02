@@ -83,6 +83,7 @@ jobs:
           REDIS_URL: redis://localhost:6379
           ENVIRONMENT: test
           ADMIN_API_KEY: test_admin_key_for_ci
+          SENTINEL_API_KEY: test_sentinel_key_for_ci
         run: |
           python -m src.mcp_server.main &
           echo $! > mcp_server.pid
@@ -101,6 +102,7 @@ jobs:
 
       # PR #402: Run ACTUAL integration tests against live services
       # The unit tests above use mocks - these tests hit the real MCP server
+      # PR #403: SENTINEL_API_KEY enables multi-backend cleanup (Neo4j + Qdrant)
       - name: Run Sentinel Integration Tests (Live Services)
         env:
           TARGET_BASE_URL: http://localhost:8000
@@ -109,6 +111,7 @@ jobs:
           NEO4J_PASSWORD: test_password_12345
           QDRANT_URL: http://localhost:6333
           REDIS_URL: redis://localhost:6379
+          SENTINEL_API_KEY: test_sentinel_key_for_ci
         run: |
           echo "Running integration tests against live services..."
           echo "This validates that checks actually work, not just that code is correct."

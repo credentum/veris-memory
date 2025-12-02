@@ -3620,6 +3620,92 @@ async def forget_context_endpoint(
         }
 
 
+class SentinelCleanupRequest(BaseModel):
+    """Request model for sentinel internal cleanup."""
+    context_id: str = Field(..., description="Context ID to delete")
+    sentinel_key: str = Field(..., description="Sentinel API key for authorization")
+
+
+@app.post("/internal/sentinel/cleanup")
+async def sentinel_cleanup_endpoint(
+    request: SentinelCleanupRequest,
+) -> Dict[str, Any]:
+    """
+    Internal endpoint for sentinel test data cleanup.
+    PR #399: Deletes test contexts from ALL backends (Neo4j + Qdrant).
+
+    This endpoint bypasses human-only restrictions because:
+    1. It's only for sentinel internal test data cleanup
+    2. Context IDs are validated (UUID format only)
+    3. Requires sentinel API key authentication
+
+    Args:
+        request: Cleanup request with context_id and sentinel_key
+
+    Returns:
+        Deletion result showing which backends were cleaned
+    """
+    import re
+
+    # Validate sentinel key
+    expected_sentinel_key = os.getenv("SENTINEL_API_KEY", "")
+    if not expected_sentinel_key or request.sentinel_key != expected_sentinel_key:
+        return {
+            "success": False,
+            "error": "Invalid sentinel key",
+            "context_id": request.context_id
+        }
+
+    # Validate context_id format (prevent injection)
+    valid_id_pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
+    if not valid_id_pattern.match(request.context_id):
+        return {
+            "success": False,
+            "error": f"Invalid context_id format",
+            "context_id": request.context_id[:50]
+        }
+
+    deleted_from = []
+    errors = []
+
+    # Delete from Neo4j
+    if neo4j_client:
+        try:
+            query = """
+            MATCH (n:Context {id: $context_id})
+            DETACH DELETE n
+            RETURN count(n) as deleted_count
+            """
+            result = neo4j_client.query(query, {"context_id": request.context_id})
+            if result and result[0].get("deleted_count", 0) > 0:
+                deleted_from.append("neo4j")
+        except Exception as e:
+            logger.error(f"Sentinel cleanup - Neo4j deletion failed: {e}")
+            errors.append(f"neo4j: {str(e)}")
+
+    # Delete from Qdrant
+    if qdrant_client:
+        try:
+            qdrant_client.delete_vector(request.context_id)
+            deleted_from.append("qdrant")
+        except Exception as e:
+            # Qdrant may return error if vector doesn't exist, which is ok
+            if "not found" not in str(e).lower():
+                logger.error(f"Sentinel cleanup - Qdrant deletion failed: {e}")
+                errors.append(f"qdrant: {str(e)}")
+
+    success = len(deleted_from) > 0 or len(errors) == 0
+
+    return {
+        "success": success,
+        "operation": "sentinel_cleanup",
+        "context_id": request.context_id,
+        "deleted_from": deleted_from,
+        "errors": errors if errors else None,
+        "message": f"Sentinel test data cleaned from: {', '.join(deleted_from) if deleted_from else 'no backends (may not exist)'}"
+    }
+
+
 @app.post("/tools/upsert_fact")
 async def upsert_fact_endpoint(
     request: UpsertFactRequest,

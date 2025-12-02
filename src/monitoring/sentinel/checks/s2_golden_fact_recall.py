@@ -317,29 +317,72 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
         }
 
     # Pattern for valid context IDs (UUIDs, hex strings, or alphanumeric with hyphens/underscores)
-    # This prevents Cypher injection by rejecting any ID with special characters
+    # This prevents injection by rejecting any ID with special characters
     VALID_CONTEXT_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
 
     async def _cleanup_fact(self, session: aiohttp.ClientSession, context_id: str) -> Dict[str, Any]:
         """Clean up a test fact after recall test to prevent database bloat.
 
         PR #399: Sentinel test data was filling Veris Memory with permanent entries.
-        This method deletes the test context after successful recall testing.
+        PR #403: Now deletes from ALL backends (Neo4j + Qdrant) via internal cleanup endpoint.
 
-        Uses query_graph with Cypher DELETE to bypass human-only delete restrictions,
-        since this is internal test cleanup not user-initiated deletion.
+        Uses /internal/sentinel/cleanup endpoint which:
+        - Deletes from Neo4j (graph database)
+        - Deletes from Qdrant (vector database)
+        - Requires SENTINEL_API_KEY for authentication
+        - Bypasses human-only restrictions for test data cleanup
 
-        Security: context_id is validated against a safe pattern before interpolation
-        into the Cypher query to prevent injection attacks.
+        Security: context_id is validated against a safe pattern before sending.
         """
+        import os
+
         if not context_id:
             return {"success": False, "message": "No context_id provided"}
 
-        # Security: Validate context_id format to prevent Cypher injection
+        # Security: Validate context_id format
         if not self.VALID_CONTEXT_ID_PATTERN.match(context_id):
             return {"success": False, "message": f"Invalid context_id format: {context_id[:50]}"}
 
-        # Use Cypher DELETE query via query_graph tool
+        # Get sentinel API key from environment
+        sentinel_key = os.getenv("SENTINEL_API_KEY", "")
+
+        # Use internal sentinel cleanup endpoint for multi-backend deletion
+        cleanup_payload = {
+            "context_id": context_id,
+            "sentinel_key": sentinel_key
+        }
+
+        try:
+            success, message, latency, response_data = await self.test_api_call(
+                session,
+                "POST",
+                f"{self.config.target_base_url}/internal/sentinel/cleanup",
+                data=cleanup_payload,
+                expected_status=200,
+                timeout=5.0
+            )
+
+            if success and response_data:
+                return {
+                    "success": response_data.get("success", False),
+                    "context_id": context_id,
+                    "deleted_from": response_data.get("deleted_from", []),
+                    "errors": response_data.get("errors"),
+                    "latency_ms": latency,
+                    "message": response_data.get("message", "")
+                }
+            else:
+                # Fallback to Neo4j-only cleanup if endpoint not available
+                return await self._cleanup_fact_neo4j_only(session, context_id)
+        except Exception as e:
+            # Fallback to Neo4j-only cleanup on error
+            return await self._cleanup_fact_neo4j_only(session, context_id)
+
+    async def _cleanup_fact_neo4j_only(self, session: aiohttp.ClientSession, context_id: str) -> Dict[str, Any]:
+        """Fallback cleanup using Neo4j only (for backward compatibility).
+
+        Used when the new /internal/sentinel/cleanup endpoint is not available.
+        """
         cleanup_payload = {
             "query": f"MATCH (n:Context {{id: '{context_id}'}}) DETACH DELETE n RETURN count(n) as deleted"
         }
@@ -359,8 +402,10 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
                 return {
                     "success": True,
                     "context_id": context_id,
+                    "deleted_from": ["neo4j"] if deleted_count > 0 else [],
                     "deleted_count": deleted_count,
-                    "latency_ms": latency
+                    "latency_ms": latency,
+                    "message": "Fallback to Neo4j-only cleanup (Qdrant vectors may remain)"
                 }
             else:
                 return {
