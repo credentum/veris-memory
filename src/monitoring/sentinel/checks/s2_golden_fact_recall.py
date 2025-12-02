@@ -6,13 +6,13 @@ Tests the ability to store and recall specific facts through natural language qu
 This validates that the core store/retrieve functionality works correctly.
 """
 
-import asyncio
 import json
+import re
 import time
 import uuid
 import aiohttp
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from ..base_check import BaseCheck, APITestMixin
 from ..models import CheckResult, SentinelConfig
@@ -316,6 +316,10 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
             "contexts_count": len(contexts)
         }
 
+    # Pattern for valid context IDs (UUIDs, hex strings, or alphanumeric with hyphens/underscores)
+    # This prevents Cypher injection by rejecting any ID with special characters
+    VALID_CONTEXT_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
+
     async def _cleanup_fact(self, session: aiohttp.ClientSession, context_id: str) -> Dict[str, Any]:
         """Clean up a test fact after recall test to prevent database bloat.
 
@@ -324,9 +328,16 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
 
         Uses query_graph with Cypher DELETE to bypass human-only delete restrictions,
         since this is internal test cleanup not user-initiated deletion.
+
+        Security: context_id is validated against a safe pattern before interpolation
+        into the Cypher query to prevent injection attacks.
         """
         if not context_id:
             return {"success": False, "message": "No context_id provided"}
+
+        # Security: Validate context_id format to prevent Cypher injection
+        if not self.VALID_CONTEXT_ID_PATTERN.match(context_id):
+            return {"success": False, "message": f"Invalid context_id format: {context_id[:50]}"}
 
         # Use Cypher DELETE query via query_graph tool
         cleanup_payload = {

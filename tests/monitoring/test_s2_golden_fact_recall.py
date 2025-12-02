@@ -430,6 +430,50 @@ async def test_cleanup_fact_handles_no_context_id(golden_fact_check):
 
 
 @pytest.mark.asyncio
+async def test_cleanup_fact_rejects_invalid_context_id_format(golden_fact_check):
+    """Test that _cleanup_fact rejects context IDs with injection characters (PR #399 security)."""
+    mock_session = AsyncMock()
+
+    # Test various injection attempts
+    injection_attempts = [
+        "'; DROP TABLE contexts; --",
+        "test' OR '1'='1",
+        "ctx_123; MATCH (n) DETACH DELETE n",
+        "ctx_<script>alert(1)</script>",
+        "ctx_123\n RETURN 1",
+        "ctx with spaces",
+    ]
+
+    for malicious_id in injection_attempts:
+        result = await golden_fact_check._cleanup_fact(mock_session, malicious_id)
+        assert result["success"] is False, f"Should reject: {malicious_id}"
+        assert "Invalid context_id format" in result["message"], f"Wrong message for: {malicious_id}"
+
+
+@pytest.mark.asyncio
+async def test_cleanup_fact_accepts_valid_context_id_formats(golden_fact_check):
+    """Test that _cleanup_fact accepts valid context ID formats (PR #399 security)."""
+    mock_session = AsyncMock()
+
+    # Valid context ID formats
+    valid_ids = [
+        "ctx_abc123",
+        "58c677bc-44a6-4597-890e-c36f672d9325",  # UUID
+        "context_12345",
+        "ABC123",
+        "a1b2c3d4e5f6",
+    ]
+
+    async def mock_api_call(session, method, url, data, expected_status, timeout):
+        return True, "Success", 5.0, {"results": [{"deleted": 1}]}
+
+    with patch.object(golden_fact_check, 'test_api_call', side_effect=mock_api_call):
+        for valid_id in valid_ids:
+            result = await golden_fact_check._cleanup_fact(mock_session, valid_id)
+            assert result["success"] is True, f"Should accept: {valid_id}"
+
+
+@pytest.mark.asyncio
 async def test_cleanup_fact_handles_api_failure(golden_fact_check):
     """Test that _cleanup_fact handles API failures gracefully (PR #399)."""
     mock_session = AsyncMock()

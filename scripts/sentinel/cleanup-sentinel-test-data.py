@@ -18,7 +18,7 @@ import argparse
 import json
 import sys
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import urllib.request
 import urllib.error
 
@@ -145,6 +145,11 @@ def main():
         help="Veris Memory URL (default: http://localhost:8000)"
     )
     args = parser.parse_args()
+
+    # Security: Validate batch_size bounds to prevent injection/DoS
+    if not 1 <= args.batch_size <= 10000:
+        print(f"ERROR: batch_size must be between 1 and 10000, got {args.batch_size}")
+        sys.exit(1)
 
     print("=" * 60)
     print("Veris Memory Sentinel Test Data Cleanup")
