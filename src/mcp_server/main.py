@@ -1534,8 +1534,9 @@ async def debug_features() -> Dict[str, Any]:
     try:
         from ..storage.reranker_bulletproof import get_bulletproof_reranker
         reranker = get_bulletproof_reranker()
-        features["cross_encoder"]["model_loaded"] = reranker.is_healthy()
+        features["cross_encoder"]["model_loaded"] = reranker.enabled and reranker.model is not None
         features["cross_encoder"]["model_name"] = reranker.model_name
+        features["cross_encoder"]["request_count"] = reranker.request_count
     except Exception as e:
         features["cross_encoder"]["model_loaded"] = False
         features["cross_encoder"]["model_error"] = str(e)
