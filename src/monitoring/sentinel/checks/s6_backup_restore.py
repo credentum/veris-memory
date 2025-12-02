@@ -749,6 +749,11 @@ class BackupRestore(BaseCheck):
 
         Backups within their retention period are compliant.
         Only backups exceeding their path-specific retention trigger violations.
+
+        PR #XXX: Fixed to check backup DIRECTORY timestamps instead of file timestamps.
+        When backups copy database files, the files retain their original modification
+        times. The backup directory timestamp indicates when the backup was actually
+        created, which is what we should check for retention policy compliance.
         """
         try:
             retention_info = []
@@ -773,39 +778,54 @@ class BackupRestore(BaseCheck):
 
                     cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
 
-                    backup_files = (
-                        list(path.glob("**/*.sql")) +
-                        list(path.glob("**/*.dump")) +
-                        list(path.glob("**/*.tar.gz"))
-                    )
+                    # PR #XXX: Check backup DIRECTORIES instead of individual files
+                    # Backup directories follow naming pattern: backup-YYYYMMDD_HHMMSS
+                    # The directory mtime indicates when the backup was created,
+                    # not when the source files were last modified
+                    backup_dirs = [
+                        d for d in path.iterdir()
+                        if d.is_dir() and d.name.startswith("backup-")
+                    ]
 
                     old_backups = []
                     recent_backups = []
 
-                    for backup_file in backup_files:
-                        modified_time = datetime.fromtimestamp(backup_file.stat().st_mtime)
+                    for backup_dir in backup_dirs:
+                        # Use directory modification time (when backup was created)
+                        modified_time = datetime.fromtimestamp(backup_dir.stat().st_mtime)
                         age_days = (datetime.utcnow() - modified_time).days
 
                         if modified_time < cutoff_date:
+                            # Calculate directory size by summing all files inside
+                            try:
+                                dir_size_bytes = sum(
+                                    f.stat().st_size
+                                    for f in backup_dir.rglob("*")
+                                    if f.is_file()
+                                )
+                                dir_size_mb = dir_size_bytes / (1024 * 1024)
+                            except (OSError, PermissionError):
+                                dir_size_mb = 0.0
+
                             old_backups.append({
-                                "file": str(backup_file),
+                                "directory": str(backup_dir.name),
                                 "age_days": age_days,
-                                "size_mb": backup_file.stat().st_size / (1024 * 1024),
+                                "size_mb": dir_size_mb,
                                 "retention_days": retention_days
                             })
                         else:
                             recent_backups.append({
-                                "file": str(backup_file),
+                                "directory": str(backup_dir.name),
                                 "age_days": age_days
                             })
 
                     retention_info.append({
                         "path": str(path),
                         "retention_days": retention_days,
-                        "total_backups": len(backup_files),
+                        "total_backups": len(backup_dirs),
                         "recent_backups": len(recent_backups),
                         "old_backups": len(old_backups),
-                        "old_backup_files": old_backups[:5]  # Limit to first 5 for brevity
+                        "old_backup_dirs": old_backups[:5]  # Limit to first 5 for brevity
                     })
 
                     if old_backups:
