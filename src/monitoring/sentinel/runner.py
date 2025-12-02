@@ -27,27 +27,48 @@ logger = logging.getLogger(__name__)
 
 class SentinelRunner:
     """Main Veris Sentinel runner with scheduling and reporting."""
-    
+
+    # PR #390: Per-check intervals to reduce system load
+    # Different checks have different appropriate frequencies based on their nature:
+    # - Health probes: Fast, critical - check frequently
+    # - Backup validation: Filesystem scan - check every few hours
+    # - Config parity: Config rarely changes - check less frequently
+    # - Capacity tests: Performance impact - check less frequently
+    # Values are in seconds. Can be overridden via environment variables.
+    DEFAULT_CHECK_INTERVALS = {
+        "S1-probes": 60,              # Health probes - every 1 minute (critical)
+        "S2-golden-fact-recall": 300, # Golden fact - every 5 minutes
+        "S3-paraphrase-robustness": 600,  # Paraphrase - every 10 minutes (expensive)
+        "S4-metrics-wiring": 300,     # Metrics - every 5 minutes
+        "S5-security-negatives": 300, # Security - every 5 minutes
+        "S6-backup-restore": 21600,   # Backup - every 6 hours (filesystem scan)
+        "S7-config-parity": 1800,     # Config - every 30 minutes (rarely changes)
+        "S8-capacity-smoke": 900,     # Capacity - every 15 minutes (performance test)
+        "S9-graph-intent": 300,       # Graph - every 5 minutes
+        "S10-content-pipeline": 300,  # Content - every 5 minutes
+        "S11-firewall-status": 600,   # Firewall - every 10 minutes
+    }
+
     def __init__(self, config: SentinelConfig, db_path: str = "/var/lib/sentinel/sentinel.db") -> None:
         self.config = config
         self.db_path = db_path
         self.running = False
-        
+
         # Initialize checks based on configuration
         self.checks = self._initialize_checks()
-        
+
         # Initialize alert manager
         self.alert_manager = self._initialize_alert_manager()
-        
+
         # Ring buffers for data retention
         self.failures: deque = deque(maxlen=200)
         self.reports: deque = deque(maxlen=50)
         self.traces: deque = deque(maxlen=500)
-        
+
         # External service resilience tracking
         self.webhook_failures = 0
         self.github_failures = 0
-        
+
         # Statistics tracking
         self.check_statistics = defaultdict(lambda: {
             'total_runs': 0,
@@ -57,6 +78,10 @@ class SentinelRunner:
             'total_time_ms': 0.0,
             'last_result': None
         })
+
+        # PR #390: Track last run time for per-check intervals
+        self.last_check_time: Dict[str, float] = {}
+        self.check_intervals = self._load_check_intervals()
         
         # PR #247: Validate critical environment variables at startup
         self._validate_environment()
@@ -167,7 +192,69 @@ class SentinelRunner:
         
         logger.info(f"Initialized {len(checks)} checks out of {len(CHECK_REGISTRY)} available")
         return checks
-    
+
+    def _load_check_intervals(self) -> Dict[str, int]:
+        """Load check intervals from environment or use defaults.
+
+        PR #390: Per-check intervals to reduce system load.
+
+        Environment variable format:
+            SENTINEL_INTERVAL_S1=120  # Override S1-probes to 2 minutes
+            SENTINEL_INTERVAL_S6=3600 # Override S6-backup-restore to 1 hour
+
+        Returns:
+            Dictionary mapping check_id to interval in seconds
+        """
+        intervals = dict(self.DEFAULT_CHECK_INTERVALS)
+
+        # Allow per-check interval overrides via environment variables
+        for check_id in CHECK_REGISTRY.keys():
+            # Extract check number (e.g., "S1" from "S1-probes")
+            check_num = check_id.split("-")[0]
+            env_var = f"SENTINEL_INTERVAL_{check_num}"
+            env_value = os.getenv(env_var)
+
+            if env_value:
+                try:
+                    intervals[check_id] = int(env_value)
+                    logger.info(f"Check interval override: {check_id} = {env_value}s (from {env_var})")
+                except ValueError:
+                    logger.warning(f"Invalid interval value for {env_var}: {env_value}")
+
+        # Log configured intervals
+        logger.info("Per-check intervals configured:")
+        for check_id, interval in sorted(intervals.items()):
+            if interval >= 3600:
+                human_interval = f"{interval // 3600}h"
+            elif interval >= 60:
+                human_interval = f"{interval // 60}m"
+            else:
+                human_interval = f"{interval}s"
+            logger.info(f"  {check_id}: {human_interval}")
+
+        return intervals
+
+    def _is_check_due(self, check_id: str) -> bool:
+        """Check if a check is due to run based on its interval.
+
+        PR #390: Per-check intervals support.
+
+        Returns:
+            True if the check should run, False if it should be skipped
+        """
+        now = time.time()
+        interval = self.check_intervals.get(check_id, 60)  # Default 60s
+        last_run = self.last_check_time.get(check_id, 0)
+
+        time_since_last = now - last_run
+        is_due = time_since_last >= interval
+
+        if not is_due:
+            remaining = interval - time_since_last
+            logger.debug(f"Skipping {check_id}: {remaining:.0f}s until next run")
+
+        return is_due
+
     def _init_database(self) -> None:
         """Initialize SQLite database for persistent storage."""
         try:
@@ -306,31 +393,53 @@ class SentinelRunner:
                 logger.error(f"Error in periodic summary task: {e}")
     
     async def _run_check_cycle(self) -> None:
-        """Execute one complete cycle of all enabled checks."""
+        """Execute one complete cycle of checks that are due.
+
+        PR #390: Per-check intervals - only runs checks that are due based on
+        their configured interval, reducing system load.
+        """
         cycle_start = time.time()
         results = []
-        
-        logger.debug(f"Starting check cycle with {len(self.checks)} checks")
-        
-        # Run all checks concurrently
-        check_tasks = []
+
+        # PR #390: Filter to only checks that are due
+        due_checks = []
+        skipped_checks = []
         for check_id, check_instance in self.checks.items():
             if check_instance.is_enabled():
-                task = asyncio.create_task(self._run_single_check(check_id, check_instance))
-                check_tasks.append(task)
-        
+                if self._is_check_due(check_id):
+                    due_checks.append((check_id, check_instance))
+                else:
+                    skipped_checks.append(check_id)
+
+        if skipped_checks:
+            logger.debug(f"Skipped {len(skipped_checks)} checks (not due): {', '.join(skipped_checks)}")
+
+        if not due_checks:
+            logger.debug("No checks due this cycle")
+            return
+
+        logger.debug(f"Running {len(due_checks)} due checks: {', '.join(c[0] for c in due_checks)}")
+
+        # Run due checks concurrently
+        check_tasks = []
+        for check_id, check_instance in due_checks:
+            # Record run time BEFORE execution to prevent drift
+            self.last_check_time[check_id] = time.time()
+            task = asyncio.create_task(self._run_single_check(check_id, check_instance))
+            check_tasks.append(task)
+
         if check_tasks:
             results = await asyncio.gather(*check_tasks, return_exceptions=True)
-        
+
         # Process results
         for result in results:
             if isinstance(result, CheckResult):
                 await self._process_check_result(result)
             elif isinstance(result, Exception):
                 logger.error(f"Check execution failed with exception: {result}")
-        
+
         cycle_time = (time.time() - cycle_start) * 1000
-        logger.info(f"Check cycle completed in {cycle_time:.1f}ms")
+        logger.info(f"Check cycle: {len(due_checks)} run, {len(skipped_checks)} skipped, {cycle_time:.1f}ms")
     
     async def _run_single_check(self, check_id: str, check_instance) -> CheckResult:
         """Run a single check with error handling."""
