@@ -97,6 +97,61 @@ class VectorBackend(BackendSearchInterface):
                 backend_logger.error(error_msg, error=str(e))
                 raise BackendSearchError(self.backend_name, error_msg, e)
 
+    async def search_by_embedding(
+        self, embedding: List[float], options: SearchOptions
+    ) -> List[MemoryResult]:
+        """
+        Search vector database using a pre-computed embedding.
+
+        This method is used by HyDE (Hypothetical Document Embeddings) to search
+        using the embedding of a hypothetical document rather than generating
+        an embedding from the query text.
+
+        Args:
+            embedding: Pre-computed embedding vector
+            options: Search configuration options
+
+        Returns:
+            List of MemoryResult objects sorted by relevance score
+
+        Raises:
+            BackendSearchError: If vector search operation fails
+        """
+        async with log_backend_timing(self.backend_name, "search_by_embedding", backend_logger) as metadata:
+            try:
+                metadata["embedding_dimensions"] = len(embedding) if embedding else 0
+                metadata["search_type"] = "hyde"
+
+                # Perform vector search with pre-computed embedding
+                search_start = time.time()
+                raw_results = await self._perform_vector_search(embedding, options)
+                search_time = (time.time() - search_start) * 1000
+
+                metadata["search_time_ms"] = search_time
+                metadata["raw_result_count"] = len(raw_results)
+
+                # Convert to normalized format
+                results = self._convert_to_memory_results(raw_results)
+
+                # Apply additional filtering if needed
+                filtered_results = self._apply_filters(results, options)
+
+                metadata["result_count"] = len(filtered_results)
+                metadata["top_score"] = filtered_results[0].score if filtered_results else 0.0
+
+                backend_logger.info(
+                    "Vector search by embedding completed",
+                    embedding_dims=len(embedding),
+                    **metadata
+                )
+
+                return filtered_results
+
+            except Exception as e:
+                error_msg = f"Vector search by embedding failed: {str(e)}"
+                backend_logger.error(error_msg, error=str(e))
+                raise BackendSearchError(self.backend_name, error_msg, e)
+
     async def health_check(self) -> BackendHealthStatus:
         """
         Check the health of the vector backend.

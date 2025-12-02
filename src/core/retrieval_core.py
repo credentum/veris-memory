@@ -49,6 +49,16 @@ except ImportError:
     QUERY_NORMALIZER_AVAILABLE = False
     get_query_normalizer = None
 
+# Import HyDE generator (Phase 5)
+try:
+    from .hyde_generator import get_hyde_generator, HyDEResult
+
+    HYDE_AVAILABLE = True
+except ImportError:
+    HYDE_AVAILABLE = False
+    get_hyde_generator = None
+    HyDEResult = None
+
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +66,7 @@ logger = logging.getLogger(__name__)
 ENABLE_MQE = os.getenv("MQE_ENABLED", "true").lower() == "true"
 ENABLE_SEARCH_ENHANCEMENTS = os.getenv("SEARCH_ENHANCEMENTS_ENABLED", "true").lower() == "true"
 ENABLE_QUERY_NORMALIZATION = os.getenv("QUERY_NORMALIZATION_ENABLED", "true").lower() == "true"
+ENABLE_HYDE = os.getenv("HYDE_ENABLED", "false").lower() == "true"  # Disabled by default
 
 
 class RetrievalCore:
@@ -151,12 +162,41 @@ class RetrievalCore:
             logger.info(
                 f"RetrievalCore executing search: query_length={len(effective_query)}, "
                 f"mode={search_mode}, limit={limit}, score_threshold={score_threshold}, "
+                f"hyde_enabled={ENABLE_HYDE and HYDE_AVAILABLE}, "
                 f"mqe_enabled={ENABLE_MQE and MQE_AVAILABLE}"
             )
 
-            # PHASE 2: Multi-Query Expansion
+            # PHASE 5: HyDE (Hypothetical Document Embeddings)
+            # If enabled, generate hypothetical doc and search with its embedding
+            hyde_used = False
+            search_response = None
+            if ENABLE_HYDE and HYDE_AVAILABLE and get_hyde_generator is not None:
+                try:
+                    hyde_generator = get_hyde_generator()
+                    if hyde_generator.config.enabled:
+                        hyde_result = await hyde_generator.generate_hyde_embedding(effective_query)
+
+                        if hyde_result.embedding and not hyde_result.error:
+                            # Search using hypothetical doc embedding
+                            search_response = await self.dispatcher.search_by_embedding(
+                                embedding=hyde_result.embedding,
+                                options=search_options,
+                                search_mode=search_mode_enum
+                            )
+                            hyde_used = True
+                            logger.info(
+                                f"HyDE search completed: {len(search_response.results)} results, "
+                                f"cache_hit={hyde_result.cache_hit}, "
+                                f"time={hyde_result.generation_time_ms:.2f}ms"
+                            )
+                        elif hyde_result.error:
+                            logger.warning(f"HyDE generation failed: {hyde_result.error}")
+                except Exception as hyde_error:
+                    logger.warning(f"HyDE search failed, falling back to MQE: {hyde_error}")
+
+            # PHASE 2: Multi-Query Expansion (fallback if HyDE not used)
             mqe_used = False
-            if ENABLE_MQE and MQE_AVAILABLE and get_mqe_wrapper is not None:
+            if not hyde_used and ENABLE_MQE and MQE_AVAILABLE and get_mqe_wrapper is not None:
                 try:
                     mqe_wrapper = get_mqe_wrapper()
                     if mqe_wrapper.is_available and mqe_wrapper.config.enabled:
@@ -204,8 +244,8 @@ class RetrievalCore:
                 except Exception as mqe_error:
                     logger.warning(f"MQE search failed, falling back to standard: {mqe_error}")
 
-            # Standard search if MQE not used
-            if not mqe_used:
+            # Standard search if neither HyDE nor MQE used
+            if not hyde_used and not mqe_used:
                 search_response = await self.dispatcher.search(
                     query=effective_query,
                     options=search_options,
@@ -255,7 +295,7 @@ class RetrievalCore:
             logger.info(
                 f"RetrievalCore search completed: results={len(search_response.results)}, "
                 f"backends_used={search_response.backends_used}, "
-                f"mqe_used={mqe_used}, query_normalized={query_normalization_applied}"
+                f"hyde_used={hyde_used}, mqe_used={mqe_used}, query_normalized={query_normalization_applied}"
             )
 
             return search_response

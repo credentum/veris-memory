@@ -57,24 +57,55 @@ class BackendSearchInterface(ABC):
     
     @abstractmethod
     async def search(
-        self, 
-        query: str, 
+        self,
+        query: str,
         options: SearchOptions
     ) -> List[Dict[str, Any]]:
         """
         Search the backend and return normalized results.
-        
+
         Args:
             query: The search query string
             options: Search configuration options
-            
+
         Returns:
             List of results in normalized format (will be converted to MemoryResult)
-            
+
         Raises:
             BackendSearchError: If the search operation fails
         """
         pass
+
+    async def search_by_embedding(
+        self,
+        embedding: List[float],
+        options: SearchOptions
+    ) -> List[Dict[str, Any]]:
+        """
+        Search using a pre-computed embedding vector (optional).
+
+        This method is used by HyDE (Hypothetical Document Embeddings) to search
+        using the embedding of a hypothetical document rather than generating
+        an embedding from the query text.
+
+        Not all backends support this method. Vector backends should implement it;
+        graph and KV backends may not need it.
+
+        Args:
+            embedding: Pre-computed embedding vector
+            options: Search configuration options
+
+        Returns:
+            List of results in normalized format
+
+        Raises:
+            NotImplementedError: If the backend doesn't support embedding search
+            BackendSearchError: If the search operation fails
+        """
+        raise NotImplementedError(
+            f"Backend '{self.backend_name}' does not support search_by_embedding. "
+            "This method is optional and primarily used by vector backends for HyDE search."
+        )
     
     @abstractmethod
     async def health_check(self) -> BackendHealthStatus:

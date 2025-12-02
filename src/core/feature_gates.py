@@ -187,6 +187,11 @@ class FeatureGateManager:
                 'state': FeatureState.ENABLED,
                 'rollout_percentage': 100.0,
                 'description': 'Semantic query normalization for paraphrase consistency'
+            },
+            'hyde_query_expansion': {
+                'state': FeatureState.TESTING,
+                'rollout_percentage': 10.0,
+                'description': 'HyDE (Hypothetical Document Embeddings) for improved paraphrase robustness'
             }
         }
         

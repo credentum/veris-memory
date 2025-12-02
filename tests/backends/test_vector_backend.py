@@ -265,5 +265,117 @@ class TestVectorBackendTextExtraction:
         assert result == "<p>HTML content</p>"
 
 
+class TestVectorBackendSearchByEmbedding:
+    """Test suite for search_by_embedding method (HyDE support)."""
+
+    @pytest.fixture
+    def vector_backend(self):
+        """Create a vector backend instance for testing."""
+        mock_client = Mock()
+        mock_embedding_generator = Mock()
+        backend = VectorBackend(mock_client, mock_embedding_generator)
+        return backend
+
+    @pytest.fixture
+    def mock_qdrant_results(self):
+        """Create mock Qdrant search results."""
+        result1 = Mock()
+        result1.id = "doc_1"
+        result1.score = 0.95
+        result1.payload = {"text": "Document about Neo4j configuration", "type": "documentation"}
+
+        result2 = Mock()
+        result2.id = "doc_2"
+        result2.score = 0.82
+        result2.payload = {"text": "Redis setup guide", "type": "documentation"}
+
+        return [result1, result2]
+
+    @pytest.mark.asyncio
+    async def test_search_by_embedding_success(self, vector_backend, mock_qdrant_results):
+        """Test successful search by embedding."""
+        from src.interfaces.backend_interface import SearchOptions
+
+        # Mock the client search method
+        vector_backend.client.search = Mock(return_value=mock_qdrant_results)
+
+        embedding = [0.1, 0.2, 0.3] * 512  # Simulated 1536-dim embedding
+        options = SearchOptions(limit=5)
+
+        results = await vector_backend.search_by_embedding(embedding, options)
+
+        assert len(results) == 2
+        assert results[0].id == "doc_1"
+        assert results[0].score == 0.95
+        assert "Neo4j" in results[0].text
+        # Verify client.search was called with the embedding
+        vector_backend.client.search.assert_called_once()
+        call_args = vector_backend.client.search.call_args
+        assert call_args.kwargs["query_vector"] == embedding
+
+    @pytest.mark.asyncio
+    async def test_search_by_embedding_empty_results(self, vector_backend):
+        """Test search by embedding with no results."""
+        from src.interfaces.backend_interface import SearchOptions
+
+        vector_backend.client.search = Mock(return_value=[])
+
+        embedding = [0.1, 0.2, 0.3]
+        options = SearchOptions(limit=10)
+
+        results = await vector_backend.search_by_embedding(embedding, options)
+
+        assert len(results) == 0
+
+    @pytest.mark.asyncio
+    async def test_search_by_embedding_with_score_threshold(self, vector_backend, mock_qdrant_results):
+        """Test search by embedding respects score threshold."""
+        from src.interfaces.backend_interface import SearchOptions
+
+        vector_backend.client.search = Mock(return_value=mock_qdrant_results)
+
+        embedding = [0.1, 0.2, 0.3]
+        options = SearchOptions(limit=10, score_threshold=0.9)
+
+        results = await vector_backend.search_by_embedding(embedding, options)
+
+        # Should only include results above 0.9 threshold
+        assert all(r.score >= 0.9 for r in results)
+
+    @pytest.mark.asyncio
+    async def test_search_by_embedding_error_handling(self, vector_backend):
+        """Test error handling in search by embedding."""
+        from src.interfaces.backend_interface import SearchOptions, BackendSearchError
+
+        vector_backend.client.search = Mock(side_effect=Exception("Connection failed"))
+
+        embedding = [0.1, 0.2, 0.3]
+        options = SearchOptions(limit=5)
+
+        with pytest.raises(BackendSearchError) as exc_info:
+            await vector_backend.search_by_embedding(embedding, options)
+
+        assert "vector" in str(exc_info.value)
+        assert "Connection failed" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_search_by_embedding_logs_metadata(self, vector_backend, mock_qdrant_results):
+        """Test that search by embedding logs appropriate metadata."""
+        from src.interfaces.backend_interface import SearchOptions
+
+        vector_backend.client.search = Mock(return_value=mock_qdrant_results)
+
+        embedding = [0.1] * 1536
+        options = SearchOptions(limit=5)
+
+        results = await vector_backend.search_by_embedding(embedding, options)
+
+        # Verify metadata indicates this was a HyDE search
+        assert len(results) == 2
+        # search_by_embedding should mark results appropriately
+        for result in results:
+            assert result.metadata.get("vector_search") is True
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
