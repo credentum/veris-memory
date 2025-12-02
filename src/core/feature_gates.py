@@ -164,6 +164,28 @@ class FeatureGateManager:
                 'state': FeatureState.DISABLED,
                 'rollout_percentage': 0.0,
                 'description': 'Automated fact verification and confidence scoring'
+            },
+
+            # Semantic Search Improvement Features (S3 Paraphrase Robustness)
+            'semantic_cache_keys': {
+                'state': FeatureState.ROLLOUT,
+                'rollout_percentage': 10.0,
+                'description': 'Embedding-based cache key generation for semantic consistency'
+            },
+            'multi_query_expansion': {
+                'state': FeatureState.ROLLOUT,
+                'rollout_percentage': 20.0,
+                'description': 'Multi-query expansion (MQE) for paraphrase robustness'
+            },
+            'search_enhancements_in_retrieval': {
+                'state': FeatureState.ROLLOUT,
+                'rollout_percentage': 30.0,
+                'description': 'Apply search enhancements in retrieval core'
+            },
+            'query_normalization': {
+                'state': FeatureState.TESTING,
+                'rollout_percentage': 5.0,
+                'description': 'Semantic query normalization for paraphrase consistency'
             }
         }
         

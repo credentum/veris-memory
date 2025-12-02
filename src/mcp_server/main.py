@@ -82,7 +82,18 @@ if (
     )
 
 from ..core.config import Config
+from ..core.semantic_cache import get_semantic_cache_generator
 from ..utils.text_generation import generate_searchable_text
+
+# Import embedding service for semantic cache keys
+try:
+    from ..embedding import generate_embedding as generate_embedding_async
+
+    EMBEDDING_SERVICE_AVAILABLE = True
+except ImportError:
+    logger.warning("Embedding service not available for semantic cache keys")
+    EMBEDDING_SERVICE_AVAILABLE = False
+    generate_embedding_async = None
 
 # Health check constants
 HEALTH_CHECK_GRACE_PERIOD_DEFAULT = 60
@@ -2445,24 +2456,69 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
     """
     try:
         # PHASE 4: Check Redis cache before performing any backend queries
+        # SEMANTIC SEARCH IMPROVEMENT (Phase 1): Use semantic cache keys
+        cache_key = None
+        semantic_cache_used = False
+
         if simple_redis and getattr(request, "use_cache", True) != False:
-            # Build cache key from request parameters
-            cache_params = {
-                "query": request.query,
-                "limit": request.limit,
-                "search_mode": request.search_mode,
-                "context_type": getattr(request, "context_type", None),
-                "sort_by": (
-                    request.sort_by.value
-                    if hasattr(request, "sort_by") and request.sort_by
-                    else "relevance"
-                ),
-                "exclude_sources": sorted(request.exclude_sources) if request.exclude_sources else None,
-            }
-            cache_hash = hashlib.sha256(
-                json.dumps(cache_params, sort_keys=True).encode()
-            ).hexdigest()
-            cache_key = f"retrieve:{cache_hash}"
+            # Try semantic cache key generation first
+            semantic_cache = get_semantic_cache_generator()
+            if (
+                semantic_cache.config.enabled
+                and EMBEDDING_SERVICE_AVAILABLE
+                and generate_embedding_async is not None
+            ):
+                try:
+                    # Generate embedding for semantic cache key
+                    query_embedding = await generate_embedding_async(
+                        request.query, adjust_dimensions=True
+                    )
+                    cache_result = semantic_cache.generate_cache_key(
+                        embedding=query_embedding,
+                        limit=request.limit,
+                        search_mode=request.search_mode,
+                        context_type=getattr(request, "context_type", None),
+                        sort_by=(
+                            request.sort_by.value
+                            if hasattr(request, "sort_by") and request.sort_by
+                            else "relevance"
+                        ),
+                        additional_params={
+                            "exclude_sources": sorted(request.exclude_sources)
+                            if request.exclude_sources
+                            else None
+                        },
+                    )
+                    if cache_result.is_semantic:
+                        cache_key = cache_result.cache_key
+                        semantic_cache_used = True
+                        logger.debug(
+                            f"Using semantic cache key: {cache_key[:20]}... "
+                            f"(generation_time={cache_result.generation_time_ms:.2f}ms)"
+                        )
+                except Exception as semantic_cache_error:
+                    logger.warning(
+                        f"Semantic cache key generation failed, falling back to text-based: {semantic_cache_error}"
+                    )
+
+            # Fallback to text-based cache key
+            if cache_key is None:
+                cache_params = {
+                    "query": request.query,
+                    "limit": request.limit,
+                    "search_mode": request.search_mode,
+                    "context_type": getattr(request, "context_type", None),
+                    "sort_by": (
+                        request.sort_by.value
+                        if hasattr(request, "sort_by") and request.sort_by
+                        else "relevance"
+                    ),
+                    "exclude_sources": sorted(request.exclude_sources) if request.exclude_sources else None,
+                }
+                cache_hash = hashlib.sha256(
+                    json.dumps(cache_params, sort_keys=True).encode()
+                ).hexdigest()
+                cache_key = f"retrieve:{cache_hash}"
 
             try:
                 cached_result = simple_redis.get(cache_key)
@@ -2592,28 +2648,14 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
                 }
 
                 # PHASE 4: Cache successful results with 5 minute TTL
-                if simple_redis and getattr(request, "use_cache", True) != False and results:
+                # SEMANTIC SEARCH IMPROVEMENT: Reuse the cache_key computed earlier
+                if simple_redis and getattr(request, "use_cache", True) != False and results and cache_key:
                     try:
-                        # Build cache key from request parameters
-                        cache_params = {
-                            "query": request.query,
-                            "limit": request.limit,
-                            "search_mode": request.search_mode,
-                            "context_type": getattr(request, "context_type", None),
-                            "sort_by": (
-                                request.sort_by.value
-                                if hasattr(request, "sort_by") and request.sort_by
-                                else "relevance"
-                            ),
-                            "exclude_sources": sorted(request.exclude_sources) if request.exclude_sources else None,
-                        }
-                        cache_hash = hashlib.sha256(
-                            json.dumps(cache_params, sort_keys=True).encode()
-                        ).hexdigest()
-                        cache_key = f"retrieve:{cache_hash}"
-
                         simple_redis.setex(cache_key, CACHE_TTL_SECONDS, json.dumps(response))
-                        logger.info(f"✅ Cached results for query: {request.query[:50]}...")
+                        cache_type = "semantic" if semantic_cache_used else "text"
+                        logger.info(
+                            f"✅ Cached results ({cache_type}) for query: {request.query[:50]}..."
+                        )
                     except Exception as cache_error:
                         logger.warning(f"Failed to cache results: {cache_error}")
 
@@ -2755,28 +2797,14 @@ async def retrieve_context(request: RetrieveContextRequest) -> Dict[str, Any]:
         }
 
         # PHASE 4: Cache successful legacy fallback results with 5 minute TTL
-        if simple_redis and getattr(request, "use_cache", True) != False and results:
+        # SEMANTIC SEARCH IMPROVEMENT: Reuse the cache_key computed earlier (legacy path)
+        if simple_redis and getattr(request, "use_cache", True) != False and results and cache_key:
             try:
-                # Build cache key from request parameters
-                cache_params = {
-                    "query": request.query,
-                    "limit": request.limit,
-                    "search_mode": request.search_mode,
-                    "context_type": getattr(request, "context_type", None),
-                    "sort_by": (
-                        request.sort_by.value
-                        if hasattr(request, "sort_by") and request.sort_by
-                        else "relevance"
-                    ),
-                    "exclude_sources": sorted(request.exclude_sources) if request.exclude_sources else None,
-                }
-                cache_hash = hashlib.sha256(
-                    json.dumps(cache_params, sort_keys=True).encode()
-                ).hexdigest()
-                cache_key = f"retrieve:{cache_hash}"
-
                 simple_redis.setex(cache_key, CACHE_TTL_SECONDS, json.dumps(response))
-                logger.info(f"✅ Cached legacy results for query: {request.query[:50]}...")
+                cache_type = "semantic" if semantic_cache_used else "text"
+                logger.info(
+                    f"✅ Cached legacy results ({cache_type}) for query: {request.query[:50]}..."
+                )
             except Exception as cache_error:
                 logger.warning(f"Failed to cache legacy results: {cache_error}")
 

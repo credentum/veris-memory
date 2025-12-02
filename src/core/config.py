@@ -61,6 +61,27 @@ class Config:
     CACHE_TTL_SECONDS = 3600
     CACHE_MAX_SIZE = 1000
 
+    # Semantic cache settings (Phase 1: S3 Paraphrase Robustness)
+    SEMANTIC_CACHE_ENABLED = os.getenv("SEMANTIC_CACHE_ENABLED", "true").lower() == "true"
+    SEMANTIC_CACHE_QUANTIZATION_PRECISION = int(os.getenv("SEMANTIC_CACHE_PRECISION", "1"))
+    SEMANTIC_CACHE_EMBEDDING_PREFIX_LENGTH = int(os.getenv("SEMANTIC_CACHE_PREFIX_LENGTH", "32"))
+
+    # Multi-Query Expansion settings (Phase 2: S3 Paraphrase Robustness)
+    MQE_ENABLED = os.getenv("MQE_ENABLED", "true").lower() == "true"
+    MQE_NUM_PARAPHRASES = int(os.getenv("MQE_NUM_PARAPHRASES", "2"))
+    MQE_APPLY_FIELD_BOOSTS = os.getenv("MQE_APPLY_FIELD_BOOSTS", "true").lower() == "true"
+
+    # Search enhancement settings (Phase 3: S3 Paraphrase Robustness)
+    SEARCH_ENHANCEMENTS_ENABLED = os.getenv("SEARCH_ENHANCEMENTS_ENABLED", "true").lower() == "true"
+    SEARCH_ENHANCEMENT_EXACT_MATCH = os.getenv("SEARCH_ENHANCEMENT_EXACT_MATCH", "true").lower() == "true"
+    SEARCH_ENHANCEMENT_TYPE_WEIGHTING = os.getenv("SEARCH_ENHANCEMENT_TYPE_WEIGHTING", "true").lower() == "true"
+    SEARCH_ENHANCEMENT_RECENCY_DECAY = os.getenv("SEARCH_ENHANCEMENT_RECENCY_DECAY", "true").lower() == "true"
+    SEARCH_ENHANCEMENT_TECHNICAL_BOOST = os.getenv("SEARCH_ENHANCEMENT_TECHNICAL_BOOST", "true").lower() == "true"
+
+    # Query normalization settings (Phase 4: S3 Paraphrase Robustness)
+    QUERY_NORMALIZATION_ENABLED = os.getenv("QUERY_NORMALIZATION_ENABLED", "true").lower() == "true"
+    QUERY_NORMALIZATION_CONFIDENCE_THRESHOLD = float(os.getenv("QUERY_NORMALIZATION_CONFIDENCE", "0.5"))
+
     # Logging configuration
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
     LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
