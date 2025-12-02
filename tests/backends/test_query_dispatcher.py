@@ -495,7 +495,7 @@ class TestQueryDispatcher:
     async def test_duplicate_result_handling(self, mock_vector_results):
         """Test handling of duplicate results from multiple backends."""
         dispatcher = QueryDispatcher()
-        
+
         # Create backends that return overlapping results
         duplicate_result = MemoryResult(
             id="duplicate",
@@ -504,19 +504,170 @@ class TestQueryDispatcher:
             source=ResultSource.VECTOR,
             type=ContentType.GENERAL
         )
-        
+
         backend1 = MockBackend("vector", [duplicate_result])
         backend2 = MockBackend("graph", [duplicate_result])  # Same ID
-        
+
         dispatcher.register_backend("vector", backend1)
         dispatcher.register_backend("graph", backend2)
-        
+
         response = await dispatcher.dispatch_query(
             "test query",
             search_mode=SearchMode.HYBRID
         )
-        
+
         assert response.success is True
         # Should have deduplicated results
         result_ids = [r.id for r in response.results]
         assert len(set(result_ids)) == len(result_ids)  # No duplicates
+
+
+class TestQueryDispatcherSearchByEmbedding:
+    """Test suite for search_by_embedding method (HyDE support)."""
+
+    @pytest.fixture
+    def mock_vector_results(self):
+        """Create mock vector search results."""
+        return [
+            MemoryResult(
+                id="hyde_1",
+                text="Result from HyDE embedding search",
+                score=0.92,
+                source=ResultSource.VECTOR,
+                type=ContentType.DOCUMENTATION
+            ),
+            MemoryResult(
+                id="hyde_2",
+                text="Another HyDE result",
+                score=0.85,
+                source=ResultSource.VECTOR,
+                type=ContentType.GENERAL
+            )
+        ]
+
+    @pytest.mark.asyncio
+    async def test_search_by_embedding_success(self, mock_vector_results):
+        """Test successful search by embedding."""
+        dispatcher = QueryDispatcher()
+
+        # Create a mock vector backend with search_by_embedding support
+        vector_backend = MockBackend("vector", mock_vector_results)
+        vector_backend.search_by_embedding = AsyncMock(return_value=mock_vector_results)
+
+        dispatcher.register_backend("vector", vector_backend)
+
+        embedding = [0.1, 0.2, 0.3] * 512
+        options = SearchOptions(limit=10)
+
+        response = await dispatcher.search_by_embedding(
+            embedding=embedding,
+            options=options,
+            search_mode=SearchMode.VECTOR
+        )
+
+        assert response.success is True
+        assert len(response.results) == 2
+        assert response.search_mode_used == "hyde"
+        assert "vector" in response.backends_used
+        assert "vector_hyde" in response.backend_timings
+        vector_backend.search_by_embedding.assert_called_once_with(embedding, options)
+
+    @pytest.mark.asyncio
+    async def test_search_by_embedding_no_vector_backend(self):
+        """Test search by embedding when vector backend is not available."""
+        dispatcher = QueryDispatcher()
+
+        # Register only graph backend
+        graph_backend = MockBackend("graph", [])
+        dispatcher.register_backend("graph", graph_backend)
+
+        embedding = [0.1, 0.2, 0.3]
+        options = SearchOptions(limit=10)
+
+        response = await dispatcher.search_by_embedding(
+            embedding=embedding,
+            options=options,
+            search_mode=SearchMode.VECTOR
+        )
+
+        assert response.success is False
+        assert len(response.results) == 0
+        assert "Vector backend not available" in response.message
+
+    @pytest.mark.asyncio
+    async def test_search_by_embedding_error_handling(self):
+        """Test error handling in search by embedding."""
+        dispatcher = QueryDispatcher()
+
+        # Create a vector backend that fails
+        vector_backend = MockBackend("vector", [])
+        vector_backend.search_by_embedding = AsyncMock(
+            side_effect=Exception("Embedding search failed")
+        )
+
+        dispatcher.register_backend("vector", vector_backend)
+
+        embedding = [0.1, 0.2, 0.3]
+        options = SearchOptions(limit=10)
+
+        response = await dispatcher.search_by_embedding(
+            embedding=embedding,
+            options=options,
+            search_mode=SearchMode.VECTOR
+        )
+
+        assert response.success is False
+        assert len(response.results) == 0
+        assert "failed" in response.message.lower()
+
+    @pytest.mark.asyncio
+    async def test_search_by_embedding_empty_results(self):
+        """Test search by embedding with no results."""
+        dispatcher = QueryDispatcher()
+
+        vector_backend = MockBackend("vector", [])
+        vector_backend.search_by_embedding = AsyncMock(return_value=[])
+
+        dispatcher.register_backend("vector", vector_backend)
+
+        embedding = [0.1, 0.2, 0.3]
+        options = SearchOptions(limit=10)
+
+        response = await dispatcher.search_by_embedding(
+            embedding=embedding,
+            options=options,
+            search_mode=SearchMode.VECTOR
+        )
+
+        assert response.success is True
+        assert len(response.results) == 0
+        assert response.total_count == 0
+
+    @pytest.mark.asyncio
+    async def test_search_by_embedding_with_options(self, mock_vector_results):
+        """Test search by embedding respects search options."""
+        dispatcher = QueryDispatcher()
+
+        vector_backend = MockBackend("vector", mock_vector_results)
+        vector_backend.search_by_embedding = AsyncMock(return_value=mock_vector_results)
+
+        dispatcher.register_backend("vector", vector_backend)
+
+        embedding = [0.1, 0.2, 0.3]
+        options = SearchOptions(
+            limit=1,
+            score_threshold=0.9,
+            namespace="test_ns"
+        )
+
+        await dispatcher.search_by_embedding(
+            embedding=embedding,
+            options=options,
+            search_mode=SearchMode.VECTOR
+        )
+
+        # Verify options were passed to backend
+        call_args = vector_backend.search_by_embedding.call_args
+        assert call_args[0][1].limit == 1
+        assert call_args[0][1].score_threshold == 0.9
+        assert call_args[0][1].namespace == "test_ns"

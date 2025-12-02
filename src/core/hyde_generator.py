@@ -85,6 +85,10 @@ Answer:"""
 
         self.config = config
         self._client = None
+        # NOTE: In-memory cache - does not persist across restarts and won't scale
+        # horizontally across multiple instances. For production at scale, consider
+        # replacing with Redis cache. The current implementation is suitable for
+        # single-instance deployments and development/testing.
         self._cache: Dict[str, Dict[str, Any]] = {}  # Simple in-memory cache
         self._cache_timestamps: Dict[str, float] = {}  # Track cache entry times
         self._embedding_service = None
