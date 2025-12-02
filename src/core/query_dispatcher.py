@@ -119,7 +119,71 @@ class QueryDispatcher:
             search_mode=search_mode,
             options=options
         )
-    
+
+    async def search_by_embedding(
+        self,
+        embedding: List[float],
+        options: SearchOptions,
+        search_mode: SearchMode
+    ) -> SearchResultResponse:
+        """
+        Search using a pre-computed embedding vector.
+
+        This method is used by HyDE (Hypothetical Document Embeddings) to search
+        using the embedding of a hypothetical document rather than generating
+        an embedding from the query text.
+
+        Args:
+            embedding: Pre-computed embedding vector
+            options: Search configuration options
+            search_mode: Which backends to use (primarily vector)
+
+        Returns:
+            SearchResultResponse with results
+        """
+        start_time = time.time()
+
+        # For HyDE, we primarily use the vector backend
+        vector_backend = self.backends.get("vector")
+        if not vector_backend:
+            return SearchResultResponse(
+                success=False,
+                results=[],
+                total_count=0,
+                search_mode_used=search_mode.value,
+                backends_used=[],
+                backend_timings={},
+                message="Vector backend not available for HyDE search"
+            )
+
+        try:
+            # Use the vector backend's search_by_embedding method
+            results = await vector_backend.search_by_embedding(embedding, options)
+
+            total_time = (time.time() - start_time) * 1000
+
+            return SearchResultResponse(
+                success=True,
+                results=results,
+                total_count=len(results),
+                search_mode_used="hyde",
+                backends_used=["vector"],
+                backend_timings={"vector_hyde": total_time},
+                message=f"HyDE search completed with {len(results)} results"
+            )
+
+        except Exception as e:
+            search_logger.error(f"HyDE search failed: {e}")
+            return SearchResultResponse(
+                success=False,
+                results=[],
+                total_count=0,
+                search_mode_used=search_mode.value,
+                backends_used=[],
+                backend_timings={},
+                message=f"HyDE search failed: {str(e)}"
+            )
+
     async def dispatch_query(
         self,
         query: str,
