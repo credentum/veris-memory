@@ -60,19 +60,21 @@ class SentinelConfig:
             self.target_base_url = os.getenv('TARGET_BASE_URL', 'http://localhost:8000')
 
         # Set default enabled checks if not specified
+        # PR #397: Only runtime checks enabled by default
+        # CI/CD-only checks (S3, S4, S7, S8, S9) run via GitHub Actions on deploy
         if self.enabled_checks is None:
             self.enabled_checks = [
-                "S1-probes",
-                "S2-golden-fact-recall",
-                "S3-paraphrase-robustness",
-                "S4-metrics-wiring",
-                "S5-security-negatives",
-                "S6-backup-restore",
-                "S7-config-parity",
-                "S8-capacity-smoke",
-                "S9-graph-intent",
-                "S10-content-pipeline",
-                "S11-firewall-status"
+                "S1-probes",           # Runtime: health probes (1 min)
+                "S2-golden-fact-recall", # Spot-check: data quality (hourly)
+                # S3-paraphrase-robustness - CI/CD only
+                # S4-metrics-wiring - CI/CD only
+                "S5-security-negatives", # Spot-check: security (hourly)
+                "S6-backup-restore",     # Spot-check: backup validation (6 hours)
+                # S7-config-parity - CI/CD only
+                # S8-capacity-smoke - CI/CD only
+                # S9-graph-intent - CI/CD only
+                "S10-content-pipeline",  # Spot-check: pipeline health (hourly)
+                "S11-firewall-status"    # Runtime: firewall security (5 min)
             ]
     
     def is_check_enabled(self, check_id: str) -> bool:

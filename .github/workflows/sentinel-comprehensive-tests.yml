@@ -1,5 +1,13 @@
 name: Sentinel Comprehensive Tests (CI/CD)
 
+# PR #397: This workflow runs CI/CD-only sentinel checks that are disabled at runtime
+# These checks validate static behavior that only changes on deployment:
+# - S3: Paraphrase robustness (semantic search quality)
+# - S4: Metrics wiring (observability infrastructure)
+# - S7: Config parity (environment configuration)
+# - S8: Capacity smoke (performance baselines)
+# - S9: Graph intent (schema relationships)
+
 on:
   pull_request:
     paths:
@@ -118,13 +126,27 @@ jobs:
         run: |
           echo "### Sentinel Comprehensive Tests Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "This workflow runs comprehensive tests that were moved out of runtime monitoring:" >> $GITHUB_STEP_SUMMARY
+          echo "This workflow runs **CI/CD-only sentinel checks** that are disabled at runtime (PR #397)." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **S3 Paraphrase Robustness**: Comprehensive paraphrase testing" >> $GITHUB_STEP_SUMMARY
+          echo "#### CI/CD-Only Checks (validated on deploy)" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Description | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| S3 | Paraphrase Robustness | ✅ Tested |" >> $GITHUB_STEP_SUMMARY
+          echo "| S4 | Metrics Wiring | ⏳ Unit tests |" >> $GITHUB_STEP_SUMMARY
+          echo "| S7 | Config Parity | ⏳ Unit tests |" >> $GITHUB_STEP_SUMMARY
+          echo "| S8 | Capacity Smoke | ⏳ Unit tests |" >> $GITHUB_STEP_SUMMARY
+          echo "| S9 | Graph Intent | ⏳ Unit tests |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Note**: S9 (Graph Intent) and S10 (Content Pipeline) are deprecated." >> $GITHUB_STEP_SUMMARY
-          echo "Their functionality has been consolidated into S2 (Golden Fact Recall)" >> $GITHUB_STEP_SUMMARY
-          echo "and is tested through runtime monitoring and S2 unit tests." >> $GITHUB_STEP_SUMMARY
+          echo "#### Runtime Checks (continuous monitoring)" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Frequency | Description |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-----------|-------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| S1 | 1 min | Health probes |" >> $GITHUB_STEP_SUMMARY
+          echo "| S11 | 5 min | Firewall status |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Runtime monitoring** uses optimized smoke tests (22 queries/cycle)" >> $GITHUB_STEP_SUMMARY
-          echo "**CI/CD testing** validates comprehensive S3 functionality on code changes" >> $GITHUB_STEP_SUMMARY
+          echo "#### Spot-Check Monitors (hourly validation)" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Frequency | Description |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-----------|-------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| S2 | 1 hour | Golden fact recall |" >> $GITHUB_STEP_SUMMARY
+          echo "| S5 | 1 hour | Security negatives |" >> $GITHUB_STEP_SUMMARY
+          echo "| S6 | 6 hours | Backup restore |" >> $GITHUB_STEP_SUMMARY
+          echo "| S10 | 1 hour | Content pipeline |" >> $GITHUB_STEP_SUMMARY

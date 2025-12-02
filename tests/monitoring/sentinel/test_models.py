@@ -36,10 +36,14 @@ class TestSentinelConfig:
             assert config.github_token is None
             assert config.github_repo is None
             # Default enabled checks should be set
+            # PR #397: Only runtime checks enabled by default (6 checks)
+            # CI/CD-only checks (S3, S4, S7, S8, S9) run via GitHub Actions
             assert config.enabled_checks is not None
-            assert len(config.enabled_checks) == 11  # S1 through S11
+            assert len(config.enabled_checks) == 6  # Runtime checks only
             assert "S1-probes" in config.enabled_checks
-            assert "S7-config-parity" in config.enabled_checks
+            assert "S11-firewall-status" in config.enabled_checks
+            # CI/CD-only checks should NOT be in defaults
+            assert "S7-config-parity" not in config.enabled_checks
 
     def test_config_reads_target_base_url_from_env(self):
         """Test that TARGET_BASE_URL environment variable is read correctly by __post_init__()."""
@@ -139,8 +143,9 @@ class TestSentinelConfig:
             assert config.github_token is None
             assert config.github_repo is None
             # Should have default enabled_checks from __post_init__
+            # PR #397: Only 6 runtime checks enabled by default
             assert config.enabled_checks is not None
-            assert len(config.enabled_checks) == 11
+            assert len(config.enabled_checks) == 6
 
     def test_config_get_method_api_url(self):
         """Test that get('api_url') returns target_base_url correctly."""
@@ -331,8 +336,9 @@ class TestSentinelConfig:
         config = SentinelConfig(enabled_checks=None)
 
         # None should trigger default list in __post_init__
+        # PR #397: Only 6 runtime checks enabled by default
         assert config.enabled_checks is not None
-        assert len(config.enabled_checks) == 11
+        assert len(config.enabled_checks) == 6
         assert 'S1-probes' in config.enabled_checks
 
     def test_config_multiple_none_values(self):
@@ -347,8 +353,9 @@ class TestSentinelConfig:
             )
 
             # All None values should trigger defaults
+            # PR #397: Only 6 runtime checks enabled by default
             assert config.target_base_url == 'http://localhost:8000'
-            assert len(config.enabled_checks) == 11
+            assert len(config.enabled_checks) == 6
 
 
 class TestCheckResult:
