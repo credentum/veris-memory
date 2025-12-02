@@ -1476,6 +1476,73 @@ async def debug_api_keys() -> Dict[str, Any]:
     }
 
 
+# =============================================================================
+# Debug Endpoints for Cross-Encoder Reranker
+# =============================================================================
+
+@app.get("/debug/reranker_health")
+async def debug_reranker_health() -> Dict[str, Any]:
+    """Debug endpoint to check cross-encoder reranker health and status."""
+    try:
+        from .debug_endpoints import debug_reranker_health_endpoint
+        return await debug_reranker_health_endpoint({})
+    except ImportError as e:
+        return {"error": f"Debug endpoints module not available: {e}"}
+    except Exception as e:
+        return {"error": f"Reranker health check failed: {e}"}
+
+
+@app.post("/debug/rerank")
+async def debug_rerank(request: Request) -> Dict[str, Any]:
+    """Debug endpoint to test cross-encoder reranking with custom inputs."""
+    try:
+        from .debug_endpoints import debug_rerank_endpoint
+        body = await request.json()
+        return await debug_rerank_endpoint(body)
+    except ImportError as e:
+        return {"error": f"Debug endpoints module not available: {e}"}
+    except Exception as e:
+        return {"error": f"Rerank debug failed: {e}"}
+
+
+@app.get("/debug/features")
+async def debug_features() -> Dict[str, Any]:
+    """Debug endpoint to check enabled features and their status."""
+    import os
+
+    features = {
+        "hyde": {
+            "enabled": os.getenv("HYDE_ENABLED", "false").lower() == "true",
+            "api_key_set": bool(os.getenv("OPENROUTER_API_KEY")),
+            "model": os.getenv("HYDE_MODEL", "not_set"),
+            "provider": os.getenv("HYDE_API_PROVIDER", "not_set"),
+        },
+        "cross_encoder": {
+            "enabled": os.getenv("CROSS_ENCODER_RERANKER_ENABLED", "false").lower() == "true",
+            "top_k": int(os.getenv("CROSS_ENCODER_TOP_K", "50")),
+            "return_k": int(os.getenv("CROSS_ENCODER_RETURN_K", "10")),
+        },
+        "query_normalization": {
+            "enabled": os.getenv("QUERY_NORMALIZATION_ENABLED", "false").lower() == "true",
+        },
+        "mqe": {
+            "enabled": os.getenv("MQE_ENABLED", "false").lower() == "true",
+        },
+    }
+
+    # Check reranker model loading status
+    try:
+        from ..storage.reranker_bulletproof import get_bulletproof_reranker
+        reranker = get_bulletproof_reranker()
+        features["cross_encoder"]["model_loaded"] = reranker.is_healthy()
+        features["cross_encoder"]["model_name"] = reranker.model_name
+    except Exception as e:
+        features["cross_encoder"]["model_loaded"] = False
+        features["cross_encoder"]["model_error"] = str(e)
+
+    return features
+
+
 @app.get("/health/detailed")
 async def health_detailed() -> Dict[str, Any]:
     """
