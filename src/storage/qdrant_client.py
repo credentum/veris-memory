@@ -484,6 +484,37 @@ class VectorDBInitializer:
         except Exception as e:
             raise RuntimeError(f"Failed to get collections: {e}")
 
+    def delete_vector(self, vector_id: str) -> bool:
+        """Delete a vector from the Qdrant collection.
+
+        Args:
+            vector_id: Unique identifier of the vector to delete
+
+        Returns:
+            bool: True if deletion was successful
+
+        Raises:
+            RuntimeError: If not connected or deletion fails
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to Qdrant")
+
+        collection_name = self.config.get("qdrant", {}).get("collection_name", "context_embeddings")
+
+        if not vector_id or not isinstance(vector_id, str):
+            raise ValueError("vector_id must be a non-empty string")
+
+        try:
+            self.client.delete(
+                collection_name=collection_name,
+                points_selector=[vector_id]
+            )
+            logger.info(f"✓ Vector deleted from Qdrant: {vector_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete vector {vector_id}: {e}")
+            raise RuntimeError(f"Failed to delete vector: {e}")
+
     def close(self) -> None:
         """Close the client connection (no-op for Qdrant client)."""
         # Qdrant client doesn't require explicit closing

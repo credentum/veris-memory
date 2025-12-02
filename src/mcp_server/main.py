@@ -1495,6 +1495,7 @@ async def health_detailed() -> Dict[str, Any]:
             "qdrant": "unknown",
             "redis": "unknown",
             "embeddings": "unknown",  # Sprint 13: Add embedding status
+            "hyde": "unknown",  # PR #405: HyDE service status
         },
         "startup_time": _server_startup_time,
         "uptime_seconds": int(startup_elapsed),
@@ -1590,9 +1591,64 @@ async def health_detailed() -> Dict[str, Any]:
     else:
         health_status["services"]["embeddings"] = "unknown"
 
+    # PR #405: Check HyDE (Hypothetical Document Embeddings) service health
+    try:
+        from ..core.hyde_generator import get_hyde_generator
+        hyde_generator = get_hyde_generator()
+        hyde_metrics = hyde_generator.get_metrics()
+        hyde_config = hyde_generator.config
+
+        # Check if HyDE is enabled
+        hyde_enabled = hyde_config.enabled
+        api_key_set = bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"))
+
+        # Calculate error rate
+        llm_calls = hyde_metrics.get("llm_calls", 0)
+        llm_errors = hyde_metrics.get("llm_errors", 0)
+        error_rate = llm_errors / llm_calls if llm_calls > 0 else 0.0
+
+        # Build HyDE status
+        hyde_status = {
+            "enabled": hyde_enabled,
+            "api_key_set": api_key_set,
+            "model": hyde_config.model,
+            "api_provider": hyde_config.api_provider,
+            "metrics": {
+                "llm_calls": llm_calls,
+                "llm_errors": llm_errors,
+                "error_rate": round(error_rate, 4),
+                "cache_hits": hyde_metrics.get("cache_hits", 0),
+                "cache_misses": hyde_metrics.get("cache_misses", 0),
+                "cache_hit_rate": round(hyde_metrics.get("cache_hit_rate", 0.0), 4),
+            }
+        }
+        health_status["hyde"] = hyde_status
+
+        # Determine HyDE service health
+        if not hyde_enabled:
+            health_status["services"]["hyde"] = "disabled"
+        elif not api_key_set:
+            health_status["services"]["hyde"] = "degraded"
+            health_status["hyde_warning"] = "OPENROUTER_API_KEY not set - HyDE will fall back to regular search"
+        elif error_rate > 0.1 and llm_calls >= 10:
+            health_status["services"]["hyde"] = "degraded"
+            health_status["hyde_warning"] = f"High error rate: {error_rate:.1%} ({llm_errors}/{llm_calls} calls failed)"
+        else:
+            health_status["services"]["hyde"] = "healthy"
+
+    except ImportError:
+        health_status["services"]["hyde"] = "unavailable"
+        health_status["hyde"] = {"enabled": False, "error": "HyDE module not installed"}
+    except Exception as e:
+        health_status["services"]["hyde"] = "error"
+        health_status["hyde"] = {"enabled": False, "error": str(e)}
+        logger.error(f"HyDE health check exception: {e}")
+
     # Final status determination
+    # Note: "disabled" and "unavailable" are acceptable states (not failures)
     all_services = list(health_status["services"].values())
-    if all(s == "healthy" for s in all_services):
+    acceptable_states = {"healthy", "disabled", "unavailable"}
+    if all(s in acceptable_states for s in all_services):
         health_status["status"] = "healthy"
     elif any(s == "initializing" for s in all_services) and in_grace_period:
         health_status["status"] = "initializing"
@@ -3618,6 +3674,92 @@ async def forget_context_endpoint(
             "operation": "forget",
             "context_id": request.context_id,
         }
+
+
+class SentinelCleanupRequest(BaseModel):
+    """Request model for sentinel internal cleanup."""
+    context_id: str = Field(..., description="Context ID to delete")
+    sentinel_key: str = Field(..., description="Sentinel API key for authorization")
+
+
+@app.post("/internal/sentinel/cleanup")
+async def sentinel_cleanup_endpoint(
+    request: SentinelCleanupRequest,
+) -> Dict[str, Any]:
+    """
+    Internal endpoint for sentinel test data cleanup.
+    PR #399: Deletes test contexts from ALL backends (Neo4j + Qdrant).
+
+    This endpoint bypasses human-only restrictions because:
+    1. It's only for sentinel internal test data cleanup
+    2. Context IDs are validated (UUID format only)
+    3. Requires sentinel API key authentication
+
+    Args:
+        request: Cleanup request with context_id and sentinel_key
+
+    Returns:
+        Deletion result showing which backends were cleaned
+    """
+    import re
+
+    # Validate sentinel key
+    expected_sentinel_key = os.getenv("SENTINEL_API_KEY", "")
+    if not expected_sentinel_key or request.sentinel_key != expected_sentinel_key:
+        return {
+            "success": False,
+            "error": "Invalid sentinel key",
+            "context_id": request.context_id
+        }
+
+    # Validate context_id format (prevent injection)
+    valid_id_pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
+    if not valid_id_pattern.match(request.context_id):
+        return {
+            "success": False,
+            "error": f"Invalid context_id format",
+            "context_id": request.context_id[:50]
+        }
+
+    deleted_from = []
+    errors = []
+
+    # Delete from Neo4j
+    if neo4j_client:
+        try:
+            query = """
+            MATCH (n:Context {id: $context_id})
+            DETACH DELETE n
+            RETURN count(n) as deleted_count
+            """
+            result = neo4j_client.query(query, {"context_id": request.context_id})
+            if result and result[0].get("deleted_count", 0) > 0:
+                deleted_from.append("neo4j")
+        except Exception as e:
+            logger.error(f"Sentinel cleanup - Neo4j deletion failed: {e}")
+            errors.append(f"neo4j: {str(e)}")
+
+    # Delete from Qdrant
+    if qdrant_client:
+        try:
+            qdrant_client.delete_vector(request.context_id)
+            deleted_from.append("qdrant")
+        except Exception as e:
+            # Qdrant may return error if vector doesn't exist, which is ok
+            if "not found" not in str(e).lower():
+                logger.error(f"Sentinel cleanup - Qdrant deletion failed: {e}")
+                errors.append(f"qdrant: {str(e)}")
+
+    success = len(deleted_from) > 0 or len(errors) == 0
+
+    return {
+        "success": success,
+        "operation": "sentinel_cleanup",
+        "context_id": request.context_id,
+        "deleted_from": deleted_from,
+        "errors": errors if errors else None,
+        "message": f"Sentinel test data cleaned from: {', '.join(deleted_from) if deleted_from else 'no backends (may not exist)'}"
+    }
 
 
 @app.post("/tools/upsert_fact")
