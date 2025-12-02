@@ -377,47 +377,81 @@ class TestBackupRestore:
         assert len(result["warnings"]) > 0
     
     @pytest.mark.asyncio
-    async def test_validate_retention_policy_compliant(self, check):
-        """Test retention policy validation when compliant."""
+    async def test_validate_retention_policy_compliant(self, config):
+        """Test retention policy validation when compliant.
+
+        PR #XXX: Updated to test directory-based retention checking.
+        The check now validates backup directories (backup-YYYYMMDD_HHMMSS)
+        instead of individual file timestamps.
+        """
+        # Create check with valid backup path
+        check = BackupRestore(config)
+        # Override backup_paths to use a testable path
+        check.backup_paths = ["/backup/health"]
+
+        # Mock the Path object for our backup path
         mock_path = MagicMock()
         mock_path.exists.return_value = True
-        
-        # Mock recent backup files (within retention period)
-        recent_time = datetime.utcnow() - timedelta(days=15)  # 15 days old
-        mock_backup_file = MagicMock()
-        mock_backup_file.stat.return_value.st_mtime = recent_time.timestamp()
-        mock_backup_file.stat.return_value.st_size = 1024 * 1024 * 5  # 5MB
-        mock_backup_file.__str__ = lambda: "/test/backups/recent.sql"
-        
-        mock_path.glob.return_value = [mock_backup_file]
-        
-        with patch('pathlib.Path', return_value=mock_path):
+
+        # Mock recent backup directory (within retention period)
+        recent_time = datetime.utcnow() - timedelta(days=5)  # 5 days old
+        mock_backup_dir = MagicMock()
+        mock_backup_dir.is_dir.return_value = True
+        mock_backup_dir.name = "backup-20251127_120000"
+        mock_backup_dir.stat.return_value.st_mtime = recent_time.timestamp()
+
+        # Mock files inside the backup directory for size calculation
+        mock_file = MagicMock()
+        mock_file.is_file.return_value = True
+        mock_file.stat.return_value.st_size = 1024 * 1024 * 5  # 5MB
+        mock_backup_dir.rglob.return_value = [mock_file]
+
+        mock_path.iterdir.return_value = [mock_backup_dir]
+
+        with patch.object(Path, '__new__', return_value=mock_path):
             result = await check._validate_retention_policy()
-        
+
         assert result["passed"] is True
         assert "Retention policy compliant" in result["message"]
         assert len(result["violations"]) == 0
-    
+
     @pytest.mark.asyncio
-    async def test_validate_retention_policy_violations(self, check):
-        """Test retention policy validation with violations."""
+    async def test_validate_retention_policy_violations(self, config):
+        """Test retention policy validation with violations.
+
+        PR #XXX: Updated to test directory-based retention checking.
+        The check now validates backup directories (backup-YYYYMMDD_HHMMSS)
+        instead of individual file timestamps.
+        """
+        # Create check with valid backup path
+        check = BackupRestore(config)
+        # Override backup_paths to use a testable path
+        check.backup_paths = ["/backup/health"]
+
+        # Mock the Path object for our backup path
         mock_path = MagicMock()
         mock_path.exists.return_value = True
-        
-        # Mock old backup files (beyond retention period)
-        old_time = datetime.utcnow() - timedelta(days=60)  # 60 days old
-        mock_backup_file = MagicMock()
-        mock_backup_file.stat.return_value.st_mtime = old_time.timestamp()
-        mock_backup_file.stat.return_value.st_size = 1024 * 1024 * 5  # 5MB
-        mock_backup_file.__str__ = lambda: "/test/backups/old.sql"
-        
-        mock_path.glob.return_value = [mock_backup_file]
-        
-        with patch('pathlib.Path', return_value=mock_path):
+
+        # Mock old backup directory (beyond retention period - 60 days > 14 day retention)
+        old_time = datetime.utcnow() - timedelta(days=60)
+        mock_backup_dir = MagicMock()
+        mock_backup_dir.is_dir.return_value = True
+        mock_backup_dir.name = "backup-20251003_120000"
+        mock_backup_dir.stat.return_value.st_mtime = old_time.timestamp()
+
+        # Mock files inside the backup directory for size calculation
+        mock_file = MagicMock()
+        mock_file.is_file.return_value = True
+        mock_file.stat.return_value.st_size = 1024 * 1024 * 5  # 5MB
+        mock_backup_dir.rglob.return_value = [mock_file]
+
+        mock_path.iterdir.return_value = [mock_backup_dir]
+
+        with patch.object(Path, '__new__', return_value=mock_path):
             result = await check._validate_retention_policy()
-        
+
         assert result["passed"] is False
-        assert "violations found" in result["message"]
+        assert "Retention policy violations" in result["message"]
         assert len(result["violations"]) > 0
     
     @pytest.mark.asyncio
