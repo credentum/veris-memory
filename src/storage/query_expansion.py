@@ -75,7 +75,67 @@ class MultiQueryExpander:
                     "How to optimize database indexing strategies?",
                     "Database index optimization techniques"
                 ])
-        
+
+        # S3 Paraphrase Robustness: Neo4j and database configuration templates
+        elif "configure" in query_lower or "setup" in query_lower or "settings" in query_lower:
+            if "neo4j" in query_lower:
+                paraphrases.extend([
+                    "How do I configure Neo4j database connection settings?",
+                    "Neo4j database configuration and setup guide"
+                ])
+            elif "qdrant" in query_lower:
+                paraphrases.extend([
+                    "How do I configure Qdrant vector database?",
+                    "Qdrant vector store configuration settings"
+                ])
+            elif "redis" in query_lower:
+                paraphrases.extend([
+                    "How do I configure Redis cache settings?",
+                    "Redis configuration and connection setup"
+                ])
+            elif "embedding" in query_lower:
+                paraphrases.extend([
+                    "How do I configure embedding model settings?",
+                    "Embedding configuration and model selection"
+                ])
+            elif "database" in query_lower or "connection" in query_lower:
+                paraphrases.extend([
+                    "Database configuration settings guide",
+                    "How to set up database connection parameters"
+                ])
+
+        elif "steps" in query_lower and ("set up" in query_lower or "setup" in query_lower):
+            if "neo4j" in query_lower or "database" in query_lower:
+                paraphrases.extend([
+                    "How to configure database settings?",
+                    "Database setup configuration process"
+                ])
+
+        elif "connection" in query_lower:
+            if "neo4j" in query_lower:
+                paraphrases.extend([
+                    "Neo4j database connection configuration",
+                    "How do I connect to Neo4j database?"
+                ])
+            elif "database" in query_lower:
+                paraphrases.extend([
+                    "Database connection setup guide",
+                    "How to configure database connections?"
+                ])
+
+        # Veris Memory specific templates
+        elif "veris" in query_lower or "memory" in query_lower:
+            if "configure" in query_lower or "setup" in query_lower:
+                paraphrases.extend([
+                    "How do I configure Veris Memory?",
+                    "Veris Memory configuration and setup guide"
+                ])
+            elif "store" in query_lower or "context" in query_lower:
+                paraphrases.extend([
+                    "How do I store context in Veris Memory?",
+                    "Storing and retrieving context in Veris Memory"
+                ])
+
         # Fallback generic paraphrases
         if len(paraphrases) == 1:
             paraphrases.extend([
