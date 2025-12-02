@@ -15,6 +15,7 @@ S3 Paraphrase Robustness Improvements:
 
 import logging
 import os
+import time
 from typing import Dict, List, Any, Optional
 
 from ..interfaces.backend_interface import SearchOptions
@@ -279,8 +280,7 @@ class RetrievalCore:
                 and search_response.results
                 and len(search_response.results) > 1
             ):
-                import time as rerank_time
-                rerank_start = rerank_time.time()
+                rerank_start = time.time()
                 try:
                     # Get reranker instance
                     reranker = get_bulletproof_reranker()
@@ -328,7 +328,7 @@ class RetrievalCore:
                     if reranked_results:
                         search_response.results = reranked_results
                         cross_encoder_used = True
-                        rerank_time_ms = (rerank_time.time() - rerank_start) * 1000
+                        rerank_time_ms = (time.time() - rerank_start) * 1000
 
                         logger.info(
                             f"Cross-encoder re-ranking: {len(candidates)} candidates -> "
