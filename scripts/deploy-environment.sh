@@ -245,6 +245,26 @@ else
     exit 1
 fi
 
+# Add HyDE (Hypothetical Document Embeddings) Configuration
+# Uses free Grok model via OpenRouter for improved semantic search
+echo -e "${YELLOW}📝 Adding HyDE configuration to .env file...${NC}"
+# Remove existing HYDE and OPENROUTER vars to prevent duplicates
+grep -v "^HYDE_" .env > .env.tmp.hyde1 || true
+grep -v "^OPENROUTER_API_KEY" .env.tmp.hyde1 > .env.tmp.hyde2 || true
+mv .env.tmp.hyde2 .env
+rm -f .env.tmp.hyde1 .env.tmp.hyde2
+
+if [ -n "$OPENROUTER_API_KEY" ]; then
+    echo "OPENROUTER_API_KEY=$OPENROUTER_API_KEY" >> .env
+    echo "HYDE_ENABLED=true" >> .env
+    echo "HYDE_API_PROVIDER=openrouter" >> .env
+    echo "HYDE_MODEL=x-ai/grok-4.1-fast:free" >> .env
+    echo -e "${GREEN}✅ HyDE enabled with OpenRouter (free Grok model)${NC}"
+else
+    echo "HYDE_ENABLED=false" >> .env
+    echo -e "${YELLOW}⚠️  OPENROUTER_API_KEY not set, HyDE disabled${NC}"
+fi
+
 # Stop existing containers for this environment with ROBUST cleanup
 echo -e "${YELLOW}🛑 Performing robust container cleanup for $ENVIRONMENT...${NC}"
 
