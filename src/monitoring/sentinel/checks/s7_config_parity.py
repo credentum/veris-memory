@@ -758,9 +758,19 @@ class ConfigParity(BaseCheck):
             except Exception as session_error:
                 service_version = {"session_error": str(session_error)}
             
+            # Build message with specific issues for visibility in alerts
+            if version_issues:
+                # Include first 2 issues in message for Telegram visibility
+                issues_summary = "; ".join(version_issues[:2])
+                if len(version_issues) > 2:
+                    issues_summary += f" (+{len(version_issues) - 2} more)"
+                message = f"Version mismatch: {issues_summary}"
+            else:
+                message = "All component versions consistent"
+
             return {
                 "passed": len(version_issues) == 0,
-                "message": f"Version consistency check: {len(version_issues)} issues found" if version_issues else "All component versions consistent",
+                "message": message,
                 "version_info": version_info,
                 "service_version": service_version,
                 "version_issues": version_issues,

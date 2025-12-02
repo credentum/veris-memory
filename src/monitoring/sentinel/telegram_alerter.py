@@ -201,16 +201,18 @@ class TelegramAlerter:
         lines.append("")
         lines.append(f"<b>Message:</b>\n{self._escape_html(message)}")
 
-        # Add details if provided
+        # Add filtered details if provided (reduce verbosity for Telegram)
         if details:
-            lines.append("")
-            lines.append("<b>Details:</b>")
-            for key, value in details.items():
-                if isinstance(value, (list, dict)):
-                    # Recursively escape HTML BEFORE JSON dumping to prevent Telegram parse errors
-                    value = self._escape_nested_html(value)
-                    value = json.dumps(value, indent=2)
-                lines.append(f"• {self._escape_html(str(key))}: {self._escape_html(str(value))}")
+            filtered = self._filter_alert_details(details)
+            if filtered:
+                lines.append("")
+                lines.append("<b>Details:</b>")
+                for key, value in filtered.items():
+                    if isinstance(value, (list, dict)):
+                        # Recursively escape HTML BEFORE JSON dumping
+                        value = self._escape_nested_html(value)
+                        value = json.dumps(value, indent=2)
+                    lines.append(f"• {self._escape_html(str(key))}: {self._escape_html(str(value))}")
 
         # Add action required for critical/high severity
         if severity in [AlertSeverity.CRITICAL, AlertSeverity.HIGH]:
@@ -220,6 +222,84 @@ class TelegramAlerter:
         lines.append("━━━━━━━━━━━━━━━━━━━━━")
 
         return "\n".join(lines)
+
+    def _filter_alert_details(self, details: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Filter alert details to reduce verbosity for Telegram.
+
+        Prioritizes failure-specific information and removes verbose data
+        like full test_results arrays that can exceed Telegram's 4096 char limit.
+
+        Args:
+            details: Full details dictionary from CheckResult
+
+        Returns:
+            Filtered dictionary with only relevant alert information
+        """
+        # Keys to EXCLUDE (verbose, not useful for quick alerts)
+        exclude_keys = {
+            "test_results",           # Full array of all test results (very verbose)
+            "passed_test_names",      # Not needed for failure alerts
+            "configuration_baseline", # Config reference, not failure info
+            "endpoint_checks",        # Verbose endpoint status
+            "env_status",             # Full env var listing
+            "file_status",            # Full file status listing
+            "security_checks",        # Verbose security details
+            "resource_info",          # Verbose resource details
+            "version_info",           # Verbose version details per package
+            "db_checks",              # Verbose DB check details
+        }
+
+        # Keys to PRIORITIZE (failure-specific, useful for debugging)
+        priority_keys = [
+            "failed_tests",           # Count of failures
+            "failed_test_names",      # Which tests failed (keep for failures)
+            "config_issues",          # Specific config problems
+            "version_issues",         # Specific version problems
+            "security_issues",        # Specific security problems
+            "resource_issues",        # Specific resource problems
+            "violations",             # Policy violations
+            "missing_critical",       # Missing critical items
+            "issues",                 # Generic issues list
+            "error",                  # Error message
+            "error_type",             # Error type
+        ]
+
+        filtered = {}
+
+        # First, add priority keys if they have content
+        for key in priority_keys:
+            if key in details:
+                value = details[key]
+                # Only include if non-empty
+                if value and (not isinstance(value, (list, dict)) or len(value) > 0):
+                    # For failed_test_names, include it (useful context)
+                    if key == "failed_test_names":
+                        filtered[key] = value
+                    else:
+                        filtered[key] = value
+
+        # Then add other non-excluded keys with limits
+        for key, value in details.items():
+            if key in exclude_keys or key in filtered:
+                continue
+
+            # Skip empty values
+            if not value and value != 0:
+                continue
+
+            # Limit list lengths
+            if isinstance(value, list) and len(value) > 5:
+                filtered[key] = value[:5]
+                filtered[f"{key}_truncated"] = f"(showing 5 of {len(value)})"
+            # Limit dict complexity
+            elif isinstance(value, dict) and len(value) > 5:
+                # Just show key count for complex dicts
+                filtered[key] = f"({len(value)} items)"
+            else:
+                filtered[key] = value
+
+        return filtered
     
     def _format_summary(
         self,
