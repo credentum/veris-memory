@@ -6,13 +6,13 @@ Tests the ability to store and recall specific facts through natural language qu
 This validates that the core store/retrieve functionality works correctly.
 """
 
-import asyncio
 import json
+import re
 import time
 import uuid
 import aiohttp
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from ..base_check import BaseCheck, APITestMixin
 from ..models import CheckResult, SentinelConfig
@@ -165,9 +165,14 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
             )
     
     async def _run_single_test(self, session: aiohttp.ClientSession, test_case: Dict[str, Any], test_index: int) -> Dict[str, Any]:
-        """Run a single golden fact test case."""
+        """Run a single golden fact test case.
+
+        PR #399: Now includes cleanup after testing to prevent database bloat.
+        Test facts are deleted after recall verification.
+        """
         user_id = f"sentinel_test_{uuid.uuid4().hex[:8]}"
-        
+        context_id = None
+
         # Store the fact
         store_result = await self._store_fact(session, test_case["kv"], user_id)
         if not store_result["success"]:
@@ -178,20 +183,30 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
                 "store_error": store_result["message"],
                 "total_questions": len(test_case["questions"]),
                 "passed_questions": 0,
-                "question_results": []
+                "question_results": [],
+                "cleanup_result": None
             }
-        
+
+        # Extract context_id for cleanup
+        response_data = store_result.get("response", {})
+        context_id = response_data.get("id") or response_data.get("context_id")
+
         # Test each question
         question_results = []
         passed_questions = 0
-        
+
         for question in test_case["questions"]:
             question_result = await self._test_recall(session, question, test_case["expect_contains"], user_id)
             question_results.append(question_result)
-            
+
             if question_result["success"]:
                 passed_questions += 1
-        
+
+        # PR #399: Clean up test fact after recall test to prevent database bloat
+        cleanup_result = None
+        if context_id:
+            cleanup_result = await self._cleanup_fact(session, context_id)
+
         return {
             "test_index": test_index,
             "test_case": test_case,
@@ -199,7 +214,8 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
             "store_result": store_result,
             "total_questions": len(test_case["questions"]),
             "passed_questions": passed_questions,
-            "question_results": question_results
+            "question_results": question_results,
+            "cleanup_result": cleanup_result
         }
     
     async def _store_fact(self, session: aiohttp.ClientSession, fact_data: Dict[str, Any], user_id: str) -> Dict[str, Any]:
@@ -299,3 +315,63 @@ class GoldenFactRecall(BaseCheck, APITestMixin):
             "response": response_data,
             "contexts_count": len(contexts)
         }
+
+    # Pattern for valid context IDs (UUIDs, hex strings, or alphanumeric with hyphens/underscores)
+    # This prevents Cypher injection by rejecting any ID with special characters
+    VALID_CONTEXT_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
+
+    async def _cleanup_fact(self, session: aiohttp.ClientSession, context_id: str) -> Dict[str, Any]:
+        """Clean up a test fact after recall test to prevent database bloat.
+
+        PR #399: Sentinel test data was filling Veris Memory with permanent entries.
+        This method deletes the test context after successful recall testing.
+
+        Uses query_graph with Cypher DELETE to bypass human-only delete restrictions,
+        since this is internal test cleanup not user-initiated deletion.
+
+        Security: context_id is validated against a safe pattern before interpolation
+        into the Cypher query to prevent injection attacks.
+        """
+        if not context_id:
+            return {"success": False, "message": "No context_id provided"}
+
+        # Security: Validate context_id format to prevent Cypher injection
+        if not self.VALID_CONTEXT_ID_PATTERN.match(context_id):
+            return {"success": False, "message": f"Invalid context_id format: {context_id[:50]}"}
+
+        # Use Cypher DELETE query via query_graph tool
+        cleanup_payload = {
+            "query": f"MATCH (n:Context {{id: '{context_id}'}}) DETACH DELETE n RETURN count(n) as deleted"
+        }
+
+        try:
+            success, message, latency, response_data = await self.test_api_call(
+                session,
+                "POST",
+                f"{self.config.target_base_url}/tools/query_graph",
+                data=cleanup_payload,
+                expected_status=200,
+                timeout=5.0
+            )
+
+            if success and response_data:
+                deleted_count = response_data.get("results", [{}])[0].get("deleted", 0)
+                return {
+                    "success": True,
+                    "context_id": context_id,
+                    "deleted_count": deleted_count,
+                    "latency_ms": latency
+                }
+            else:
+                return {
+                    "success": False,
+                    "context_id": context_id,
+                    "message": message,
+                    "latency_ms": latency
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "context_id": context_id,
+                "message": f"Cleanup failed: {str(e)}"
+            }

@@ -183,8 +183,8 @@ async def test_full_check_passes_with_proper_isolation(golden_fact_check):
         mock_session = AsyncMock()
         mock_session_class.return_value.__aenter__.return_value = mock_session
 
-        # Mock test_api_call to simulate successful store and retrieve
-        call_count = {"store": 0, "retrieve": 0}
+        # Mock test_api_call to simulate successful store, retrieve, and cleanup (PR #399)
+        call_count = {"store": 0, "retrieve": 0, "cleanup": 0}
 
         async def mock_test_api_call(session, method, url, data, expected_status, timeout):
             if "store_context" in url:
@@ -196,6 +196,7 @@ async def test_full_check_passes_with_proper_isolation(golden_fact_check):
                 # Return the expected content based on the query
                 query = data.get("query", "")
 
+                # Semantic search test cases
                 if "name" in query.lower():
                     return True, "Success", 15.0, {
                         "success": True,
@@ -211,8 +212,31 @@ async def test_full_check_passes_with_proper_isolation(golden_fact_check):
                         "success": True,
                         "results": [{"id": "ctx_3", "content": {"location": "San Francisco"}, "score": 0.95}]
                     }
+                # Graph relationship test cases (PR #399: 3 additional test cases)
+                elif "technology" in query.lower() or "veris memory" in query.lower() or "implemented" in query.lower():
+                    return True, "Success", 15.0, {
+                        "success": True,
+                        "results": [{"id": "ctx_4", "content": {"project": "Veris Memory", "tech_stack": "Python FastAPI Neo4j"}, "score": 0.95}]
+                    }
+                elif "semantic search" in query.lower() or "depend" in query.lower() or "component" in query.lower():
+                    return True, "Success", 15.0, {
+                        "success": True,
+                        "results": [{"id": "ctx_5", "content": {"feature": "semantic search", "dependencies": "Qdrant vector database embeddings"}, "score": 0.95}]
+                    }
+                elif "monitoring" in query.lower() or "related" in query.lower() or "connect" in query.lower():
+                    return True, "Success", 15.0, {
+                        "success": True,
+                        "results": [{"id": "ctx_6", "content": {"component": "monitoring", "related_systems": "Sentinel checks metrics Neo4j"}, "score": 0.95}]
+                    }
                 else:
                     return True, "Success", 15.0, {"success": True, "results": []}
+
+            elif "query_graph" in url:
+                # PR #399: Handle cleanup calls
+                call_count["cleanup"] += 1
+                return True, "Success", 5.0, {"results": [{"deleted": 1}]}
+
+            return False, "Unknown URL", 0, None
 
         with patch.object(golden_fact_check, 'test_api_call', side_effect=mock_test_api_call):
             result = await golden_fact_check.run_check()
@@ -221,6 +245,8 @@ async def test_full_check_passes_with_proper_isolation(golden_fact_check):
     assert result.status == "pass", f"Check should pass, got: {result.status}, message: {result.message}"
     assert result.details["success_rate"] >= 0.8, "Success rate should be >= 80%"
     assert result.details["passed_tests"] >= result.details["total_tests"] * 0.8, "Most tests should pass"
+    # PR #399: Verify cleanup was called for each test case
+    assert call_count["cleanup"] == 6, f"Cleanup should be called 6 times (once per test case), got {call_count['cleanup']}"
 
 
 @pytest.mark.asyncio
@@ -357,3 +383,214 @@ async def test_total_query_count_is_12(golden_fact_check):
 
     assert semantic_queries == 6, f"Expected 6 semantic queries (3 × 2), got {semantic_queries}"
     assert graph_queries == 6, f"Expected 6 graph queries (3 × 2), got {graph_queries}"
+
+
+# ============================================================================
+# PR #399: Cleanup Tests - Prevent database bloat from sentinel test data
+# ============================================================================
+
+@pytest.mark.asyncio
+async def test_cleanup_fact_deletes_context(golden_fact_check):
+    """Test that _cleanup_fact sends correct Cypher DELETE query (PR #399)."""
+    mock_session = AsyncMock()
+    context_id = "ctx_test_cleanup_123"
+    captured_payload = None
+
+    async def capture_cleanup_call(session, method, url, data, expected_status, timeout):
+        nonlocal captured_payload
+        captured_payload = data
+        return True, "Success", 5.0, {"results": [{"deleted": 1}]}
+
+    with patch.object(golden_fact_check, 'test_api_call', side_effect=capture_cleanup_call):
+        result = await golden_fact_check._cleanup_fact(mock_session, context_id)
+
+    # Verify cleanup was attempted
+    assert result["success"] is True
+    assert result["context_id"] == context_id
+    assert result["deleted_count"] == 1
+
+    # Verify the Cypher query structure
+    assert captured_payload is not None
+    assert "query" in captured_payload
+    query = captured_payload["query"]
+    assert "MATCH" in query
+    assert "DETACH DELETE" in query
+    assert context_id in query
+
+
+@pytest.mark.asyncio
+async def test_cleanup_fact_handles_no_context_id(golden_fact_check):
+    """Test that _cleanup_fact handles missing context_id gracefully (PR #399)."""
+    mock_session = AsyncMock()
+
+    result = await golden_fact_check._cleanup_fact(mock_session, None)
+
+    assert result["success"] is False
+    assert "No context_id" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_fact_rejects_invalid_context_id_format(golden_fact_check):
+    """Test that _cleanup_fact rejects context IDs with injection characters (PR #399 security)."""
+    mock_session = AsyncMock()
+
+    # Test various injection attempts
+    injection_attempts = [
+        "'; DROP TABLE contexts; --",
+        "test' OR '1'='1",
+        "ctx_123; MATCH (n) DETACH DELETE n",
+        "ctx_<script>alert(1)</script>",
+        "ctx_123\n RETURN 1",
+        "ctx with spaces",
+    ]
+
+    for malicious_id in injection_attempts:
+        result = await golden_fact_check._cleanup_fact(mock_session, malicious_id)
+        assert result["success"] is False, f"Should reject: {malicious_id}"
+        assert "Invalid context_id format" in result["message"], f"Wrong message for: {malicious_id}"
+
+
+@pytest.mark.asyncio
+async def test_cleanup_fact_accepts_valid_context_id_formats(golden_fact_check):
+    """Test that _cleanup_fact accepts valid context ID formats (PR #399 security)."""
+    mock_session = AsyncMock()
+
+    # Valid context ID formats
+    valid_ids = [
+        "ctx_abc123",
+        "58c677bc-44a6-4597-890e-c36f672d9325",  # UUID
+        "context_12345",
+        "ABC123",
+        "a1b2c3d4e5f6",
+    ]
+
+    async def mock_api_call(session, method, url, data, expected_status, timeout):
+        return True, "Success", 5.0, {"results": [{"deleted": 1}]}
+
+    with patch.object(golden_fact_check, 'test_api_call', side_effect=mock_api_call):
+        for valid_id in valid_ids:
+            result = await golden_fact_check._cleanup_fact(mock_session, valid_id)
+            assert result["success"] is True, f"Should accept: {valid_id}"
+
+
+@pytest.mark.asyncio
+async def test_cleanup_fact_handles_api_failure(golden_fact_check):
+    """Test that _cleanup_fact handles API failures gracefully (PR #399)."""
+    mock_session = AsyncMock()
+    context_id = "ctx_test_failure"
+
+    async def mock_api_failure(session, method, url, data, expected_status, timeout):
+        return False, "Connection error", 5.0, None
+
+    with patch.object(golden_fact_check, 'test_api_call', side_effect=mock_api_failure):
+        result = await golden_fact_check._cleanup_fact(mock_session, context_id)
+
+    assert result["success"] is False
+    assert result["context_id"] == context_id
+
+
+@pytest.mark.asyncio
+async def test_run_single_test_calls_cleanup_after_recall(golden_fact_check):
+    """Test that _run_single_test calls cleanup after testing (PR #399)."""
+    mock_session = AsyncMock()
+    test_case = {
+        "kv": {"name": "Test"},
+        "questions": ["What's the test?"],
+        "expect_contains": "Test",
+        "test_type": "semantic_search"
+    }
+
+    # Track which methods were called
+    calls = {"store": 0, "recall": 0, "cleanup": 0}
+    stored_context_id = "ctx_stored_123"
+
+    async def mock_store(session, fact_data, user_id):
+        calls["store"] += 1
+        return {
+            "success": True,
+            "response": {"id": stored_context_id}
+        }
+
+    async def mock_recall(session, question, expected, user_id):
+        calls["recall"] += 1
+        return {"success": True}
+
+    async def mock_cleanup(session, context_id):
+        calls["cleanup"] += 1
+        assert context_id == stored_context_id, "Cleanup should use stored context_id"
+        return {"success": True, "deleted_count": 1}
+
+    with patch.object(golden_fact_check, '_store_fact', side_effect=mock_store), \
+         patch.object(golden_fact_check, '_test_recall', side_effect=mock_recall), \
+         patch.object(golden_fact_check, '_cleanup_fact', side_effect=mock_cleanup):
+        result = await golden_fact_check._run_single_test(mock_session, test_case, 0)
+
+    # Verify cleanup was called
+    assert calls["store"] == 1, "Store should be called once"
+    assert calls["recall"] == 1, "Recall should be called for each question"
+    assert calls["cleanup"] == 1, "Cleanup should be called once after recall tests"
+
+    # Verify result includes cleanup info
+    assert "cleanup_result" in result
+    assert result["cleanup_result"]["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_run_single_test_includes_cleanup_in_result(golden_fact_check):
+    """Test that _run_single_test includes cleanup result in output (PR #399)."""
+    mock_session = AsyncMock()
+    test_case = {
+        "kv": {"name": "Test"},
+        "questions": ["Q1", "Q2"],
+        "expect_contains": "Test",
+        "test_type": "semantic_search"
+    }
+
+    async def mock_api_call(session, method, url, data, expected_status, timeout):
+        if "store_context" in url:
+            return True, "Success", 10.0, {"id": "ctx_cleanup_test"}
+        elif "retrieve_context" in url:
+            return True, "Success", 15.0, {
+                "results": [{"content": {"name": "Test"}}]
+            }
+        elif "query_graph" in url:
+            return True, "Success", 5.0, {"results": [{"deleted": 1}]}
+        return False, "Unknown URL", 0, None
+
+    with patch.object(golden_fact_check, 'test_api_call', side_effect=mock_api_call):
+        result = await golden_fact_check._run_single_test(mock_session, test_case, 0)
+
+    # Result should include cleanup info
+    assert "cleanup_result" in result
+    assert result["cleanup_result"] is not None
+
+
+@pytest.mark.asyncio
+async def test_cleanup_not_called_when_store_fails(golden_fact_check):
+    """Test that cleanup is not called when store fails (no context to clean up)."""
+    mock_session = AsyncMock()
+    test_case = {
+        "kv": {"name": "Test"},
+        "questions": ["What?"],
+        "expect_contains": "Test",
+        "test_type": "semantic_search"
+    }
+
+    cleanup_called = False
+
+    async def mock_store_failure(session, fact_data, user_id):
+        return {"success": False, "message": "Store failed"}
+
+    async def mock_cleanup(session, context_id):
+        nonlocal cleanup_called
+        cleanup_called = True
+        return {"success": True}
+
+    with patch.object(golden_fact_check, '_store_fact', side_effect=mock_store_failure), \
+         patch.object(golden_fact_check, '_cleanup_fact', side_effect=mock_cleanup):
+        result = await golden_fact_check._run_single_test(mock_session, test_case, 0)
+
+    # Cleanup should NOT be called since store failed
+    assert cleanup_called is False, "Cleanup should not be called when store fails"
+    assert result["store_success"] is False
+    assert result["cleanup_result"] is None
