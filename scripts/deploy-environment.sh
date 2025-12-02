@@ -265,6 +265,19 @@ else
     echo -e "${YELLOW}⚠️  OPENROUTER_API_KEY not set, HyDE disabled${NC}"
 fi
 
+# Add Cross-Encoder Reranker Configuration (Phase 3.5)
+# Uses ms-marco-MiniLM-L-6-v2 for improved semantic re-ranking
+echo -e "${YELLOW}📝 Adding Cross-Encoder Reranker configuration to .env file...${NC}"
+# Remove existing CROSS_ENCODER vars to prevent duplicates
+grep -v "^CROSS_ENCODER_" .env > .env.tmp.ce1 || true
+mv .env.tmp.ce1 .env
+
+# Enable cross-encoder by default (safe: model is bundled, no external API needed)
+echo "CROSS_ENCODER_RERANKER_ENABLED=true" >> .env
+echo "CROSS_ENCODER_TOP_K=50" >> .env
+echo "CROSS_ENCODER_RETURN_K=10" >> .env
+echo -e "${GREEN}✅ Cross-Encoder Reranker enabled (ms-marco-MiniLM-L-6-v2)${NC}"
+
 # Stop existing containers for this environment with ROBUST cleanup
 echo -e "${YELLOW}🛑 Performing robust container cleanup for $ENVIRONMENT...${NC}"
 
