@@ -68,6 +68,7 @@ ssh -o StrictHostKeyChecking=no \
   export LIVEKIT_API_WEBSOCKET='$LIVEKIT_API_WEBSOCKET'
   export API_KEY_VOICEBOT='$API_KEY_VOICEBOT'
   export OPENAI_API_KEY='$OPENAI_API_KEY'
+  export OPENROUTER_API_KEY='$OPENROUTER_API_KEY'
   export SENTINEL_API_KEY='$SENTINEL_API_KEY'
   export HOST_CHECK_SECRET='$HOST_CHECK_SECRET'
   export ENVIRONMENT=development
@@ -336,8 +337,10 @@ ssh -o StrictHostKeyChecking=no \
       grep -v "^ENABLE_MCP_RETRY" .env.tmp12 > .env.tmp13 || true
       grep -v "^MCP_RETRY_ATTEMPTS" .env.tmp13 > .env.tmp14 || true
       grep -v "^SENTINEL_API_KEY" .env.tmp14 > .env.tmp15 || true
-      grep -v "^HOST_CHECK_SECRET" .env.tmp15 > .env || true
-      rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13 .env.tmp14 .env.tmp15
+      grep -v "^HOST_CHECK_SECRET" .env.tmp15 > .env.tmp16 || true
+      grep -v "^OPENROUTER_API_KEY" .env.tmp16 > .env.tmp17 || true
+      grep -v "^HYDE_" .env.tmp17 > .env || true
+      rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13 .env.tmp14 .env.tmp15 .env.tmp16 .env.tmp17
     fi
 
     # SECURITY: Validate required secrets before writing to .env
@@ -474,6 +477,18 @@ ssh -o StrictHostKeyChecking=no \
         printf "STT_API_KEY=%s\\n" "\$OPENAI_API_KEY"
         printf "TTS_PROVIDER=openai\\n"
         printf "TTS_API_KEY=%s\\n" "\$OPENAI_API_KEY"
+      fi
+
+      # HyDE (Hypothetical Document Embeddings) Configuration
+      # Uses free Grok model via OpenRouter for improved semantic search
+      printf "\\n# HyDE Query Expansion (PR #400)\\n"
+      if [ -n "\$OPENROUTER_API_KEY" ]; then
+        printf "OPENROUTER_API_KEY=%s\\n" "\$OPENROUTER_API_KEY"
+        printf "HYDE_ENABLED=true\\n"
+        printf "HYDE_API_PROVIDER=openrouter\\n"
+        printf "HYDE_MODEL=x-ai/grok-4.1-fast:free\\n"
+      else
+        printf "HYDE_ENABLED=false\\n"
       fi
 
       # Voice Bot Feature Flags
