@@ -362,6 +362,19 @@ ssh -o StrictHostKeyChecking=no \
       VALIDATION_FAILED=1
     fi
 
+    # Validate secrets required for fast deployment (must match REQUIRED_SECRETS in deploy-dev.yml)
+    if [ -z "\$API_KEY_MCP" ]; then
+      echo "❌ ERROR: API_KEY_MCP is not set or empty!"
+      echo "   MCP Server requires API key authentication."
+      VALIDATION_FAILED=1
+    fi
+
+    if [ -z "\$SENTINEL_API_KEY" ]; then
+      echo "❌ ERROR: SENTINEL_API_KEY is not set or empty!"
+      echo "   Sentinel monitoring requires API key authentication."
+      VALIDATION_FAILED=1
+    fi
+
     # Check minimum password lengths
     if [ -n "\$NEO4J_PASSWORD" ] && [ \${#NEO4J_PASSWORD} -lt 16 ]; then
       echo "⚠️  WARNING: NEO4J_PASSWORD is less than 16 characters (current: \${#NEO4J_PASSWORD})"
@@ -473,22 +486,32 @@ ssh -o StrictHostKeyChecking=no \
       printf "SSL_KEYFILE=/app/certs/key.pem\\n"
       printf "SSL_CERTFILE=/app/certs/cert.pem\\n"
 
-      # Sentinel Monitoring Configuration
+      # Sentinel Monitoring Configuration (required for fast deployment)
       printf "\\n# Sentinel Monitoring Authentication\\n"
-      if [ -n "\$SENTINEL_API_KEY" ]; then
-        printf "SENTINEL_API_KEY=%s\\n" "\$SENTINEL_API_KEY"
-      fi
+      printf "SENTINEL_API_KEY=%s\\n" "\$SENTINEL_API_KEY"
       if [ -n "\$HOST_CHECK_SECRET" ]; then
         printf "HOST_CHECK_SECRET=%s\\n" "\$HOST_CHECK_SECRET"
       fi
     } >> .env 2>/dev/null
 
-    # Verify configuration was written correctly
+    # Verify configuration was written correctly (all secrets required for fast deployment)
     if ! grep -q "^NEO4J_PASSWORD=" .env; then
       echo "❌ ERROR: NEO4J_PASSWORD not found in .env!"
       exit 1
     fi
-    echo "✅ Configuration file created successfully"
+    if ! grep -q "^REDIS_PASSWORD=" .env; then
+      echo "❌ ERROR: REDIS_PASSWORD not found in .env!"
+      exit 1
+    fi
+    if ! grep -q "^API_KEY_MCP=" .env; then
+      echo "❌ ERROR: API_KEY_MCP not found in .env!"
+      exit 1
+    fi
+    if ! grep -q "^SENTINEL_API_KEY=" .env; then
+      echo "❌ ERROR: SENTINEL_API_KEY not found in .env!"
+      exit 1
+    fi
+    echo "✅ Configuration file created with all required secrets"
 
     # Generate SSL certificates for voice-bot if they don't exist
     echo "🔐 Checking SSL certificates for voice-bot..."
