@@ -29,24 +29,27 @@ class SentinelRunner:
     """Main Veris Sentinel runner with scheduling and reporting."""
 
     # PR #390: Per-check intervals to reduce system load
-    # Different checks have different appropriate frequencies based on their nature:
-    # - Health probes: Fast, critical - check frequently
-    # - Backup validation: Filesystem scan - check every few hours
-    # - Config parity: Config rarely changes - check less frequently
-    # - Capacity tests: Performance impact - check less frequently
-    # Values are in seconds. Can be overridden via environment variables.
+    # PR #397: Optimized frequencies - CI/CD-only checks disabled at runtime
+    #
+    # Check Categories:
+    # - Runtime (continuous): S1, S11 - critical health/security monitoring
+    # - Spot-check (hourly): S2, S5, S6, S10 - periodic validation
+    # - CI/CD only (interval=0): S3, S4, S7, S8, S9 - static behavior, run on deploy
+    #
+    # Values are in seconds. Interval=0 means CI/CD only (disabled at runtime).
+    # Can be overridden via environment variables: SENTINEL_INTERVAL_<CHECK_NUM>
     DEFAULT_CHECK_INTERVALS = {
         "S1-probes": 60,              # Health probes - every 1 minute (critical)
-        "S2-golden-fact-recall": 300, # Golden fact - every 5 minutes
-        "S3-paraphrase-robustness": 600,  # Paraphrase - every 10 minutes (expensive)
-        "S4-metrics-wiring": 300,     # Metrics - every 5 minutes
-        "S5-security-negatives": 300, # Security - every 5 minutes
-        "S6-backup-restore": 21600,   # Backup - every 6 hours (filesystem scan)
-        "S7-config-parity": 1800,     # Config - every 30 minutes (rarely changes)
-        "S8-capacity-smoke": 900,     # Capacity - every 15 minutes (performance test)
-        "S9-graph-intent": 300,       # Graph - every 5 minutes
-        "S10-content-pipeline": 300,  # Content - every 5 minutes
-        "S11-firewall-status": 600,   # Firewall - every 10 minutes
+        "S2-golden-fact-recall": 3600, # Golden fact - hourly spot-check
+        "S3-paraphrase-robustness": 0, # CI/CD only - static behavior, expensive
+        "S4-metrics-wiring": 0,        # CI/CD only - only changes on deploy
+        "S5-security-negatives": 3600, # Security - hourly spot-check
+        "S6-backup-restore": 21600,    # Backup - every 6 hours (filesystem scan)
+        "S7-config-parity": 0,         # CI/CD only - config changes on deploy
+        "S8-capacity-smoke": 0,        # CI/CD only - performance baseline
+        "S9-graph-intent": 0,          # CI/CD only - schema doesn't change
+        "S10-content-pipeline": 3600,  # Content - hourly spot-check
+        "S11-firewall-status": 300,    # Firewall - every 5 minutes (security)
     }
 
     def __init__(self, config: SentinelConfig, db_path: str = "/var/lib/sentinel/sentinel.db") -> None:
@@ -224,7 +227,9 @@ class SentinelRunner:
         # Log configured intervals
         logger.info("Per-check intervals configured:")
         for check_id, interval in sorted(intervals.items()):
-            if interval >= 3600:
+            if interval == 0:
+                human_interval = "CI/CD only"
+            elif interval >= 3600:
                 human_interval = f"{interval // 3600}h"
             elif interval >= 60:
                 human_interval = f"{interval // 60}m"
@@ -238,12 +243,19 @@ class SentinelRunner:
         """Check if a check is due to run based on its interval.
 
         PR #390: Per-check intervals support.
+        PR #397: CI/CD-only checks (interval=0) are never due at runtime.
 
         Returns:
             True if the check should run, False if it should be skipped
         """
-        now = time.time()
         interval = self.check_intervals.get(check_id, 60)  # Default 60s
+
+        # PR #397: Interval of 0 means CI/CD only - never run at runtime
+        if interval == 0:
+            logger.debug(f"Skipping {check_id}: CI/CD-only check (interval=0)")
+            return False
+
+        now = time.time()
         last_run = self.last_check_time.get(check_id, 0)
 
         time_since_last = now - last_run

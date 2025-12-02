@@ -752,8 +752,10 @@ class TestPerCheckIntervals:
 
     @pytest.fixture
     def config(self):
-        """Create test configuration."""
-        return SentinelConfig(
+        """Create test configuration using the new modular SentinelConfig."""
+        # Import the new modular SentinelConfig for runner tests
+        from src.monitoring.sentinel.models import SentinelConfig as ModularConfig
+        return ModularConfig(
             target_base_url="http://test:8000",
             check_interval_seconds=60
         )
@@ -777,28 +779,48 @@ class TestPerCheckIntervals:
             "S10-content-pipeline", "S11-firewall-status"
         ]
 
+        # PR #397: CI/CD-only checks have interval=0
+        cicd_only_checks = ["S3-paraphrase-robustness", "S4-metrics-wiring",
+                           "S7-config-parity", "S8-capacity-smoke", "S9-graph-intent"]
+
         for check_id in expected_checks:
             assert check_id in SentinelRunner.DEFAULT_CHECK_INTERVALS, \
                 f"Missing interval for {check_id}"
             assert isinstance(SentinelRunner.DEFAULT_CHECK_INTERVALS[check_id], int), \
                 f"Interval for {check_id} should be int"
-            assert SentinelRunner.DEFAULT_CHECK_INTERVALS[check_id] > 0, \
-                f"Interval for {check_id} should be positive"
+            # CI/CD-only checks have interval=0, runtime checks have interval > 0
+            if check_id in cicd_only_checks:
+                assert SentinelRunner.DEFAULT_CHECK_INTERVALS[check_id] == 0, \
+                    f"CI/CD-only check {check_id} should have interval=0"
+            else:
+                assert SentinelRunner.DEFAULT_CHECK_INTERVALS[check_id] > 0, \
+                    f"Runtime check {check_id} should have positive interval"
 
     def test_default_intervals_values(self):
-        """Test that default intervals have expected values."""
+        """Test that default intervals have expected values.
+
+        PR #397: Updated intervals with CI/CD-only checks disabled at runtime.
+        """
         from src.monitoring.sentinel.runner import SentinelRunner
 
         intervals = SentinelRunner.DEFAULT_CHECK_INTERVALS
 
-        # S1 should be fast (1 minute)
-        assert intervals["S1-probes"] == 60
+        # Runtime checks (continuous monitoring)
+        assert intervals["S1-probes"] == 60  # 1 minute - health probes
+        assert intervals["S11-firewall-status"] == 300  # 5 minutes - security
 
-        # S6 should be slow (6 hours = 21600 seconds)
-        assert intervals["S6-backup-restore"] == 21600
+        # Spot-check monitors (hourly)
+        assert intervals["S2-golden-fact-recall"] == 3600  # 1 hour
+        assert intervals["S5-security-negatives"] == 3600  # 1 hour
+        assert intervals["S6-backup-restore"] == 21600  # 6 hours
+        assert intervals["S10-content-pipeline"] == 3600  # 1 hour
 
-        # S7 should be medium (30 minutes = 1800 seconds)
-        assert intervals["S7-config-parity"] == 1800
+        # CI/CD-only checks (disabled at runtime)
+        assert intervals["S3-paraphrase-robustness"] == 0
+        assert intervals["S4-metrics-wiring"] == 0
+        assert intervals["S7-config-parity"] == 0
+        assert intervals["S8-capacity-smoke"] == 0
+        assert intervals["S9-graph-intent"] == 0
 
     @patch.dict('os.environ', {'SENTINEL_INTERVAL_S1': '120', 'SENTINEL_INTERVAL_S6': '3600'})
     def test_load_check_intervals_env_override(self, config, temp_db):
@@ -813,8 +835,8 @@ class TestPerCheckIntervals:
         # S6 should be overridden to 3600 seconds (1 hour)
         assert runner.check_intervals["S6-backup-restore"] == 3600
 
-        # S2 should still have default value (no override)
-        assert runner.check_intervals["S2-golden-fact-recall"] == 300
+        # S2 should still have default value (no override) - PR #397: now 1 hour
+        assert runner.check_intervals["S2-golden-fact-recall"] == 3600
 
     @patch.dict('os.environ', {'SENTINEL_INTERVAL_S1': 'invalid'})
     def test_load_check_intervals_invalid_env(self, config, temp_db):
@@ -833,8 +855,32 @@ class TestPerCheckIntervals:
         runner = SentinelRunner(config, temp_db)
 
         # First run should always be due (no last_check_time entry)
+        # Exception: CI/CD-only checks are never due at runtime
         assert runner._is_check_due("S1-probes") is True
         assert runner._is_check_due("S6-backup-restore") is True
+
+    def test_is_check_due_cicd_only_never_due(self, config, temp_db):
+        """Test that CI/CD-only checks (interval=0) are never due at runtime.
+
+        PR #397: CI/CD-only checks have interval=0 and should never run
+        during runtime monitoring. They run via GitHub Actions on deploy.
+        """
+        from src.monitoring.sentinel.runner import SentinelRunner
+
+        runner = SentinelRunner(config, temp_db)
+
+        # CI/CD-only checks should never be due, even on first run
+        cicd_only_checks = [
+            "S3-paraphrase-robustness",
+            "S4-metrics-wiring",
+            "S7-config-parity",
+            "S8-capacity-smoke",
+            "S9-graph-intent"
+        ]
+
+        for check_id in cicd_only_checks:
+            assert runner._is_check_due(check_id) is False, \
+                f"CI/CD-only check {check_id} should never be due at runtime"
 
     def test_is_check_due_after_interval(self, config, temp_db):
         """Test that check is due after interval has passed."""
