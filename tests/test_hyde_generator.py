@@ -31,7 +31,10 @@ class TestHyDEConfig(unittest.TestCase):
         config = HyDEConfig()
 
         self.assertTrue(config.enabled)
-        self.assertEqual(config.model, "gpt-4o-mini")
+        # Default to free Grok model via OpenRouter
+        self.assertEqual(config.model, "x-ai/grok-4.1-fast:free")
+        self.assertEqual(config.api_provider, "openrouter")
+        self.assertEqual(config.base_url, "https://openrouter.ai/api/v1")
         self.assertEqual(config.max_tokens, 150)
         self.assertEqual(config.temperature, 0.7)
         self.assertTrue(config.cache_enabled)
@@ -104,7 +107,9 @@ class TestHyDEGenerator(unittest.TestCase):
 
         self.assertIsNotNone(generator.config)
         self.assertTrue(generator.config.enabled)
-        self.assertEqual(generator.config.model, "gpt-4o-mini")
+        # Default to free Grok model via OpenRouter
+        self.assertEqual(generator.config.model, "x-ai/grok-4.1-fast:free")
+        self.assertEqual(generator.config.api_provider, "openrouter")
 
     def test_generator_initialization_from_env(self):
         """Test generator initialization from environment variables."""
@@ -112,6 +117,7 @@ class TestHyDEGenerator(unittest.TestCase):
             os.environ,
             {
                 "HYDE_ENABLED": "false",
+                "HYDE_API_PROVIDER": "openai",
                 "HYDE_MODEL": "gpt-3.5-turbo",
                 "HYDE_MAX_TOKENS": "200",
                 "HYDE_TEMPERATURE": "0.5",
@@ -121,6 +127,7 @@ class TestHyDEGenerator(unittest.TestCase):
             generator = HyDEGenerator()
 
             self.assertFalse(generator.config.enabled)
+            self.assertEqual(generator.config.api_provider, "openai")
             self.assertEqual(generator.config.model, "gpt-3.5-turbo")
             self.assertEqual(generator.config.max_tokens, 200)
             self.assertEqual(generator.config.temperature, 0.5)
