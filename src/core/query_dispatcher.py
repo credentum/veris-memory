@@ -28,6 +28,13 @@ class SearchMode(str, Enum):
     AUTO = "auto"
 
 
+def get_mode_value(mode) -> str:
+    """Safely get the string value from a SearchMode enum or string."""
+    if hasattr(mode, 'value'):
+        return mode.value
+    return str(mode)
+
+
 class DispatchPolicy(str, Enum):
     """Policies for backend selection and result merging."""
     PARALLEL = "parallel"  # Run all backends in parallel
@@ -150,7 +157,7 @@ class QueryDispatcher:
                 success=False,
                 results=[],
                 total_count=0,
-                search_mode_used=search_mode.value,
+                search_mode_used=get_mode_value(search_mode),
                 backends_used=[],
                 backend_timings={},
                 message="Vector backend not available for HyDE search"
@@ -178,7 +185,7 @@ class QueryDispatcher:
                 success=False,
                 results=[],
                 total_count=0,
-                search_mode_used=search_mode.value,
+                search_mode_used=get_mode_value(search_mode),
                 backends_used=[],
                 backend_timings={},
                 message=f"HyDE search failed: {str(e)}"
@@ -224,8 +231,8 @@ class QueryDispatcher:
         search_logger.info(
             f"Dispatching query",
             query_length=len(query),
-            search_mode=search_mode.value,
-            dispatch_policy=dispatch_policy.value,
+            search_mode=get_mode_value(search_mode),
+            dispatch_policy=get_mode_value(dispatch_policy),
             limit=options.limit,
             trace_id=trace_id
         )
@@ -239,7 +246,7 @@ class QueryDispatcher:
                     success=False,
                     results=[],
                     total_count=0,
-                    search_mode_used=search_mode.value,
+                    search_mode_used=get_mode_value(search_mode),
                     message="No backends available for search",
                     trace_id=trace_id
                 )
@@ -290,7 +297,7 @@ class QueryDispatcher:
                 success=True,
                 results=final_results,
                 total_count=len(merged_results),
-                search_mode_used=search_mode.value,
+                search_mode_used=get_mode_value(search_mode),
                 message=f"Found {len(merged_results)} matching contexts",
                 response_time_ms=total_time,
                 trace_id=trace_id,
@@ -307,7 +314,7 @@ class QueryDispatcher:
                 error_msg,
                 error=str(e),
                 query_length=len(query),
-                search_mode=search_mode.value,
+                search_mode=get_mode_value(search_mode),
                 total_time_ms=total_time,
                 trace_id=trace_id
             )
@@ -316,7 +323,7 @@ class QueryDispatcher:
                 success=False,
                 results=[],
                 total_count=0,
-                search_mode_used=search_mode.value,
+                search_mode_used=get_mode_value(search_mode),
                 message=error_msg,
                 response_time_ms=total_time,
                 trace_id=trace_id
@@ -586,7 +593,7 @@ class QueryDispatcher:
         # Create ranking context
         ranking_context = RankingContext(
             query=query,
-            search_mode=search_mode.value,
+            search_mode=get_mode_value(search_mode),
             timestamp=time.time(),
             custom_features={
                 "trace_id": trace_id
