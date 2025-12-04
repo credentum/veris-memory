@@ -16,6 +16,11 @@ services:
       - QDRANT__SERVICE__GRPC_PORT=6334
     networks:
       - veris-dev
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # Graph Database (Neo4j)
   neo4j:
@@ -31,6 +36,11 @@ services:
       - NEO4J_PLUGINS=["apoc"]
     networks:
       - veris-dev
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # Cache/KV Store (Redis)
   redis:
@@ -48,6 +58,29 @@ services:
       --maxmemory-policy allkeys-lru
     networks:
       - veris-dev
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Logspout - Aggregate all container logs
+  logspout:
+    image: gliderlabs/logspout:latest
+    container_name: veris-logspout
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes/claude-workspace/_data/logs:/mnt/logs
+    environment:
+      - ROUTE_URIS=file:///mnt/logs/veris-all.log
+    networks:
+      - veris-dev
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
 
 volumes:
   qdrant_data:
