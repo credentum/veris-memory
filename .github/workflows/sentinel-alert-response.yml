@@ -596,39 +596,39 @@ jobs:
           echo ""
           echo "📞 Escalation: This is a CRITICAL system failure requiring immediate attention"
           
-          # Create enhanced emergency issue using heredoc to avoid YAML escaping issues
-          cat > emergency-issue-body.md << 'EOF'
-**CRITICAL SYSTEM FAILURE**
+          # Create enhanced emergency issue
+          cat > emergency-issue-body.md << 'EMERGENCY_EOF'
+          CRITICAL SYSTEM FAILURE
 
-The advanced Sentinel alert response system (Phase 2 Enhanced) failed to process alert.
+          The advanced Sentinel alert response system (Phase 2 Enhanced) failed to process alert.
 
-**Original Alert:**
-- Check: ${{ steps.parse-alert.outputs.check_id }}
-- Severity: ${{ steps.parse-alert.outputs.severity }}
-- Message: ${{ github.event.client_payload.message }}
+          Original Alert:
+          - Check: ${{ steps.parse-alert.outputs.check_id }}
+          - Severity: ${{ steps.parse-alert.outputs.severity }}
+          - Message: ${{ github.event.client_payload.message }}
 
-**System Impact:**
-- ❌ Advanced health analysis unavailable
-- ❌ Performance metrics collection failed
-- ❌ Log analysis compromised  
-- ❌ Dependency mapping unavailable
-- ❌ Intelligence synthesis offline
+          System Impact:
+          - Advanced health analysis unavailable
+          - Performance metrics collection failed
+          - Log analysis compromised
+          - Dependency mapping unavailable
+          - Intelligence synthesis offline
 
-**IMMEDIATE ACTIONS REQUIRED:**
-1. 🚨 Manually investigate the original alert immediately
-2. 🔧 Restore alert response system functionality
-3. 📋 Review GitHub Actions workflow logs
-4. 🔍 Check repository access and diagnostic script availability
-5. 📞 Escalate to senior engineering team
+          IMMEDIATE ACTIONS REQUIRED:
+          1. Manually investigate the original alert immediately
+          2. Restore alert response system functionality
+          3. Review GitHub Actions workflow logs
+          4. Check repository access and diagnostic script availability
+          5. Escalate to senior engineering team
 
-**Manual Fallback:**
-- Check system directly: http://${{ env.VERIS_MEMORY_HOST }}:${{ env.DASHBOARD_PORT }}
-- Verify services: API (${{ env.API_PORT }}), MCP (${{ env.MCP_PORT }}), Sentinel (${{ env.SENTINEL_PORT }})
-- Review server logs manually via SSH
+          Manual Fallback:
+          - Check system directly: http://${{ env.VERIS_MEMORY_HOST }}:${{ env.DASHBOARD_PORT }}
+          - Verify services: API (${{ env.API_PORT }}), MCP (${{ env.MCP_PORT }}), Sentinel (${{ env.SENTINEL_PORT }})
+          - Review server logs manually via SSH
 
----
-🤖 Emergency issue created by failed Enhanced Alert Response System
-EOF
+          ---
+          Emergency issue created by failed Enhanced Alert Response System
+          EMERGENCY_EOF
           
           gh issue create \
             --title "🚨 EMERGENCY: Enhanced Alert Response System Failed - ${{ steps.parse-alert.outputs.check_id }}" \
