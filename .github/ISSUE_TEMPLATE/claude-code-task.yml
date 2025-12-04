@@ -1,0 +1,191 @@
+name: Claude Code Task
+description: Issue template optimized for AI-assisted development
+title: "[type]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: "## Task Context"
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      options:
+        - bug
+        - feature
+        - refactor
+        - docs
+        - chore
+        - security
+    validations:
+      required: true
+
+  - type: dropdown
+    id: complexity
+    attributes:
+      label: Complexity
+      description: Determines which sections are relevant
+      options:
+        - trivial (< 50 LoC, single file)
+        - small (< 200 LoC, 2-3 files)
+        - medium (< 500 LoC, multiple files)
+        - large (500+ LoC, architectural changes)
+      default: 1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk Level
+      options:
+        - low (isolated change, easy rollback)
+        - medium (touches critical paths)
+        - high (deployment/infrastructure/data)
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: component
+    attributes:
+      label: Component
+      placeholder: "e.g., MCP Server, Deployment, Voice Bot"
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ## Problem Statement
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong or missing?
+      description: Describe the current behavior and why it's problematic
+      placeholder: "Currently X happens when Y, but it should Z because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Architecture Diagram (if applicable)
+      description: ASCII diagrams showing current vs proposed state
+      render: text
+      placeholder: |
+        Current:
+        ```
+        A → B → C
+        ```
+
+        Proposed:
+        ```
+        A → C (B removed)
+        ```
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ## Acceptance Criteria
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Definition of Done
+      description: Checkboxes for what must be true when complete
+      placeholder: |
+        - [ ] Feature X works as described
+        - [ ] Tests pass
+        - [ ] No regression in Y
+    validations:
+      required: true
+
+  - type: textarea
+    id: breaking_changes
+    attributes:
+      label: Breaking Changes
+      description: List any breaking changes (APIs, configs, behaviors)
+      placeholder: |
+        - None
+
+        OR
+
+        - API endpoint /foo renamed to /bar
+        - Config key X removed
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ## Claude Code Context
+        *This section helps AI assistants work efficiently*
+
+  - type: textarea
+    id: key_files
+    attributes:
+      label: Key Files
+      description: Primary files to read/modify
+      placeholder: |
+        - `src/module/file.py` - Main logic
+        - `tests/test_file.py` - Related tests
+    validations:
+      required: true
+
+  - type: textarea
+    id: related_context
+    attributes:
+      label: Related Issues/PRs
+      description: Links to related work for historical context
+      placeholder: |
+        - #123 - Original implementation
+        - #456 - Previous fix attempt
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: External Dependencies
+      description: APIs, services, or systems this interacts with
+      placeholder: |
+        - GitHub Actions secrets
+        - Docker/docker-compose
+        - Neo4j database
+
+  - type: textarea
+    id: implementation_hints
+    attributes:
+      label: Implementation Hints (optional)
+      description: Suggested approach, gotchas, or constraints
+      placeholder: |
+        Consider:
+        - Using X pattern because...
+        - Watch out for Y edge case
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ## Verification
+
+  - type: textarea
+    id: test_plan
+    attributes:
+      label: Test Plan
+      description: How to verify the change works
+      placeholder: |
+        1. Run `pytest tests/`
+        2. Deploy to dev environment
+        3. Verify X endpoint returns Y
+    validations:
+      required: true
+
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback Plan
+      description: How to undo if something goes wrong
+      placeholder: |
+        - `git revert <commit>`
+        - OR: Restore from backup X
