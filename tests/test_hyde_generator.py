@@ -31,8 +31,8 @@ class TestHyDEConfig(unittest.TestCase):
         config = HyDEConfig()
 
         self.assertTrue(config.enabled)
-        # Default to free Grok model via OpenRouter
-        self.assertEqual(config.model, "x-ai/grok-4.1-fast:free")
+        # Default to Mistral Small via OpenRouter
+        self.assertEqual(config.model, "mistralai/mistral-small-3.1-24b-instruct-2503")
         self.assertEqual(config.api_provider, "openrouter")
         self.assertEqual(config.base_url, "https://openrouter.ai/api/v1")
         self.assertEqual(config.max_tokens, 150)
@@ -107,8 +107,8 @@ class TestHyDEGenerator(unittest.TestCase):
 
         self.assertIsNotNone(generator.config)
         self.assertTrue(generator.config.enabled)
-        # Default to free Grok model via OpenRouter
-        self.assertEqual(generator.config.model, "x-ai/grok-4.1-fast:free")
+        # Default to Mistral Small via OpenRouter
+        self.assertEqual(generator.config.model, "mistralai/mistral-small-3.1-24b-instruct-2503")
         self.assertEqual(generator.config.api_provider, "openrouter")
 
     def test_generator_initialization_from_env(self):
