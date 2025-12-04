@@ -1,7 +1,25 @@
 #!/bin/bash
+# =============================================================================
+# LOCAL DEVELOPMENT DEPLOYMENT SCRIPT
+# =============================================================================
+#
+# ⚠️  WARNING: This script is for LOCAL DEVELOPMENT ONLY!
+#
+# For CI/CD deployments (GitHub Actions), use deploy-dev.sh directly.
+# deploy-dev.sh handles ALL secret management and .env creation.
+#
+# This script exists for:
+# - Local development and testing
+# - Manual server deployments when debugging
+#
+# Issue #416: Consolidated deployment - deploy-dev.sh is now the single
+# source of truth for CI/CD secret management.
+#
+# =============================================================================
 # Environment-aware Deployment Script for veris-memory
 # Supports both dev (auto-deploy) and prod (manual) environments
 # Usage: ./deploy-environment.sh [dev|prod]
+# =============================================================================
 
 set -e
 
