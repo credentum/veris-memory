@@ -250,535 +250,271 @@ ssh -o StrictHostKeyChecking=no \
     docker ps -a --filter "name=veris-memory-dev" --format "table {{.Names}}\\t{{.Status}}" || true
   fi
 
-  # Check if deployment script exists
-  if [ -f "scripts/deploy-environment.sh" ]; then
-    echo "🚀 Running environment deployment script for DEVELOPMENT..."
-    chmod +x scripts/deploy-environment.sh
-    ./scripts/deploy-environment.sh development
+  # =============================================================================
+  # CONSOLIDATED DEPLOYMENT (Issue #416)
+  # All .env creation and deployment logic in one place - no more fragmentation
+  # =============================================================================
+
+  # Dev uses volume-mounted compose file for fast deployments
+  COMPOSE_FILE="docker-compose.deploy-dev.yml"
+  echo "📦 Using volume-mounted compose for dev environment"
+  echo "   → Code changes are instant (mounted from host)"
+  echo "   → Hot reload enabled (auto-restart on file changes)"
+
+  # Setup base environment file
+  if [ -f ".env.dev" ]; then
+    cp .env.dev .env
+  elif [ -f ".env.template" ]; then
+    cp .env.template .env
   else
-    echo "⚠️ Environment deployment script not found, using fallback..."
-
-    # Fallback deployment for dev
-    echo "🛑 Stopping existing dev containers..."
-    docker compose -p veris-memory-dev down --remove-orphans 2>/dev/null || true
-
-    # CRITICAL: Also stop any containers using the OLD project name (without -dev)
-    echo "🧹 Cleaning up old project name containers..."
-    docker compose -p veris-memory down --remove-orphans 2>/dev/null || true
-
-    # Remove old networks to force recreation with correct project name
-    echo "🌐 Removing old Docker networks to force recreation..."
-    docker network rm veris-memory_context-store-network 2>/dev/null && echo "  ✓ Removed old network: veris-memory_context-store-network" || echo "  ℹ️ Old network not found (already removed)"
-    docker network rm veris-memory_voice-network 2>/dev/null && echo "  ✓ Removed old network: veris-memory_voice-network" || echo "  ℹ️ Voice network not found"
-
-    # CRITICAL: Remove ALL instances of fixed-name containers
-    echo "🛑 Stopping fixed-name containers (livekit-server, voice-bot)..."
-    LIVEKIT_IDS=\$(docker ps -a -q --filter "name=livekit-server" 2>/dev/null || true)
-    VOICEBOT_IDS=\$(docker ps -a -q --filter "name=voice-bot" 2>/dev/null || true)
-
-    if [ -n "\$LIVEKIT_IDS" ] || [ -n "\$VOICEBOT_IDS" ]; then
-      echo "  → Found containers, removing by ID..."
-      [ -n "\$LIVEKIT_IDS" ] && echo "\$LIVEKIT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
-      [ -n "\$VOICEBOT_IDS" ] && echo "\$VOICEBOT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
-    else
-      echo "  → No livekit/voice-bot containers found"
-    fi
-
-    # Kill non-docker processes on livekit ports
-    for port in 7880 7882 5349; do
-      PID=\$(lsof -ti tcp:\$port 2>/dev/null || true)
-      [ -n "\$PID" ] && kill -9 \$PID 2>/dev/null || true
-    done
-
-    echo "⏳ Waiting 10 seconds for port release..."
-    sleep 10
-
-    # Stop containers on dev ports (standard ports we test with + livekit ports)
-    for port in 8000 6333 7474 7687 6379 6334 7880 7882 3478 5349; do
-      containers=\$(docker ps --filter "publish=\$port" --format "{{.Names}}" 2>/dev/null || true)
-      if [ -n "\$containers" ]; then
-        echo "Stopping containers on port \$port: \$containers"
-        docker stop \$containers 2>/dev/null || true
-        docker rm \$containers 2>/dev/null || true
-      fi
-    done
-
-    # Dev uses volume-mounted compose file for fast deployments
-    # Code is mounted from host, no rebuild needed for code changes
-    COMPOSE_FILE="docker-compose.deploy-dev.yml"
-    echo "✅ Using volume-mounted compose for dev environment"
-    echo "   → Code changes are instant (mounted from host)"
-    echo "   → Hot reload enabled (auto-restart on file changes)"
-
-    # Setup dev environment file
-    if [ -f ".env.dev" ]; then
-      cp .env.dev .env
-    elif [ -f ".env.template" ]; then
-      cp .env.template .env
-    fi
-
-    # Configure environment variables
-
-    # Remove ALL managed variables to ensure clean state (no duplicates)
-    echo "🗑️  Removing managed variables from .env to prevent duplicates..."
-    if [ -f .env ]; then
-      # Remove NEO4J, REDIS, TELEGRAM, API keys, PR #170, Voice Platform, and Sentinel variables
-      grep -v "^NEO4J" .env > .env.tmp || true
-      grep -v "^REDIS_PASSWORD" .env.tmp > .env.tmp0 || true
-      mv .env.tmp0 .env.tmp
-      grep -v "^TELEGRAM" .env.tmp > .env.tmp2 || true
-      grep -v "^API_KEY_MCP" .env.tmp2 > .env.tmp3 || true
-      grep -v "^VERIS_CACHE_TTL" .env.tmp3 > .env.tmp4 || true
-      grep -v "^STRICT_EMBEDDINGS" .env.tmp4 > .env.tmp5 || true
-      grep -v "^EMBEDDING_DIM" .env.tmp5 > .env.tmp6 || true
-      grep -v "^LIVEKIT" .env.tmp6 > .env.tmp7 || true
-      grep -v "^API_KEY_VOICEBOT" .env.tmp7 > .env.tmp8 || true
-      grep -v "^VOICE_BOT" .env.tmp8 > .env.tmp9 || true
-      grep -v "^STT_" .env.tmp9 > .env.tmp10 || true
-      grep -v "^TTS_" .env.tmp10 > .env.tmp11 || true
-      grep -v "^OPENAI_API_KEY" .env.tmp11 > .env.tmp12 || true
-      grep -v "^ENABLE_MCP_RETRY" .env.tmp12 > .env.tmp13 || true
-      grep -v "^MCP_RETRY_ATTEMPTS" .env.tmp13 > .env.tmp14 || true
-      grep -v "^SENTINEL_API_KEY" .env.tmp14 > .env.tmp15 || true
-      grep -v "^HOST_CHECK_SECRET" .env.tmp15 > .env.tmp16 || true
-      grep -v "^OPENROUTER_API_KEY" .env.tmp16 > .env.tmp17 || true
-      grep -v "^HYDE_" .env.tmp17 > .env.tmp18 || true
-      grep -v "^API_KEY_HERALD" .env.tmp18 > .env.tmp19 || true
-      grep -v "^VERIS_HERALD_API_KEY" .env.tmp19 > .env.tmp20 || true
-      grep -v "^VERIS_RESEARCH_API_KEY" .env.tmp20 > .env.tmp21 || true
-      grep -v "^VERIS_MEMORY_API_KEY" .env.tmp21 > .env || true
-      rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13 .env.tmp14 .env.tmp15 .env.tmp16 .env.tmp17 .env.tmp18 .env.tmp19 .env.tmp20 .env.tmp21
-    fi
-
-    # SECURITY: Validate required secrets before writing to .env
-    echo "🔐 Validating required secrets..."
-    VALIDATION_FAILED=0
-
-    if [ -z "\$NEO4J_PASSWORD" ]; then
-      echo "❌ ERROR: NEO4J_PASSWORD is not set or empty!"
-      VALIDATION_FAILED=1
-    fi
-
-    if [ -z "\$NEO4J_RO_PASSWORD" ]; then
-      echo "❌ ERROR: NEO4J_RO_PASSWORD is not set or empty!"
-      echo "   This secret must be explicitly configured in GitHub Secrets."
-      echo "   No default fallback is allowed for security reasons."
-      VALIDATION_FAILED=1
-    fi
-
-    if [ -z "\$REDIS_PASSWORD" ]; then
-      echo "❌ ERROR: REDIS_PASSWORD is not set or empty!"
-      echo "   Redis requires authentication for security."
-      VALIDATION_FAILED=1
-    fi
-
-    # Validate secrets required for fast deployment (must match REQUIRED_SECRETS in deploy-dev.yml)
-    if [ -z "\$API_KEY_MCP" ]; then
-      echo "❌ ERROR: API_KEY_MCP is not set or empty!"
-      echo "   MCP Server requires API key authentication."
-      VALIDATION_FAILED=1
-    fi
-
-    if [ -z "\$SENTINEL_API_KEY" ]; then
-      echo "❌ ERROR: SENTINEL_API_KEY is not set or empty!"
-      echo "   Sentinel monitoring requires API key authentication."
-      VALIDATION_FAILED=1
-    fi
-
-    # Check minimum password lengths
-    if [ -n "\$NEO4J_PASSWORD" ] && [ \${#NEO4J_PASSWORD} -lt 16 ]; then
-      echo "⚠️  WARNING: NEO4J_PASSWORD is less than 16 characters (current: \${#NEO4J_PASSWORD})"
-      echo "   Consider using a longer password for better security."
-    fi
-
-    if [ -n "\$NEO4J_RO_PASSWORD" ] && [ \${#NEO4J_RO_PASSWORD} -lt 16 ]; then
-      echo "⚠️  WARNING: NEO4J_RO_PASSWORD is less than 16 characters (current: \${#NEO4J_RO_PASSWORD})"
-      echo "   Consider using a longer password for better security."
-    fi
-
-    if [ -n "\$REDIS_PASSWORD" ] && [ \${#REDIS_PASSWORD} -lt 16 ]; then
-      echo "⚠️  WARNING: REDIS_PASSWORD is less than 16 characters (current: \${#REDIS_PASSWORD})"
-      echo "   Consider using a longer password for better security."
-    fi
-
-    if [ \$VALIDATION_FAILED -eq 1 ]; then
-      echo ""
-      echo "❌ DEPLOYMENT FAILED: Required secrets are missing!"
-      echo ""
-      echo "Fix by adding these secrets to GitHub Secrets:"
-      echo "  1. Go to: https://github.com/credentum/veris-memory/settings/secrets/actions"
-      echo "  2. Add the missing secrets listed above"
-      echo "  3. Re-run the deployment workflow"
-      echo ""
-      exit 1
-    fi
-
-    echo "✅ All required secrets are present and valid"
-
-    # Write secrets to .env without echoing them
-    # Note: Secrets are passed as environment variables from GitHub Actions
-    {
-      printf "NEO4J_PASSWORD=%s\\n" "\$NEO4J_PASSWORD"
-      printf "NEO4J_RO_PASSWORD=%s\\n" "\$NEO4J_RO_PASSWORD"
-      printf "NEO4J_AUTH=neo4j/%s\\n" "\$NEO4J_PASSWORD"
-
-      # SECURITY: Redis Password Authentication
-      printf "\\n# Redis Authentication (Security Fix)\\n"
-      printf "REDIS_PASSWORD=%s\\n" "\$REDIS_PASSWORD"
-
-      # Add Telegram configuration if available
-      if [ -n "\$TELEGRAM_BOT_TOKEN" ]; then
-        printf "TELEGRAM_BOT_TOKEN=%s\\n" "\$TELEGRAM_BOT_TOKEN"
-      fi
-      if [ -n "\$TELEGRAM_CHAT_ID" ]; then
-        printf "TELEGRAM_CHAT_ID=%s\\n" "\$TELEGRAM_CHAT_ID"
-      fi
-
-      # Sprint 13: MCP API Key Authentication
-      printf "\\n# MCP Server Authentication (Sprint 13)\\n"
-      if [ -n "\$API_KEY_MCP" ]; then
-        printf "API_KEY_MCP=%s\\n" "\$API_KEY_MCP"
-        printf "AUTH_REQUIRED=true\\n"
-        printf "ENVIRONMENT=production\\n"
-      else
-        # Development fallback - use test key
-        printf "API_KEY_MCP=vmk_mcp_test:mcp_server:writer:true\\n"
-        printf "AUTH_REQUIRED=false\\n"
-        printf "ENVIRONMENT=development\\n"
-      fi
-
-      # PR #170: Cache and Embedding Configuration
-      printf "\\n# Veris Memory Cache Configuration (PR #170)\\n"
-      printf "VERIS_CACHE_TTL_SECONDS=300\\n"
-      printf "STRICT_EMBEDDINGS=false\\n"
-      printf "EMBEDDING_DIM=384\\n"
-
-      # Qdrant Collection Configuration (PR #238)
-      printf "\\n# Qdrant Collection Name (must match across all components)\\n"
-      printf "QDRANT_COLLECTION_NAME=context_embeddings\\n"
-
-      # Voice Platform Configuration
-      printf "\\n# TeamAI Voice Platform Configuration\\n"
-      if [ -n "\$LIVEKIT_API_KEY" ]; then
-        printf "LIVEKIT_API_KEY=%s\\n" "\$LIVEKIT_API_KEY"
-      fi
-      if [ -n "\$LIVEKIT_API_SECRET" ]; then
-        printf "LIVEKIT_API_SECRET=%s\\n" "\$LIVEKIT_API_SECRET"
-      fi
-      if [ -n "\$LIVEKIT_API_WEBSOCKET" ]; then
-        printf "LIVEKIT_API_WEBSOCKET=%s\\n" "\$LIVEKIT_API_WEBSOCKET"
-      fi
-      if [ -n "\$API_KEY_VOICEBOT" ]; then
-        printf "API_KEY_VOICEBOT=%s\\n" "\$API_KEY_VOICEBOT"
-      fi
-
-      # Voice Bot Sprint 13 Configuration
-      printf "VOICE_BOT_AUTHOR_PREFIX=voice_bot\\n"
-      printf "ENABLE_MCP_RETRY=true\\n"
-      printf "MCP_RETRY_ATTEMPTS=3\\n"
-
-      # OpenAI for STT/TTS (Whisper + TTS)
-      if [ -n "\$OPENAI_API_KEY" ]; then
-        printf "OPENAI_API_KEY=%s\\n" "\$OPENAI_API_KEY"
-        printf "STT_PROVIDER=whisper\\n"
-        printf "STT_API_KEY=%s\\n" "\$OPENAI_API_KEY"
-        printf "TTS_PROVIDER=openai\\n"
-        printf "TTS_API_KEY=%s\\n" "\$OPENAI_API_KEY"
-      fi
-
-      # HyDE (Hypothetical Document Embeddings) Configuration
-      # Uses free Grok model via OpenRouter for improved semantic search
-      printf "\\n# HyDE Query Expansion (PR #400)\\n"
-      if [ -n "\$OPENROUTER_API_KEY" ]; then
-        printf "OPENROUTER_API_KEY=%s\\n" "\$OPENROUTER_API_KEY"
-        printf "HYDE_ENABLED=true\\n"
-        printf "HYDE_API_PROVIDER=openrouter\\n"
-        printf "HYDE_MODEL=mistralai/mistral-small-3.1-24b-instruct-2503\\n"
-      else
-        printf "HYDE_ENABLED=false\\n"
-      fi
-
-      # Voice Bot Feature Flags
-      printf "ENABLE_VOICE_COMMANDS=true\\n"
-      printf "ENABLE_FACT_STORAGE=true\\n"
-      printf "ENABLE_CONVERSATION_TRACE=true\\n"
-
-      # Voice Bot SSL Configuration (auto-generated)
-      printf "\\n# SSL Configuration for Voice Bot\\n"
-      printf "SSL_KEYFILE=/app/certs/key.pem\\n"
-      printf "SSL_CERTFILE=/app/certs/cert.pem\\n"
-
-      # Sentinel Monitoring Configuration (required for fast deployment)
-      printf "\\n# Sentinel Monitoring Authentication\\n"
-      printf "SENTINEL_API_KEY=%s\\n" "\$SENTINEL_API_KEY"
-      if [ -n "\$HOST_CHECK_SECRET" ]; then
-        printf "HOST_CHECK_SECRET=%s\\n" "\$HOST_CHECK_SECRET"
-      fi
-
-      # Veris API Keys (Herald and Research)
-      if [ -n "\$VERIS_HERALD_API_KEY" ]; then
-        printf "\\n# Veris API Keys\\n"
-        printf "VERIS_HERALD_API_KEY=%s\\n" "\$VERIS_HERALD_API_KEY"
-      fi
-      if [ -n "\$VERIS_RESEARCH_API_KEY" ]; then
-        printf "VERIS_RESEARCH_API_KEY=%s\\n" "\$VERIS_RESEARCH_API_KEY"
-      fi
-      if [ -n "\$VERIS_MEMORY_API_KEY" ]; then
-        printf "VERIS_MEMORY_API_KEY=%s\\n" "\$VERIS_MEMORY_API_KEY"
-      fi
-    } >> .env 2>/dev/null
-
-    # Verify configuration was written correctly (all secrets required for fast deployment)
-    if ! grep -q "^NEO4J_PASSWORD=" .env; then
-      echo "❌ ERROR: NEO4J_PASSWORD not found in .env!"
-      exit 1
-    fi
-    if ! grep -q "^REDIS_PASSWORD=" .env; then
-      echo "❌ ERROR: REDIS_PASSWORD not found in .env!"
-      exit 1
-    fi
-    if ! grep -q "^API_KEY_MCP=" .env; then
-      echo "❌ ERROR: API_KEY_MCP not found in .env!"
-      exit 1
-    fi
-    if ! grep -q "^SENTINEL_API_KEY=" .env; then
-      echo "❌ ERROR: SENTINEL_API_KEY not found in .env!"
-      exit 1
-    fi
-    echo "✅ Configuration file created with all required secrets"
-
-    # Generate SSL certificates for voice-bot if they don't exist
-    echo "🔐 Checking SSL certificates for voice-bot..."
-    CERT_DIR="/opt/veris-memory/voice-bot/certs"
-    if [ ! -d "\$CERT_DIR" ]; then
-      echo "📁 Creating certs directory..."
-      mkdir -p "\$CERT_DIR"
-    fi
-
-    if [ ! -f "\$CERT_DIR/key.pem" ] || [ ! -f "\$CERT_DIR/cert.pem" ]; then
-      echo "📜 Generating self-signed SSL certificate..."
-      openssl req -x509 -newkey rsa:4096 -nodes \
-        -keyout "\$CERT_DIR/key.pem" \
-        -out "\$CERT_DIR/cert.pem" \
-        -days 365 \
-        -subj "/C=US/ST=State/L=City/O=Personal/CN=\$(hostname -I | awk '{print \$1}')" \
-        2>/dev/null || echo "⚠️  Certificate generation failed, voice-bot will use HTTP"
-
-      if [ -f "\$CERT_DIR/key.pem" ] && [ -f "\$CERT_DIR/cert.pem" ]; then
-        echo "✅ SSL certificates generated successfully"
-        chmod 600 "\$CERT_DIR/key.pem"
-        chmod 644 "\$CERT_DIR/cert.pem"
-      fi
-    else
-      echo "✅ SSL certificates already exist"
-      # Check certificate expiry (warn if less than 30 days)
-      CERT_EXPIRY=\$(openssl x509 -enddate -noout -in "\$CERT_DIR/cert.pem" 2>/dev/null | cut -d= -f2)
-      if [ -n "\$CERT_EXPIRY" ]; then
-        EXPIRY_EPOCH=\$(date -d "\$CERT_EXPIRY" +%s 2>/dev/null || echo 0)
-        NOW_EPOCH=\$(date +%s)
-        DAYS_LEFT=\$(( (\$EXPIRY_EPOCH - \$NOW_EPOCH) / 86400 ))
-
-        if [ \$DAYS_LEFT -lt 30 ] && [ \$DAYS_LEFT -gt 0 ]; then
-          echo "⚠️  SSL certificate expires in \$DAYS_LEFT days"
-          echo "   Consider regenerating: rm -rf \$CERT_DIR && redeploy"
-        elif [ \$DAYS_LEFT -le 0 ]; then
-          echo "⚠️  SSL certificate has EXPIRED! Regenerating..."
-          rm -f "\$CERT_DIR/key.pem" "\$CERT_DIR/cert.pem"
-          openssl req -x509 -newkey rsa:4096 -nodes \
-            -keyout "\$CERT_DIR/key.pem" \
-            -out "\$CERT_DIR/cert.pem" \
-            -days 365 \
-            -subj "/C=US/ST=State/L=City/O=Personal/CN=\$(hostname -I | awk '{print \$1}')" \
-            2>/dev/null && echo "✅ SSL certificate regenerated"
-          chmod 600 "\$CERT_DIR/key.pem" 2>/dev/null
-          chmod 644 "\$CERT_DIR/cert.pem" 2>/dev/null
-        else
-          echo "   Valid for \$DAYS_LEFT more days"
-        fi
-      fi
-    fi
-
-    # Pull pre-built images from GitHub Container Registry
-    echo "🏗️  Starting deployment (pull + start services)..."
-
-    # Login to GitHub Container Registry to pull CVE-validated images
-    if [ -n "\$GITHUB_TOKEN" ]; then
-      echo "🔐 Logging in to GitHub Container Registry..."
-      echo "\$GITHUB_TOKEN" | docker login ghcr.io -u "\$GITHUB_ACTOR" --password-stdin
-    else
-      echo "⚠️  GITHUB_TOKEN not set, will try to pull public images without authentication"
-    fi
-
-    # Pull latest CVE-validated images (30 seconds vs 7 minutes build time)
-    echo "📥 Pulling latest images from GHCR (CVE validated)..."
-    if docker compose -p veris-memory-dev pull; then
-      # Successfully pulled images from GHCR
-      echo "✅ Images pulled from GHCR successfully"
-
-      # Verify image digests for security (optional but recommended)
-      echo "🔐 Verifying image digests..."
-      for service in api context-store sentinel; do
-        DIGEST=\$(docker inspect ghcr.io/credentum/veris-memory/\$service:latest --format='{{index .RepoDigests 0}}' 2>/dev/null || echo "not found")
-        if [ "\$DIGEST" != "not found" ]; then
-          echo "   ✓ \$service: \$DIGEST"
-        else
-          echo "   ⚠️  \$service: Could not verify digest (image may be built locally)"
-        fi
-      done
-
-      # Build qdrant locally (not in GHCR - uses custom Dockerfile with curl/wget for health checks)
-      echo "🔨 Building qdrant image locally (not available in GHCR)..."
-      docker compose -p veris-memory-dev build qdrant
-
-      # PR #387: Use --force-recreate to ensure containers get fresh state
-      # This fixes issues where Python modules are cached from previous runs
-      echo "🚀 Starting main services with pulled images (force-recreate for fresh state)..."
-      docker compose -p veris-memory-dev up -d --force-recreate --no-build
-    else
-      # GHCR pull failed - fall back to local build
-      echo "⚠️  Failed to pull images from GHCR (registry unreachable or images not yet pushed)"
-      echo "🏗️  Falling back to local build (this will take ~7 minutes)..."
-      # PR #387: Use --force-recreate to ensure containers get fresh state
-      docker compose -p veris-memory-dev up -d --force-recreate --build
-    fi
-
-    # Deploy voice platform services (voice-bot only - livekit was removed in PR #371)
-    if [ -f "docker-compose.voice.yml" ]; then
-      echo "🎙️  Deploying voice platform..."
-      # Voice services still build locally (not in GHCR yet)
-      docker compose -p veris-memory-dev -f \$COMPOSE_FILE -f docker-compose.voice.yml up -d --build voice-bot
-    else
-      echo "⚠️  docker-compose.voice.yml not found, skipping voice-bot deployment"
-    fi
-
-    # Logout from GHCR
-    if [ -n "\$GITHUB_TOKEN" ]; then
-      docker logout ghcr.io
-    fi
-
-    echo "⏳ Waiting for services to start..."
-    sleep 10
-
-    # Show service status
-    echo "📊 Service Status:"
-    docker compose -p veris-memory-dev ps
-
-    # Initialize Neo4j schema
-    echo ""
-    echo "🔧 Initializing Neo4j schema..."
-    if [ -f "scripts/init-neo4j-schema.sh" ]; then
-      chmod +x scripts/init-neo4j-schema.sh
-      # Run schema initialization with proper error handling
-      if ./scripts/init-neo4j-schema.sh; then
-        echo "✅ Schema initialization completed successfully"
-      else
-        SCHEMA_EXIT_CODE=\$?
-        # Non-zero exit could be warnings (e.g., already exists) or real errors
-        # Log the warning but continue deployment
-        echo "⚠️  Schema initialization exited with code \$SCHEMA_EXIT_CODE"
-        echo "   Deployment will continue, but verify schema manually if needed"
-      fi
-    else
-      echo "⚠️  Neo4j schema initialization script not found"
-      echo "   Attempting manual initialization..."
-
-      # Fallback: Run schema init via docker exec
-      NEO4J_CONTAINER=\$(docker ps --filter "name=neo4j" --format "{{.Names}}" | head -1)
-      if [ -n "\$NEO4J_CONTAINER" ]; then
-        echo "   Found Neo4j container: \$NEO4J_CONTAINER"
-
-        # Create constraint with proper error handling
-        CONSTRAINT_OUTPUT=\$(docker exec -e NEO4J_PASSWORD="\$NEO4J_PASSWORD" "\$NEO4J_CONTAINER" \
-          sh -c 'cypher-shell -u neo4j -p "\$NEO4J_PASSWORD" "CREATE CONSTRAINT context_id_unique IF NOT EXISTS FOR (c:Context) REQUIRE c.id IS UNIQUE"' 2>&1)
-        CONSTRAINT_RESULT=\$?
-
-        if [ \$CONSTRAINT_RESULT -eq 0 ]; then
-          echo "   ✅ Context constraint created"
-        elif echo "\$CONSTRAINT_OUTPUT" | grep -qi "already exists"; then
-          echo "   ℹ️  Context constraint already exists (idempotent)"
-        else
-          echo "   ⚠️  Constraint creation failed: \$CONSTRAINT_OUTPUT"
-        fi
-
-        # Create index with proper error handling
-        INDEX_OUTPUT=\$(docker exec -e NEO4J_PASSWORD="\$NEO4J_PASSWORD" "\$NEO4J_CONTAINER" \
-          sh -c 'cypher-shell -u neo4j -p "\$NEO4J_PASSWORD" "CREATE INDEX context_type_idx IF NOT EXISTS FOR (c:Context) ON (c.type)"' 2>&1)
-        INDEX_RESULT=\$?
-
-        if [ \$INDEX_RESULT -eq 0 ]; then
-          echo "   ✅ Context index created"
-        elif echo "\$INDEX_OUTPUT" | grep -qi "already exists"; then
-          echo "   ℹ️  Context index already exists (idempotent)"
-        else
-          echo "   ⚠️  Index creation failed: \$INDEX_OUTPUT"
-        fi
-
-        echo "   ✅ Basic schema initialization attempted"
-      else
-        echo "   ⚠️  Neo4j container not found, skipping schema init"
-      fi
-    fi
-
-    # Show voice-bot status specifically
-    echo ""
-    echo "🎙️  Voice Platform Status:"
-    docker compose -p veris-memory-dev -f \$COMPOSE_FILE -f docker-compose.voice.yml ps voice-bot 2>/dev/null || echo "Voice services not running"
-
-    echo ""
-    echo "✅ Development deployment completed!"
+    echo "# Auto-generated environment file" > .env
   fi
 
-  # APPEND SECRETS TO .env (runs AFTER deploy-environment.sh creates the base .env)
-  # This is CRITICAL - deploy-environment.sh creates .env but doesn't include all secrets
-  echo "🔐 Appending API keys and secrets to .env..."
+  # Remove ALL managed variables to ensure clean state (no duplicates)
+  echo "🗑️  Removing managed variables from .env to prevent duplicates..."
   if [ -f .env ]; then
-    # Remove any existing entries for these secrets to avoid duplicates
-    grep -v "^SENTINEL_API_KEY=" .env > .env.secrets.tmp || true
-    grep -v "^HOST_CHECK_SECRET=" .env.secrets.tmp > .env.secrets.tmp2 || true
-    grep -v "^VERIS_HERALD_API_KEY=" .env.secrets.tmp2 > .env.secrets.tmp3 || true
-    grep -v "^VERIS_RESEARCH_API_KEY=" .env.secrets.tmp3 > .env.secrets.tmp4 || true
-    grep -v "^VERIS_MEMORY_API_KEY=" .env.secrets.tmp4 > .env || true
-    rm -f .env.secrets.tmp .env.secrets.tmp2 .env.secrets.tmp3 .env.secrets.tmp4
-
-    # Append secrets
-    {
-      printf "\\n# Sentinel Monitoring Authentication (added by deploy-dev.sh)\\n"
-      printf "SENTINEL_API_KEY=%s\\n" "\$SENTINEL_API_KEY"
-      if [ -n "\$HOST_CHECK_SECRET" ]; then
-        printf "HOST_CHECK_SECRET=%s\\n" "\$HOST_CHECK_SECRET"
-      fi
-
-      # Veris API Keys
-      if [ -n "\$VERIS_HERALD_API_KEY" ]; then
-        printf "\\n# Veris API Keys (added by deploy-dev.sh)\\n"
-        printf "VERIS_HERALD_API_KEY=%s\\n" "\$VERIS_HERALD_API_KEY"
-      fi
-      if [ -n "\$VERIS_RESEARCH_API_KEY" ]; then
-        printf "VERIS_RESEARCH_API_KEY=%s\\n" "\$VERIS_RESEARCH_API_KEY"
-      fi
-      if [ -n "\$VERIS_MEMORY_API_KEY" ]; then
-        printf "VERIS_MEMORY_API_KEY=%s\\n" "\$VERIS_MEMORY_API_KEY"
-      fi
-    } >> .env 2>/dev/null
-
-    # Verify secrets were written
-    if grep -q "^SENTINEL_API_KEY=" .env; then
-      echo "✅ SENTINEL_API_KEY added to .env"
-    else
-      echo "⚠️  WARNING: SENTINEL_API_KEY not found in .env"
-    fi
-    if grep -q "^VERIS_HERALD_API_KEY=" .env; then
-      echo "✅ VERIS_HERALD_API_KEY added to .env"
-    fi
-    if grep -q "^VERIS_RESEARCH_API_KEY=" .env; then
-      echo "✅ VERIS_RESEARCH_API_KEY added to .env"
-    fi
-    if grep -q "^VERIS_MEMORY_API_KEY=" .env; then
-      echo "✅ VERIS_MEMORY_API_KEY added to .env"
-    fi
-  else
-    echo "❌ ERROR: .env file not found after deployment!"
+    # Create a clean .env by removing all managed variables
+    sed -i '/^NEO4J/d; /^REDIS_PASSWORD/d; /^TELEGRAM/d; /^API_KEY/d; /^VERIS_/d; /^LIVEKIT/d; /^VOICE_BOT/d; /^STT_/d; /^TTS_/d; /^OPENAI_API_KEY/d; /^OPENROUTER_API_KEY/d; /^HYDE_/d; /^CROSS_ENCODER/d; /^SENTINEL/d; /^HOST_CHECK/d; /^AUTH_REQUIRED/d; /^ENVIRONMENT=/d; /^ENABLE_MCP/d; /^MCP_RETRY/d; /^STRICT_EMBEDDINGS/d; /^EMBEDDING_DIM/d; /^QDRANT_COLLECTION/d; /^SSL_/d; /^ENABLE_VOICE/d; /^ENABLE_FACT/d; /^ENABLE_CONVERSATION/d' .env
   fi
+
+  # SECURITY: Validate required secrets before writing to .env
+  echo "🔐 Validating required secrets..."
+  VALIDATION_FAILED=0
+
+  if [ -z "\$NEO4J_PASSWORD" ]; then
+    echo "❌ ERROR: NEO4J_PASSWORD is not set or empty!"
+    VALIDATION_FAILED=1
+  fi
+
+  if [ -z "\$NEO4J_RO_PASSWORD" ]; then
+    echo "❌ ERROR: NEO4J_RO_PASSWORD is not set or empty!"
+    VALIDATION_FAILED=1
+  fi
+
+  if [ -z "\$REDIS_PASSWORD" ]; then
+    echo "❌ ERROR: REDIS_PASSWORD is not set or empty!"
+    VALIDATION_FAILED=1
+  fi
+
+  if [ -z "\$API_KEY_MCP" ]; then
+    echo "❌ ERROR: API_KEY_MCP is not set or empty!"
+    VALIDATION_FAILED=1
+  fi
+
+  if [ -z "\$SENTINEL_API_KEY" ]; then
+    echo "❌ ERROR: SENTINEL_API_KEY is not set or empty!"
+    VALIDATION_FAILED=1
+  fi
+
+  if [ \$VALIDATION_FAILED -eq 1 ]; then
+    echo ""
+    echo "❌ DEPLOYMENT FAILED: Required secrets are missing!"
+    echo "Fix by adding these secrets to GitHub Secrets:"
+    echo "  https://github.com/credentum/veris-memory/settings/secrets/actions"
+    exit 1
+  fi
+  echo "✅ All required secrets validated"
+
+  # =============================================================================
+  # CREATE COMPLETE .env FILE (Single Source of Truth)
+  # All secrets written here - no more fragmented secret management
+  # =============================================================================
+  echo "📝 Creating .env file with ALL secrets..."
+  {
+    printf "# =============================================================================\\n"
+    printf "# Veris Memory Environment Configuration\\n"
+    printf "# Generated by deploy-dev.sh (Issue #416: Consolidated deployment)\\n"
+    printf "# =============================================================================\\n\\n"
+
+    # Database Credentials
+    printf "# Neo4j Database\\n"
+    printf "NEO4J_PASSWORD=%s\\n" "\$NEO4J_PASSWORD"
+    printf "NEO4J_RO_PASSWORD=%s\\n" "\$NEO4J_RO_PASSWORD"
+    printf "NEO4J_AUTH=neo4j/%s\\n" "\$NEO4J_PASSWORD"
+
+    # Redis Authentication
+    printf "\\n# Redis Authentication\\n"
+    printf "REDIS_PASSWORD=%s\\n" "\$REDIS_PASSWORD"
+
+    # MCP Server Authentication
+    printf "\\n# MCP Server Authentication\\n"
+    printf "API_KEY_MCP=%s\\n" "\$API_KEY_MCP"
+    printf "AUTH_REQUIRED=true\\n"
+    printf "ENVIRONMENT=development\\n"
+
+    # Telegram Notifications
+    if [ -n "\$TELEGRAM_BOT_TOKEN" ]; then
+      printf "\\n# Telegram Notifications\\n"
+      printf "TELEGRAM_BOT_TOKEN=%s\\n" "\$TELEGRAM_BOT_TOKEN"
+      [ -n "\$TELEGRAM_CHAT_ID" ] && printf "TELEGRAM_CHAT_ID=%s\\n" "\$TELEGRAM_CHAT_ID"
+    fi
+
+    # Voice Platform Configuration
+    printf "\\n# Voice Platform Configuration\\n"
+    [ -n "\$LIVEKIT_API_KEY" ] && printf "LIVEKIT_API_KEY=%s\\n" "\$LIVEKIT_API_KEY"
+    [ -n "\$LIVEKIT_API_SECRET" ] && printf "LIVEKIT_API_SECRET=%s\\n" "\$LIVEKIT_API_SECRET"
+    [ -n "\$LIVEKIT_API_WEBSOCKET" ] && printf "LIVEKIT_API_WEBSOCKET=%s\\n" "\$LIVEKIT_API_WEBSOCKET"
+    [ -n "\$API_KEY_VOICEBOT" ] && printf "API_KEY_VOICEBOT=%s\\n" "\$API_KEY_VOICEBOT"
+    printf "VOICE_BOT_AUTHOR_PREFIX=voice_bot\\n"
+    printf "ENABLE_MCP_RETRY=true\\n"
+    printf "MCP_RETRY_ATTEMPTS=3\\n"
+    printf "ENABLE_VOICE_COMMANDS=true\\n"
+    printf "ENABLE_FACT_STORAGE=true\\n"
+    printf "ENABLE_CONVERSATION_TRACE=true\\n"
+    printf "SSL_KEYFILE=/app/certs/key.pem\\n"
+    printf "SSL_CERTFILE=/app/certs/cert.pem\\n"
+
+    # OpenAI for STT/TTS
+    if [ -n "\$OPENAI_API_KEY" ]; then
+      printf "\\n# OpenAI (STT/TTS)\\n"
+      printf "OPENAI_API_KEY=%s\\n" "\$OPENAI_API_KEY"
+      printf "STT_PROVIDER=whisper\\n"
+      printf "STT_API_KEY=%s\\n" "\$OPENAI_API_KEY"
+      printf "TTS_PROVIDER=openai\\n"
+      printf "TTS_API_KEY=%s\\n" "\$OPENAI_API_KEY"
+    fi
+
+    # HyDE Configuration (OpenRouter)
+    printf "\\n# HyDE Query Expansion\\n"
+    if [ -n "\$OPENROUTER_API_KEY" ]; then
+      printf "OPENROUTER_API_KEY=%s\\n" "\$OPENROUTER_API_KEY"
+      printf "HYDE_ENABLED=true\\n"
+      printf "HYDE_API_PROVIDER=openrouter\\n"
+      printf "HYDE_MODEL=mistralai/mistral-small-3.1-24b-instruct-2503\\n"
+    else
+      printf "HYDE_ENABLED=false\\n"
+    fi
+
+    # Cross-Encoder Reranker
+    printf "\\n# Cross-Encoder Reranker\\n"
+    printf "CROSS_ENCODER_RERANKER_ENABLED=true\\n"
+    printf "CROSS_ENCODER_TOP_K=50\\n"
+    printf "CROSS_ENCODER_RETURN_K=10\\n"
+
+    # Sentinel Monitoring
+    printf "\\n# Sentinel Monitoring\\n"
+    printf "SENTINEL_API_KEY=%s\\n" "\$SENTINEL_API_KEY"
+    [ -n "\$HOST_CHECK_SECRET" ] && printf "HOST_CHECK_SECRET=%s\\n" "\$HOST_CHECK_SECRET"
+
+    # Veris API Keys
+    printf "\\n# Veris API Keys\\n"
+    [ -n "\$VERIS_HERALD_API_KEY" ] && printf "VERIS_HERALD_API_KEY=%s\\n" "\$VERIS_HERALD_API_KEY"
+    [ -n "\$VERIS_RESEARCH_API_KEY" ] && printf "VERIS_RESEARCH_API_KEY=%s\\n" "\$VERIS_RESEARCH_API_KEY"
+    [ -n "\$VERIS_MEMORY_API_KEY" ] && printf "VERIS_MEMORY_API_KEY=%s\\n" "\$VERIS_MEMORY_API_KEY"
+
+    # Cache and Embedding Configuration
+    printf "\\n# Cache and Embedding Configuration\\n"
+    printf "VERIS_CACHE_TTL_SECONDS=300\\n"
+    printf "STRICT_EMBEDDINGS=false\\n"
+    printf "EMBEDDING_DIM=384\\n"
+    printf "QDRANT_COLLECTION_NAME=context_embeddings\\n"
+
+  } >> .env 2>/dev/null
+
+  # Verify critical secrets were written
+  echo "🔍 Verifying .env configuration..."
+  VERIFY_FAILED=0
+  for secret in NEO4J_PASSWORD REDIS_PASSWORD API_KEY_MCP SENTINEL_API_KEY; do
+    if grep -q "^\${secret}=" .env; then
+      echo "  ✓ \$secret"
+    else
+      echo "  ✗ \$secret MISSING!"
+      VERIFY_FAILED=1
+    fi
+  done
+
+  if [ \$VERIFY_FAILED -eq 1 ]; then
+    echo "❌ ERROR: Critical secrets missing from .env!"
+    exit 1
+  fi
+  echo "✅ All secrets written to .env"
+
+  # =============================================================================
+  # SSL CERTIFICATES
+  # =============================================================================
+  echo "🔐 Checking SSL certificates for voice-bot..."
+  CERT_DIR="/opt/veris-memory/voice-bot/certs"
+  mkdir -p "\$CERT_DIR"
+
+  if [ ! -f "\$CERT_DIR/key.pem" ] || [ ! -f "\$CERT_DIR/cert.pem" ]; then
+    echo "📜 Generating self-signed SSL certificate..."
+    openssl req -x509 -newkey rsa:4096 -nodes \
+      -keyout "\$CERT_DIR/key.pem" \
+      -out "\$CERT_DIR/cert.pem" \
+      -days 365 \
+      -subj "/C=US/ST=State/L=City/O=Personal/CN=\$(hostname -I | awk '{print \$1}')" \
+      2>/dev/null && echo "✅ SSL certificates generated" || echo "⚠️  Certificate generation failed"
+    chmod 600 "\$CERT_DIR/key.pem" 2>/dev/null
+    chmod 644 "\$CERT_DIR/cert.pem" 2>/dev/null
+  else
+    echo "✅ SSL certificates already exist"
+  fi
+
+  # =============================================================================
+  # PULL IMAGES AND START SERVICES
+  # =============================================================================
+  echo "🏗️  Starting deployment..."
+
+  # Login to GHCR
+  if [ -n "\$GITHUB_TOKEN" ]; then
+    echo "🔐 Logging in to GitHub Container Registry..."
+    echo "\$GITHUB_TOKEN" | docker login ghcr.io -u "\$GITHUB_ACTOR" --password-stdin
+  fi
+
+  # Pull images from GHCR
+  echo "📥 Pulling images from GHCR..."
+  if docker compose -p veris-memory-dev -f \$COMPOSE_FILE pull 2>/dev/null; then
+    echo "✅ Images pulled from GHCR"
+
+    # Build qdrant locally (custom Dockerfile)
+    echo "🔨 Building qdrant image locally..."
+    docker compose -p veris-memory-dev -f \$COMPOSE_FILE build qdrant
+
+    # Start services
+    echo "🚀 Starting services..."
+    docker compose -p veris-memory-dev -f \$COMPOSE_FILE up -d --force-recreate --no-build
+  else
+    echo "⚠️  GHCR pull failed, building locally..."
+    docker compose -p veris-memory-dev -f \$COMPOSE_FILE up -d --force-recreate --build
+  fi
+
+  # Deploy voice-bot if available
+  if [ -f "docker-compose.voice.yml" ]; then
+    echo "🎙️  Deploying voice platform..."
+    docker compose -p veris-memory-dev -f \$COMPOSE_FILE -f docker-compose.voice.yml up -d --build voice-bot
+  fi
+
+  # Logout from GHCR
+  [ -n "\$GITHUB_TOKEN" ] && docker logout ghcr.io 2>/dev/null
+
+  echo "⏳ Waiting for services to start..."
+  sleep 10
+
+  # Show service status
+  echo "📊 Service Status:"
+  docker compose -p veris-memory-dev -f \$COMPOSE_FILE ps
+
+  # =============================================================================
+  # NEO4J SCHEMA INITIALIZATION
+  # =============================================================================
+  echo "🔧 Initializing Neo4j schema..."
+  if [ -f "scripts/init-neo4j-schema.sh" ]; then
+    chmod +x scripts/init-neo4j-schema.sh
+    ./scripts/init-neo4j-schema.sh || echo "⚠️  Schema init exited with warnings (continuing)"
+  else
+    echo "⚠️  Schema init script not found, attempting manual init..."
+    NEO4J_CONTAINER=\$(docker ps --filter "name=neo4j" --format "{{.Names}}" | head -1)
+    if [ -n "\$NEO4J_CONTAINER" ]; then
+      docker exec -e NEO4J_PASSWORD="\$NEO4J_PASSWORD" "\$NEO4J_CONTAINER" \
+        sh -c 'cypher-shell -u neo4j -p "\$NEO4J_PASSWORD" "CREATE CONSTRAINT context_id_unique IF NOT EXISTS FOR (c:Context) REQUIRE c.id IS UNIQUE"' 2>/dev/null || true
+      docker exec -e NEO4J_PASSWORD="\$NEO4J_PASSWORD" "\$NEO4J_CONTAINER" \
+        sh -c 'cypher-shell -u neo4j -p "\$NEO4J_PASSWORD" "CREATE INDEX context_type_idx IF NOT EXISTS FOR (c:Context) ON (c.type)"' 2>/dev/null || true
+      echo "✅ Basic schema initialization attempted"
+    fi
+  fi
+
+  echo ""
+  echo "✅ Development deployment completed!"
 
   # RESTORE PHASE - Restore data after deployment
   echo "♻️  Restoring backed up data..."
