@@ -728,6 +728,58 @@ ssh -o StrictHostKeyChecking=no \
     echo "✅ Development deployment completed!"
   fi
 
+  # APPEND SECRETS TO .env (runs AFTER deploy-environment.sh creates the base .env)
+  # This is CRITICAL - deploy-environment.sh creates .env but doesn't include all secrets
+  echo "🔐 Appending API keys and secrets to .env..."
+  if [ -f .env ]; then
+    # Remove any existing entries for these secrets to avoid duplicates
+    grep -v "^SENTINEL_API_KEY=" .env > .env.secrets.tmp || true
+    grep -v "^HOST_CHECK_SECRET=" .env.secrets.tmp > .env.secrets.tmp2 || true
+    grep -v "^VERIS_HERALD_API_KEY=" .env.secrets.tmp2 > .env.secrets.tmp3 || true
+    grep -v "^VERIS_RESEARCH_API_KEY=" .env.secrets.tmp3 > .env.secrets.tmp4 || true
+    grep -v "^VERIS_MEMORY_API_KEY=" .env.secrets.tmp4 > .env || true
+    rm -f .env.secrets.tmp .env.secrets.tmp2 .env.secrets.tmp3 .env.secrets.tmp4
+
+    # Append secrets
+    {
+      printf "\\n# Sentinel Monitoring Authentication (added by deploy-dev.sh)\\n"
+      printf "SENTINEL_API_KEY=%s\\n" "\$SENTINEL_API_KEY"
+      if [ -n "\$HOST_CHECK_SECRET" ]; then
+        printf "HOST_CHECK_SECRET=%s\\n" "\$HOST_CHECK_SECRET"
+      fi
+
+      # Veris API Keys
+      if [ -n "\$VERIS_HERALD_API_KEY" ]; then
+        printf "\\n# Veris API Keys (added by deploy-dev.sh)\\n"
+        printf "VERIS_HERALD_API_KEY=%s\\n" "\$VERIS_HERALD_API_KEY"
+      fi
+      if [ -n "\$VERIS_RESEARCH_API_KEY" ]; then
+        printf "VERIS_RESEARCH_API_KEY=%s\\n" "\$VERIS_RESEARCH_API_KEY"
+      fi
+      if [ -n "\$VERIS_MEMORY_API_KEY" ]; then
+        printf "VERIS_MEMORY_API_KEY=%s\\n" "\$VERIS_MEMORY_API_KEY"
+      fi
+    } >> .env 2>/dev/null
+
+    # Verify secrets were written
+    if grep -q "^SENTINEL_API_KEY=" .env; then
+      echo "✅ SENTINEL_API_KEY added to .env"
+    else
+      echo "⚠️  WARNING: SENTINEL_API_KEY not found in .env"
+    fi
+    if grep -q "^VERIS_HERALD_API_KEY=" .env; then
+      echo "✅ VERIS_HERALD_API_KEY added to .env"
+    fi
+    if grep -q "^VERIS_RESEARCH_API_KEY=" .env; then
+      echo "✅ VERIS_RESEARCH_API_KEY added to .env"
+    fi
+    if grep -q "^VERIS_MEMORY_API_KEY=" .env; then
+      echo "✅ VERIS_MEMORY_API_KEY added to .env"
+    fi
+  else
+    echo "❌ ERROR: .env file not found after deployment!"
+  fi
+
   # RESTORE PHASE - Restore data after deployment
   echo "♻️  Restoring backed up data..."
   if [ -f "/opt/veris-memory/scripts/backup-restore-integration.sh" ]; then
