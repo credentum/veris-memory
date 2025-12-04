@@ -258,8 +258,8 @@ if [ -n "$OPENROUTER_API_KEY" ]; then
     echo "OPENROUTER_API_KEY=$OPENROUTER_API_KEY" >> .env
     echo "HYDE_ENABLED=true" >> .env
     echo "HYDE_API_PROVIDER=openrouter" >> .env
-    echo "HYDE_MODEL=x-ai/grok-4.1-fast:free" >> .env
-    echo -e "${GREEN}✅ HyDE enabled with OpenRouter (free Grok model)${NC}"
+    echo "HYDE_MODEL=mistralai/mistral-small-3.1-24b-instruct-2503" >> .env
+    echo -e "${GREEN}✅ HyDE enabled with OpenRouter (Mistral Small)${NC}"
 else
     echo "HYDE_ENABLED=false" >> .env
     echo -e "${YELLOW}⚠️  OPENROUTER_API_KEY not set, HyDE disabled${NC}"

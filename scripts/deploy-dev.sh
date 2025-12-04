@@ -488,7 +488,7 @@ ssh -o StrictHostKeyChecking=no \
         printf "OPENROUTER_API_KEY=%s\\n" "\$OPENROUTER_API_KEY"
         printf "HYDE_ENABLED=true\\n"
         printf "HYDE_API_PROVIDER=openrouter\\n"
-        printf "HYDE_MODEL=x-ai/grok-4.1-fast:free\\n"
+        printf "HYDE_MODEL=mistralai/mistral-small-3.1-24b-instruct-2503\\n"
       else
         printf "HYDE_ENABLED=false\\n"
       fi
