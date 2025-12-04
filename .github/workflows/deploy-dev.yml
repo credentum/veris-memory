@@ -58,7 +58,8 @@ jobs:
           echo "::add-mask::${{ secrets.OPENROUTER_API_KEY }}"
           echo "::add-mask::${{ secrets.SENTINEL_API_KEY }}"
           echo "::add-mask::${{ secrets.HOST_CHECK_SECRET }}"
-          echo "::add-mask::${{ secrets.API_KEY_HERALD }}"
+          echo "::add-mask::${{ secrets.VERIS_HERALD_API_KEY }}"
+          echo "::add-mask::${{ secrets.VERIS_RESEARCH_API_KEY }}"
 
           # Create SSH key with secure permissions
           # Use printf to preserve newlines in the key
@@ -222,7 +223,8 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SENTINEL_API_KEY: ${{ secrets.SENTINEL_API_KEY }}
           HOST_CHECK_SECRET: ${{ secrets.HOST_CHECK_SECRET }}
-          API_KEY_HERALD: ${{ secrets.API_KEY_HERALD }}
+          VERIS_HERALD_API_KEY: ${{ secrets.VERIS_HERALD_API_KEY }}
+          VERIS_RESEARCH_API_KEY: ${{ secrets.VERIS_RESEARCH_API_KEY }}
           HETZNER_USER: ${{ secrets.HETZNER_USER }}
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
           GITHUB_TOKEN: ${{ secrets.GHCR_PAT }}
