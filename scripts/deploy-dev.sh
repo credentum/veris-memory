@@ -73,6 +73,7 @@ ssh -o StrictHostKeyChecking=no \
   export HOST_CHECK_SECRET='$HOST_CHECK_SECRET'
   export VERIS_HERALD_API_KEY='$VERIS_HERALD_API_KEY'
   export VERIS_RESEARCH_API_KEY='$VERIS_RESEARCH_API_KEY'
+  export VERIS_MEMORY_API_KEY='$VERIS_MEMORY_API_KEY'
   export ENVIRONMENT=development
 
   # Verify critical environment variables
@@ -344,8 +345,9 @@ ssh -o StrictHostKeyChecking=no \
       grep -v "^HYDE_" .env.tmp17 > .env.tmp18 || true
       grep -v "^API_KEY_HERALD" .env.tmp18 > .env.tmp19 || true
       grep -v "^VERIS_HERALD_API_KEY" .env.tmp19 > .env.tmp20 || true
-      grep -v "^VERIS_RESEARCH_API_KEY" .env.tmp20 > .env || true
-      rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13 .env.tmp14 .env.tmp15 .env.tmp16 .env.tmp17 .env.tmp18 .env.tmp19 .env.tmp20
+      grep -v "^VERIS_RESEARCH_API_KEY" .env.tmp20 > .env.tmp21 || true
+      grep -v "^VERIS_MEMORY_API_KEY" .env.tmp21 > .env || true
+      rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13 .env.tmp14 .env.tmp15 .env.tmp16 .env.tmp17 .env.tmp18 .env.tmp19 .env.tmp20 .env.tmp21
     fi
 
     # SECURITY: Validate required secrets before writing to .env
@@ -520,6 +522,9 @@ ssh -o StrictHostKeyChecking=no \
       fi
       if [ -n "\$VERIS_RESEARCH_API_KEY" ]; then
         printf "VERIS_RESEARCH_API_KEY=%s\\n" "\$VERIS_RESEARCH_API_KEY"
+      fi
+      if [ -n "\$VERIS_MEMORY_API_KEY" ]; then
+        printf "VERIS_MEMORY_API_KEY=%s\\n" "\$VERIS_MEMORY_API_KEY"
       fi
     } >> .env 2>/dev/null
 

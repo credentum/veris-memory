@@ -37,6 +37,7 @@ services:
       - API_KEY_VOICEBOT=${API_KEY_VOICEBOT}
       - VERIS_HERALD_API_KEY=${VERIS_HERALD_API_KEY:-}
       - VERIS_RESEARCH_API_KEY=${VERIS_RESEARCH_API_KEY:-}
+      - VERIS_MEMORY_API_KEY=${VERIS_MEMORY_API_KEY:-}
       - AUTH_REQUIRED=${AUTH_REQUIRED:-true}
       - ENVIRONMENT=${ENVIRONMENT:-development}
       # PR #170: Cache and embedding configuration

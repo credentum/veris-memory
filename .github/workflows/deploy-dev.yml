@@ -60,6 +60,7 @@ jobs:
           echo "::add-mask::${{ secrets.HOST_CHECK_SECRET }}"
           echo "::add-mask::${{ secrets.VERIS_HERALD_API_KEY }}"
           echo "::add-mask::${{ secrets.VERIS_RESEARCH_API_KEY }}"
+          echo "::add-mask::${{ secrets.VERIS_MEMORY_API_KEY }}"
 
           # Create SSH key with secure permissions
           # Use printf to preserve newlines in the key
@@ -225,6 +226,7 @@ jobs:
           HOST_CHECK_SECRET: ${{ secrets.HOST_CHECK_SECRET }}
           VERIS_HERALD_API_KEY: ${{ secrets.VERIS_HERALD_API_KEY }}
           VERIS_RESEARCH_API_KEY: ${{ secrets.VERIS_RESEARCH_API_KEY }}
+          VERIS_MEMORY_API_KEY: ${{ secrets.VERIS_MEMORY_API_KEY }}
           HETZNER_USER: ${{ secrets.HETZNER_USER }}
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
           GITHUB_TOKEN: ${{ secrets.GHCR_PAT }}
