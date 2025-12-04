@@ -285,7 +285,7 @@ pip install -r requirements-dev.txt
 pre-commit install
 
 # Start development services
-docker-compose -f docker-compose.dev.yml up -d
+docker-compose up -d
 ```
 
 ### Testing
