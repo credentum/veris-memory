@@ -35,6 +35,7 @@ services:
       - API_KEY_MCP=${API_KEY_MCP}
       - API_KEY_SENTINEL=${SENTINEL_API_KEY}
       - API_KEY_VOICEBOT=${API_KEY_VOICEBOT}
+      - API_KEY_HERALD=${API_KEY_HERALD:-}
       - AUTH_REQUIRED=${AUTH_REQUIRED:-true}
       - ENVIRONMENT=${ENVIRONMENT:-development}
       # PR #170: Cache and embedding configuration

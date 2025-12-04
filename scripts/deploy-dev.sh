@@ -71,6 +71,7 @@ ssh -o StrictHostKeyChecking=no \
   export OPENROUTER_API_KEY='$OPENROUTER_API_KEY'
   export SENTINEL_API_KEY='$SENTINEL_API_KEY'
   export HOST_CHECK_SECRET='$HOST_CHECK_SECRET'
+  export API_KEY_HERALD='$API_KEY_HERALD'
   export ENVIRONMENT=development
 
   # Verify critical environment variables
@@ -339,8 +340,9 @@ ssh -o StrictHostKeyChecking=no \
       grep -v "^SENTINEL_API_KEY" .env.tmp14 > .env.tmp15 || true
       grep -v "^HOST_CHECK_SECRET" .env.tmp15 > .env.tmp16 || true
       grep -v "^OPENROUTER_API_KEY" .env.tmp16 > .env.tmp17 || true
-      grep -v "^HYDE_" .env.tmp17 > .env || true
-      rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13 .env.tmp14 .env.tmp15 .env.tmp16 .env.tmp17
+      grep -v "^HYDE_" .env.tmp17 > .env.tmp18 || true
+      grep -v "^API_KEY_HERALD" .env.tmp18 > .env || true
+      rm -f .env.tmp .env.tmp2 .env.tmp3 .env.tmp4 .env.tmp5 .env.tmp6 .env.tmp7 .env.tmp8 .env.tmp9 .env.tmp10 .env.tmp11 .env.tmp12 .env.tmp13 .env.tmp14 .env.tmp15 .env.tmp16 .env.tmp17 .env.tmp18
     fi
 
     # SECURITY: Validate required secrets before writing to .env
@@ -506,6 +508,12 @@ ssh -o StrictHostKeyChecking=no \
       printf "SENTINEL_API_KEY=%s\\n" "\$SENTINEL_API_KEY"
       if [ -n "\$HOST_CHECK_SECRET" ]; then
         printf "HOST_CHECK_SECRET=%s\\n" "\$HOST_CHECK_SECRET"
+      fi
+
+      # Herald API Key
+      if [ -n "\$API_KEY_HERALD" ]; then
+        printf "\\n# Herald API Key\\n"
+        printf "API_KEY_HERALD=%s\\n" "\$API_KEY_HERALD"
       fi
     } >> .env 2>/dev/null
 
