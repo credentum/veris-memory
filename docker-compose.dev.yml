@@ -64,18 +64,41 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Docker Socket Proxy - Secure limited Docker API access for logging
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.1
+    container_name: veris-docker-socket-proxy
+    restart: always
+    environment:
+      - CONTAINERS=1
+      - EVENTS=1
+      - AUTH=0
+      - SERVICES=0
+      - IMAGES=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - logging-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
   # Logspout - Aggregate all container logs
   logspout:
-    image: gliderlabs/logspout:latest
+    image: gliderlabs/logspout:v3.2.14
     container_name: veris-logspout
     restart: always
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /var/lib/docker/volumes/claude-workspace/_data/logs:/mnt/logs
+    depends_on:
+      - docker-socket-proxy
     environment:
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
       - ROUTE_URIS=file:///mnt/logs/veris-all.log
+    volumes:
+      - /var/lib/docker/volumes/claude-workspace/_data/logs:/mnt/logs
     networks:
-      - veris-dev
+      - logging-internal
     logging:
       driver: "json-file"
       options:
@@ -90,6 +113,8 @@ volumes:
 
 networks:
   veris-dev:
+    driver: bridge
+  logging-internal:
     driver: bridge
 
 # Security Notes for Dev:
