@@ -111,7 +111,7 @@ redis:
 
 ### 🔴 CRITICAL-3: Weak Development Default Passwords
 
-**File**: `docker-compose.dev.yml` (lines 30, 45)
+**File**: `docker-compose.yml` (lines 30, 45)
 **Severity**: CRITICAL (if used in production)
 **Risk**: Weak default credentials
 
@@ -132,7 +132,7 @@ redis:
 3. Add validation to prevent dev config usage in production
 
 ```yaml
-# Add to docker-compose.dev.yml header
+# Add to docker-compose.yml header
 # ⚠️ DEVELOPMENT ONLY - DO NOT USE IN PRODUCTION
 # This configuration uses weak default passwords for development convenience
 # For production, use docker-compose.prod.yml or docker-compose.secure.yml
@@ -143,8 +143,8 @@ environment:
 ```
 
 **References**:
-- docker-compose.dev.yml:30
-- docker-compose.dev.yml:45
+- docker-compose.yml:30
+- docker-compose.yml:45
 
 ---
 
@@ -460,7 +460,7 @@ Good security awareness shown in comments:
 | File | Status | Issues |
 |------|--------|--------|
 | docker-compose.yml | ⚠️ Issues | Hardcoded RO password, port binding |
-| docker-compose.dev.yml | ⚠️ Issues | Weak dev passwords |
+| docker-compose.yml | ⚠️ Issues | Weak dev passwords |
 | docker-compose.prod.yml | 🔴 Critical | Missing Redis password |
 | docker-compose.secure.yml | ✅ Good | Best practices followed |
 | docker-compose.hetzner.yml | 🔴 Critical | Missing Redis password |
@@ -485,7 +485,7 @@ Good security awareness shown in comments:
 ### Short Term (Within 1 Week)
 5. Standardize Redis password handling across all configs
 6. Add environment variable validation scripts
-7. Update docker-compose.dev.yml with stronger warnings
+7. Update docker-compose.yml with stronger warnings
 8. Fix port binding in docker-compose.yml to use 127.0.0.1
 
 ### Medium Term (Within 1 Month)

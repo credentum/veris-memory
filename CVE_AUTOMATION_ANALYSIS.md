@@ -69,7 +69,7 @@ python:3.11-slim@sha256:2ec5a4a5c3e9...
 
 **Bad**: Some configs missing SHA pinning
 ```yaml
-# docker-compose.dev.yml - NO SHA PINNING
+# docker-compose.yml - NO SHA PINNING
 neo4j:5.15-community  # ⚠️ Not pinned
 qdrant/qdrant:v1.12.1  # ⚠️ Not pinned
 ```
@@ -274,13 +274,13 @@ Update `.github/workflows/cve-scan.yml`:
 #### 1.3 Pin All Docker Images (1 hour)
 **Impact**: MEDIUM | **Effort**: LOW | **Risk**: LOW
 
-Fix unpinned images in `docker-compose.dev.yml`:
+Fix unpinned images in `docker-compose.yml`:
 ```bash
 # Get current SHA for Neo4j 5.15-community
 docker pull neo4j:5.15-community
 docker inspect neo4j:5.15-community | grep -i sha256
 
-# Update docker-compose.dev.yml
+# Update docker-compose.yml
 neo4j:5.15-community@sha256:69c579facb...
 ```
 
@@ -648,7 +648,7 @@ git push
 **Result**: Within 24 hours, you'll see PRs for outdated dependencies
 
 #### 2. Fix Unpinned Images
-Update `docker-compose.dev.yml`:
+Update `docker-compose.yml`:
 ```yaml
 # Before
 neo4j:

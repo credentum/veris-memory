@@ -74,7 +74,7 @@ export VERIS_MEMORY_API_PORT=8000
 
 **Docker Compose (Development)**:
 ```yaml
-# docker/docker-compose.dev.yml
+# docker/docker-compose.yml
 version: '3.8'
 services:
   veris-memory:
