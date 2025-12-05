@@ -345,18 +345,33 @@ services:
         max-size: "5m"
         max-file: "2"
 
-  # Logspout - Aggregate all container logs
+  # Syslog receiver - writes logs to file
+  syslog-ng:
+    image: balabit/syslog-ng:4.4.0
+    container_name: veris-syslog
+    restart: always
+    volumes:
+      - /var/lib/docker/volumes/claude-workspace/_data/logs:/var/log/remote
+      - ./config/syslog-ng.conf:/etc/syslog-ng/syslog-ng.conf:ro
+    networks:
+      - logging-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # Logspout - Aggregate all container logs to syslog
   logspout:
     image: gliderlabs/logspout:v3.2.14
     container_name: veris-logspout
     restart: always
     depends_on:
       - docker-socket-proxy
+      - syslog-ng
     environment:
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
-      - ROUTE_URIS=file:///mnt/logs/veris-all.log
-    volumes:
-      - /var/lib/docker/volumes/claude-workspace/_data/logs:/mnt/logs
+      - ROUTE_URIS=syslog+tcp://syslog-ng:514
     networks:
       - logging-internal
     logging:
