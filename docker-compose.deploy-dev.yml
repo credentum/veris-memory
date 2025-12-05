@@ -326,7 +326,7 @@ services:
 
   # Docker Socket Proxy - Secure limited Docker API access for logging
   docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy:v0.4.1
+    image: tecnativa/docker-socket-proxy:v0.4.1@sha256:3400c429c5f9e1b21d62130fb93b16e2e772d4fb7695bd52fc2b743800b9fe9e
     container_name: veris-docker-socket-proxy
     restart: always
     environment:
@@ -345,18 +345,34 @@ services:
         max-size: "5m"
         max-file: "2"
 
-  # Logspout - Aggregate all container logs
+  # Syslog receiver - writes logs to file
+  syslog-ng:
+    image: balabit/syslog-ng:4.4.0@sha256:ae691304f79f790ed47c7bd00ac8d9abe1177cfe23d81a311c80aa2a88208460
+    container_name: veris-syslog
+    restart: always
+    volumes:
+      - /var/lib/docker/volumes/claude-workspace/_data/logs:/var/log/remote
+      - ./config/syslog-ng.conf:/etc/syslog-ng/syslog-ng.conf:ro
+    networks:
+      - logging-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # Logspout - Aggregate all container logs to syslog
+  # Note: v3.2.14 has no SHA256 digest available on Docker Hub
   logspout:
     image: gliderlabs/logspout:v3.2.14
     container_name: veris-logspout
     restart: always
     depends_on:
       - docker-socket-proxy
+      - syslog-ng
     environment:
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
-      - ROUTE_URIS=file:///mnt/logs/veris-all.log
-    volumes:
-      - /var/lib/docker/volumes/claude-workspace/_data/logs:/mnt/logs
+      - ROUTE_URIS=syslog+tcp://syslog-ng:514
     networks:
       - logging-internal
     logging:
