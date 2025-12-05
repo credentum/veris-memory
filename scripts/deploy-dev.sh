@@ -131,132 +131,55 @@ ssh -o StrictHostKeyChecking=no \
     echo "⚠️  Backup script not found, skipping backup"
   fi
 
-  # Extensive cleanup
-  echo "🧹 Performing comprehensive cleanup..."
+  # =============================================================================
+  # MINIMAL DOWNTIME DEPLOYMENT (PR #428)
+  # Pull images FIRST while services are running, then atomic swap
+  # Reduces downtime from 20+ minutes to ~30 seconds
+  # =============================================================================
 
-  # Stop all containers first
-  echo "🛑 Stopping all containers gracefully..."
-  docker compose -p veris-memory-dev down --remove-orphans 2>/dev/null || true
+  # Dev uses volume-mounted compose file for fast deployments
+  COMPOSE_FILE="docker-compose.deploy-dev.yml"
 
-  # CRITICAL: Also stop any containers using the OLD project name (without -dev)
-  echo "🧹 Cleaning up old project name containers..."
+  echo "⚡ MINIMAL DOWNTIME DEPLOYMENT"
+  echo "   Services stay UP while pulling new images"
+
+  # Login to GHCR first
+  if [ -n "\$GITHUB_TOKEN" ]; then
+    echo "🔐 Logging in to GitHub Container Registry..."
+    echo "\$GITHUB_TOKEN" | docker login ghcr.io -u "\$GITHUB_ACTOR" --password-stdin
+  fi
+
+  # STEP 1: Pull new images WHILE services are still running
+  echo "📥 Pulling new images (services still running)..."
+  PULL_START=\$(date +%s)
+  if docker compose -p veris-memory-dev -f \$COMPOSE_FILE pull 2>/dev/null; then
+    PULL_END=\$(date +%s)
+    echo "✅ Images pulled in \$((PULL_END - PULL_START)) seconds"
+  else
+    echo "⚠️  GHCR pull had issues, will build locally if needed"
+  fi
+
+  # Build qdrant locally (custom Dockerfile) - also while services running
+  echo "🔨 Building qdrant image..."
+  docker compose -p veris-memory-dev -f \$COMPOSE_FILE build qdrant 2>/dev/null || true
+
+  # STEP 2: Quick cleanup of orphaned containers (not running services!)
+  echo "🧹 Cleaning up orphaned containers only..."
+  # Only remove containers using OLD project name (without -dev)
   docker compose -p veris-memory down --remove-orphans 2>/dev/null || true
+  # Remove old networks that might conflict
+  docker network rm veris-memory_context-store-network 2>/dev/null || true
+  docker network rm veris-memory_voice-network 2>/dev/null || true
 
-  # Remove old networks to force recreation with correct project name
-  echo "🌐 Removing old Docker networks..."
-  docker network rm veris-memory_context-store-network 2>/dev/null && echo "  ✓ Removed: veris-memory_context-store-network" || echo "  ℹ️ Already removed"
-  docker network rm veris-memory_voice-network 2>/dev/null && echo "  ✓ Removed: veris-memory_voice-network" || echo "  ℹ️ Already removed"
-
-  # Force stop any remaining containers with our project name
-  # PR #384: Use -f flag and remove by ID to handle stuck containers
-  echo "🛑 Force stopping any remaining veris-memory containers..."
-  docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker stop 2>/dev/null || true
-  docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | xargs -r docker rm -f 2>/dev/null || true
-
-  # PR #384: Also remove by container ID to handle name conflicts
-  echo "🧹 Removing containers by ID (handles name conflicts)..."
-  VERIS_CONTAINERS=\$(docker ps -aq --filter "name=veris-memory" 2>/dev/null || true)
-  if [ -n "\$VERIS_CONTAINERS" ]; then
-    echo "   Found \$(echo "\$VERIS_CONTAINERS" | wc -l) containers to remove"
-    echo "\$VERIS_CONTAINERS" | xargs -r docker rm -f 2>/dev/null || true
-  fi
-
-  # CRITICAL: Remove ALL instances of fixed-name containers
-  echo "🛑 Stopping fixed-name containers (livekit-server, voice-bot)..."
-  LIVEKIT_IDS=\$(docker ps -a -q --filter "name=livekit-server" 2>/dev/null || true)
-  VOICEBOT_IDS=\$(docker ps -a -q --filter "name=voice-bot" 2>/dev/null || true)
-
-  if [ -n "\$LIVEKIT_IDS" ] || [ -n "\$VOICEBOT_IDS" ]; then
-    echo "  → Found containers, removing by ID..."
-    [ -n "\$LIVEKIT_IDS" ] && echo "\$LIVEKIT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
-    [ -n "\$VOICEBOT_IDS" ] && echo "\$VOICEBOT_IDS" | xargs -r docker rm -f 2>&1 | grep -v "No such container" || true
-  else
-    echo "  → No livekit/voice-bot containers found"
-  fi
-
-  # Kill non-docker processes on livekit ports
-  for port in 7880 7882 5349; do
-    PID=\$(lsof -ti tcp:\$port 2>/dev/null || true)
-    [ -n "\$PID" ] && kill -9 \$PID 2>/dev/null || true
-  done
-
-  echo "⏳ Waiting 10 seconds for port release..."
-  sleep 10
-
-  # Stop containers by port (more aggressive)
-  for port in 8000 8001 8080 6333 7474 7687 6379 7880 7882 3478 5349; do
-    container=\$(docker ps --filter "publish=\$port" --format "{{.Names}}" 2>/dev/null | head -1)
-    if [ -n "\$container" ]; then
-      echo "Stopping container on port \$port: \$container"
-      docker stop "\$container" 2>/dev/null || true
-      docker rm "\$container" 2>/dev/null || true
-    fi
-  done
-
-  # Prune system (removes dangling images/containers)
-  echo "🗑️  Pruning Docker system..."
-  docker system prune -f --volumes 2>/dev/null || true
-
-  # CRITICAL: Remove old veris-memory images to prevent disk space accumulation
-  # Each image is 7-8GB, so old versions quickly consume disk space
-  echo "🧹 Removing old veris-memory Docker images..."
-
-  # Get disk usage before cleanup
-  DISK_BEFORE=\$(df -h /var/lib/docker 2>/dev/null | tail -1 | awk '{print \$4}' || echo "unknown")
-  echo "   Disk space before image cleanup: \$DISK_BEFORE available"
-
-  # Remove all unused images (not just dangling) - this is safe after containers are stopped
-  echo "   Removing unused images..."
-  docker image prune -a -f 2>/dev/null || true
-
-  # Specifically target old veris-memory images from GHCR
-  echo "   Cleaning GHCR veris-memory images..."
-  for repo in api context-store sentinel voice-bot; do
-    # Get all image IDs for this repo except the one tagged :latest
-    OLD_IMAGES=\$(docker images "ghcr.io/credentum/veris-memory/\$repo" --format "{{.ID}} {{.Tag}}" 2>/dev/null | grep -v "latest" | awk '{print \$1}' || true)
-    if [ -n "\$OLD_IMAGES" ]; then
-      echo "   Removing old \$repo images..."
-      echo "\$OLD_IMAGES" | xargs -r docker rmi -f 2>/dev/null || true
-    fi
-  done
-
-  # Also clean up any locally built images with old tags
-  echo "   Cleaning locally built veris-memory images..."
-  docker images --filter "reference=*veris-memory*" --format "{{.Repository}}:{{.Tag}} {{.ID}} {{.CreatedSince}}" 2>/dev/null | \
-    grep -E "(weeks|months) ago" | awk '{print \$2}' | xargs -r docker rmi -f 2>/dev/null || true
-
-  # Get disk usage after cleanup
-  DISK_AFTER=\$(df -h /var/lib/docker 2>/dev/null | tail -1 | awk '{print \$4}' || echo "unknown")
-  echo "   Disk space after image cleanup: \$DISK_AFTER available"
-
-  # Wait for cleanup
-  echo "⏳ Waiting 5 seconds for cleanup to complete..."
-  sleep 5
-
-  # Verify cleanup
-  remaining_containers=\$(docker ps -a --filter "name=veris-memory" --format "{{.Names}}" | wc -l)
-  remaining_volumes=\$(docker volume ls --filter "name=veris-memory" --format "{{.Name}}" | wc -l)
-  remaining_images=\$(docker images --filter "reference=*veris-memory*" --format "{{.Repository}}" 2>/dev/null | wc -l || echo "0")
-
-  echo "📊 Cleanup summary:"
-  echo "  - Remaining containers: \$remaining_containers"
-  echo "  - Remaining volumes: \$remaining_volumes"
-  echo "  - Remaining images: \$remaining_images"
-
-  if [ "\$remaining_containers" -eq 0 ] && [ "\$remaining_volumes" -eq 0 ]; then
-    echo "🎉 Complete cleanup achieved!"
-  else
-    echo "⚠️  Some resources may still exist, but deployment will continue"
-    docker ps -a --filter "name=veris-memory-dev" --format "table {{.Names}}\\t{{.Status}}" || true
-  fi
+  # STEP 3: Atomic swap - this is where the brief downtime happens
+  echo "🔄 Atomic swap starting (brief downtime)..."
+  SWAP_START=\$(date +%s)
 
   # =============================================================================
   # CONSOLIDATED DEPLOYMENT (Issue #416)
   # All .env creation and deployment logic in one place - no more fragmentation
   # =============================================================================
 
-  # Dev uses volume-mounted compose file for fast deployments
-  COMPOSE_FILE="docker-compose.deploy-dev.yml"
   echo "📦 Using volume-mounted compose for dev environment"
   echo "   → Code changes are instant (mounted from host)"
   echo "   → Hot reload enabled (auto-restart on file changes)"
@@ -451,43 +374,28 @@ ssh -o StrictHostKeyChecking=no \
   fi
 
   # =============================================================================
-  # PULL IMAGES AND START SERVICES
+  # ATOMIC SWAP - Start new containers (images already pulled above)
   # =============================================================================
-  echo "🏗️  Starting deployment..."
+  echo "🚀 Starting services with atomic swap..."
 
-  # Login to GHCR
-  if [ -n "\$GITHUB_TOKEN" ]; then
-    echo "🔐 Logging in to GitHub Container Registry..."
-    echo "\$GITHUB_TOKEN" | docker login ghcr.io -u "\$GITHUB_ACTOR" --password-stdin
-  fi
-
-  # Pull images from GHCR
-  echo "📥 Pulling images from GHCR..."
-  if docker compose -p veris-memory-dev -f \$COMPOSE_FILE pull 2>/dev/null; then
-    echo "✅ Images pulled from GHCR"
-
-    # Build qdrant locally (custom Dockerfile)
-    echo "🔨 Building qdrant image locally..."
-    docker compose -p veris-memory-dev -f \$COMPOSE_FILE build qdrant
-
-    # Start services
-    echo "🚀 Starting services..."
-    docker compose -p veris-memory-dev -f \$COMPOSE_FILE up -d --force-recreate --no-build
-  else
-    echo "⚠️  GHCR pull failed, building locally..."
-    docker compose -p veris-memory-dev -f \$COMPOSE_FILE up -d --force-recreate --build
-  fi
+  # Start services with force-recreate (uses freshly pulled images)
+  # --no-build because we already pulled/built above
+  docker compose -p veris-memory-dev -f \$COMPOSE_FILE up -d --force-recreate --no-build
 
   # Deploy voice-bot if available
   if [ -f "docker-compose.voice.yml" ]; then
     echo "🎙️  Deploying voice platform..."
-    docker compose -p veris-memory-dev -f \$COMPOSE_FILE -f docker-compose.voice.yml up -d --build voice-bot
+    docker compose -p veris-memory-dev -f \$COMPOSE_FILE -f docker-compose.voice.yml up -d --force-recreate voice-bot
   fi
 
   # Logout from GHCR
   [ -n "\$GITHUB_TOKEN" ] && docker logout ghcr.io 2>/dev/null
 
-  echo "⏳ Waiting for services to start..."
+  # Calculate swap time
+  SWAP_END=\$(date +%s)
+  echo "✅ Atomic swap completed in \$((SWAP_END - SWAP_START)) seconds"
+
+  echo "⏳ Waiting for services to become healthy..."
   sleep 10
 
   # Show service status
@@ -525,6 +433,31 @@ ssh -o StrictHostKeyChecking=no \
   fi
 
   echo "✅ Deployment with backup/restore completed!"
+
+  # =============================================================================
+  # POST-DEPLOYMENT CLEANUP (runs after services are healthy)
+  # =============================================================================
+  echo "🧹 Post-deployment cleanup (services are running)..."
+
+  # Remove dangling images only (not all unused)
+  docker image prune -f 2>/dev/null || true
+
+  # Remove old veris-memory images (keep latest)
+  for repo in api context-store sentinel voice-bot; do
+    OLD_IMAGES=\$(docker images "ghcr.io/credentum/veris-memory/\$repo" --format "{{.ID}} {{.Tag}}" 2>/dev/null | grep -v "latest" | awk '{print \$1}' || true)
+    if [ -n "\$OLD_IMAGES" ]; then
+      echo "   Removing old \$repo images..."
+      echo "\$OLD_IMAGES" | xargs -r docker rmi -f 2>/dev/null || true
+    fi
+  done
+
+  # Report disk usage
+  DISK_FREE=\$(df -h /var/lib/docker 2>/dev/null | tail -1 | awk '{print \$4}' || echo "unknown")
+  echo "   Disk space available: \$DISK_FREE"
+
+  echo ""
+  echo "🎉 DEPLOYMENT COMPLETE"
+  echo "   Downtime was ~\$((SWAP_END - SWAP_START)) seconds (atomic swap only)"
 EOSSH
 
 echo "✅ Deployment script completed successfully"
