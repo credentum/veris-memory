@@ -56,6 +56,10 @@ services:
       - API_KEY_MCP=${API_KEY_MCP}
       - API_KEY_SENTINEL=${SENTINEL_API_KEY}
       - API_KEY_VOICEBOT=${API_KEY_VOICEBOT}
+      # Herald/Research keys with proper format: key:user_id:role:is_agent
+      - API_KEY_HERALD=${VERIS_HERALD_API_KEY}:herald:writer:true
+      - API_KEY_RESEARCH=${VERIS_RESEARCH_API_KEY}:research_agents:writer:true
+      # Keep raw keys for backwards compatibility
       - VERIS_HERALD_API_KEY=${VERIS_HERALD_API_KEY:-}
       - VERIS_RESEARCH_API_KEY=${VERIS_RESEARCH_API_KEY:-}
       - VERIS_MEMORY_API_KEY=${VERIS_MEMORY_API_KEY:-}
